@@ -167,7 +167,7 @@ integrarse en `main.py`.
 | Sprint | Entregable | Validación |
 |---|---|---|
 | **0** ✅ | Scaffolding: estructura, git, deps, contratos de datos, config validada | `pytest` verde, `python -m src.main --check` |
-| **1** | Data Ingestion: websocket Binance, velas → aiosqlite/Parquet, descarga de histórico **con paginación por request weight y exponential backoff ante 429/418** | velas en vivo + 1 año de histórico guardado |
+| **1** ✅ | Data Ingestion: websocket Binance, velas → aiosqlite/Parquet, descarga de histórico **con paginación por request weight y exponential backoff ante 429/418** | velas en vivo + 1 año de histórico guardado (105.119 velas 5m + 8.759 velas 1h por símbolo, 2025-06 → 2026-06) |
 | **2** | Quant Engine: indicadores propios (EMA, RSI, ATR) + primera estrategia | tests de indicadores contra valores de referencia |
 | **3** | Backtester: comisiones, slippage, métricas (Sharpe, max drawdown, win rate) | backtest sobre el histórico + reporte |
 | **4** | Sentiment Engine: RSS → filtro heurístico cripto → Claude Haiku → score | corpus de 20 titulares etiquetados a mano vs. salida del modelo |

@@ -47,3 +47,36 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
 - **Request weight (Binance)**: cada endpoint de la API "pesa" distinto contra
   tu cuota por minuto. Descargar histórico sin contar el peso acumulado
   termina en HTTP 429 (rate limit) o 418 (baneo temporal).
+
+## Sprint 1
+
+- **REST vs Websocket**: REST es "pregunta-respuesta" (pides 1000 velas, te
+  las dan, fin) — ideal para histórico. Websocket es una conexión permanente
+  donde el servidor te *empuja* datos cuando ocurren — ideal para tiempo real.
+  Usamos REST para el pasado y websocket para el presente.
+- **Kline**: nombre que da Binance a una vela OHLCV. El mensaje websocket
+  trae el campo `x` (is closed): `false` mientras la vela se forma, `true` al
+  cerrar. Solo las cerradas alimentan al quant engine.
+- **Paginación por cursor**: la API limita cada respuesta a 1000 velas; para
+  1 año de velas de 5m (~105.000) se piden páginas sucesivas moviendo un
+  cursor (`startTime`) a la vela siguiente a la última recibida. Una página
+  vacía o parcial = llegamos al presente.
+- **Retry-After**: header HTTP con el que el servidor te dice cuántos
+  segundos esperar tras un rate limit. Ignorarlo y reintentar antes alarga el
+  castigo — por eso nuestro backoff toma el máximo entre su cálculo
+  exponencial y este header.
+- **Idempotencia**: propiedad de una operación que da el mismo resultado si
+  se ejecuta una o N veces. `INSERT OR REPLACE` + clave primaria
+  (symbol, timeframe, open_time) hace que re-guardar una vela tras una
+  reconexión no duplique filas.
+- **Parquet / formato columnar**: archivo que guarda los datos por columnas
+  en lugar de por filas. Leer "solo los cierres de 2025" no toca las demás
+  columnas, y comprime ~10× mejor que CSV. Es el estándar para datasets de
+  backtesting.
+- **Epoch ms**: milisegundos desde el 1/1/1970 UTC. Es el formato nativo de
+  tiempo de Binance y el que usamos como clave en SQLite: un entero ordena
+  más rápido y sin ambigüedades de zona horaria que un string de fecha.
+- **Mainnet vs testnet (datos vs órdenes)**: los *datos* de mercado se toman
+  siempre de mainnet (precios reales, públicos, sin API key); las *órdenes*
+  van a testnet. La testnet se resetea y su liquidez es ficticia: backtestear
+  con sus precios sería estudiar un mercado que no existe.
