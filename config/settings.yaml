@@ -1,0 +1,33 @@
+# Configuración de la estrategia y el riesgo.
+# Todo lo que NO es un secreto vive aquí (los secretos van en .env).
+# Cambiar un parámetro de trading nunca debe requerir tocar código.
+
+market:
+  symbols: ["BTCUSDT", "ETHUSDT"]
+  timeframe: "5m"            # vela base de trabajo
+  htf_timeframe: "1h"        # timeframe superior para contexto/tendencia
+
+risk:
+  risk_per_trade_pct: 1.0    # % del capital arriesgado por operación
+  max_open_positions: 3
+  max_daily_loss_pct: 3.0    # al tocarlo, el bot se detiene hasta el día siguiente
+  max_drawdown_pct: 10.0     # kill switch: requiere reinicio manual
+  atr_stop_multiplier: 1.5   # SL = entrada -/+ 1.5 * ATR(14)
+  atr_period: 14
+
+confluence:
+  quant_strong_threshold: 0.5      # |señal quant| para considerarla "fuerte"
+  sentiment_confirm_threshold: 0.3 # |sentimiento| mínimo para confirmar
+  reduced_size_factor: 0.5         # tamaño al operar sin confirmación de sentimiento
+
+sentiment:
+  rss_feeds:
+    - "https://www.coindesk.com/arc/outboundfeeds/rss/"
+    - "https://cointelegraph.com/rss"
+    - "https://decrypt.co/feed"
+  poll_interval_seconds: 120
+  claude_model: "claude-haiku-4-5-20251001"
+
+storage:
+  db_path: "data/trading.db"
+  candles_dir: "data/candles"

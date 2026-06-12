@@ -1,0 +1,23 @@
+# Secretos — NUNCA versionar API keys
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Datos y reportes generados (reproducibles, no van al repo)
+data/*.db
+data/*.db-wal
+data/*.db-shm
+*.parquet
+backtest/reports/
+
+# Notebooks: checkpoints
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
