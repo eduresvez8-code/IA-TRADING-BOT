@@ -1,5 +1,7 @@
 # Secretos — NUNCA versionar API keys
 .env
+# Archivos sueltos de notas/credenciales creados fuera del flujo (ej. TextEdit)
+*.rtf
 
 # Python
 __pycache__/
