@@ -27,6 +27,9 @@ sentiment:
     - "https://decrypt.co/feed"
   poll_interval_seconds: 120
   claude_model: "claude-haiku-4-5-20251001"
+  heuristic_weight: 0.7        # peso del diccionario cripto vs. VADER (VADER = 1 - esto)
+  escalate_score_threshold: 0.3  # |score_local| >= esto → llamar a Claude
+  max_news_age_hours: 24         # ignorar noticias más viejas que esto
 
 quant:
   ema_fast_period: 9

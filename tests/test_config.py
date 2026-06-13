@@ -3,7 +3,20 @@
 import pytest
 from pydantic import ValidationError
 
-from src.core.config import BacktestConfig, RiskConfig, load_settings
+from src.core.config import BacktestConfig, RiskConfig, SentimentConfig, load_settings
+
+
+def _valid_sentiment_kwargs(**overrides):
+    base = dict(
+        rss_feeds=["https://coindesk.com/rss"],
+        poll_interval_seconds=120,
+        claude_model="claude-haiku-4-5-20251001",
+        heuristic_weight=0.7,
+        escalate_score_threshold=0.3,
+        max_news_age_hours=24,
+    )
+    base.update(overrides)
+    return base
 
 
 def test_settings_yaml_del_repo_es_valido():
@@ -12,6 +25,33 @@ def test_settings_yaml_del_repo_es_valido():
     assert s.risk.risk_per_trade_pct <= 2.0
     assert len(s.sentiment.rss_feeds) >= 1
     assert s.backtest.initial_capital > 0
+    # Sprint 4: nuevos campos de SentimentConfig
+    assert 0.0 <= s.sentiment.heuristic_weight <= 1.0
+    assert 0.0 < s.sentiment.escalate_score_threshold < 1.0
+    assert s.sentiment.max_news_age_hours >= 1
+
+
+def test_sentiment_config_valido():
+    sc = SentimentConfig(**_valid_sentiment_kwargs())
+    assert sc.heuristic_weight == 0.7
+    assert sc.escalate_score_threshold == 0.3
+    assert sc.max_news_age_hours == 24
+
+
+def test_sentiment_heuristic_weight_fuera_de_rango():
+    with pytest.raises(ValidationError):
+        SentimentConfig(**_valid_sentiment_kwargs(heuristic_weight=1.5))
+
+
+def test_sentiment_escalate_threshold_en_cero_es_rechazado():
+    # Un threshold de 0 escalaría TODO a Claude — sin sentido y costoso.
+    with pytest.raises(ValidationError):
+        SentimentConfig(**_valid_sentiment_kwargs(escalate_score_threshold=0.0))
+
+
+def test_sentiment_max_news_age_cero_es_rechazado():
+    with pytest.raises(ValidationError):
+        SentimentConfig(**_valid_sentiment_kwargs(max_news_age_hours=0))
 
 
 def _valid_backtest_kwargs(**overrides):

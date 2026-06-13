@@ -193,3 +193,50 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   cambia el comportamiento del bot sin estar en `settings.yaml`. Prohibidos por
   la Política de Cero Hardcoding (ver `CLAUDE.md`): todo parámetro vive en la
   config y se tipa en `config.py`.
+
+## Sprint 4
+
+- **RSS (Really Simple Syndication)**: formato de feed web que publica
+  titulares y resúmenes de noticias en XML. Los medios cripto (CoinDesk,
+  CoinTelegraph, Decrypt) lo ofrecen gratis. `feedparser` lo parsea en Python;
+  `httpx` lo descarga de forma asíncrona sin bloquear el event loop.
+- **VADER (Valence Aware Dictionary and sEntiment Reasoner)**: modelo de
+  sentimiento basado en reglas, entrenado en texto de redes sociales. Devuelve
+  un `compound` en [-1, 1]: positivo = texto positivo. Sus fortalezas son frases
+  con signos de puntuación, mayúsculas y emojis; su debilidad es el argot
+  cripto ("depeg", "halving", "rugpull" no están en su vocabulario → falsos
+  neutros). Por eso solo complementa al diccionario heurístico propio.
+- **Diccionario heurístico cripto**: tabla `{término → peso}` donde cada
+  entrada es una anotación lingüística calibrada para cripto ("hack" → -0.9,
+  "ETF approval" → +0.9). No son números mágicos: son juicios de dominio sobre
+  el impacto histórico de cada evento. El score heurístico es la media de los
+  pesos de los términos que matchean en el texto.
+- **Score local vs. score Claude**: el filtro heurístico produce un `local_score`
+  barato (sin API). Si supera `escalate_score_threshold` o el ítem es
+  `high_impact`, el bot llama a Claude Haiku y sustituye el score local por el
+  score más matizado del LLM. El pipeline de dos etapas mantiene el costo en
+  céntimos al día.
+- **High-impact flag**: señal de que un evento es potencialmente de alto
+  impacto sistémico (hack, FOMC, halving, depeg, ETF) aunque su score local sea
+  ambiguo. Cualquier ítem con este flag va a Claude obligatoriamente.
+- **Escalado (escalation)**: decisión de delegar el análisis de una noticia de
+  la etapa barata (filtro local) a la etapa cara (Claude). Condición:
+  `is_high_impact OR |local_score| >= escalate_score_threshold`.
+- **compound (VADER)**: el score resumen de VADER. Se calcula como suma
+  normalizada de los pesos de cada token del texto; oscila en [-1, 1]. Por
+  encima de +0.05 VADER lo clasifica como positivo; por debajo de -0.05, como
+  negativo.
+- **schema JSON estricto (Claude)**: pedirle al LLM que devuelva SOLO un JSON
+  con campos predefinidos (score, confidence, high_impact, symbol_scope,
+  rationale). Evita respuestas libres que requieran parsing frágil y fuerza al
+  modelo a tomar una decisión explícita en lugar de "podría ser positivo o
+  negativo dependiendo de…". Pydantic valida los rangos en la frontera.
+- **Deduplicación por hash de URL**: generar un ID con los primeros 16 hex de
+  SHA-256(url). La misma noticia desde dos feeds produce el mismo hash → se
+  inserta una sola vez. SHA-256 es determinista y resistente a colisiones para
+  este volumen de URLs.
+- **calendar.timegm vs. time.mktime**: `time.mktime` interpreta un
+  `struct_time` como hora local — si el servidor está en UTC-5, convierte
+  incorrectamente. `calendar.timegm` lo interpreta siempre como UTC, que es
+  el estándar de feedparser. Usar el incorrecto produce timestamps desplazados
+  que desordena la deduplicación por antigüedad.

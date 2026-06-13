@@ -58,6 +58,9 @@ class SentimentConfig(BaseModel):
     rss_feeds: list[str]
     poll_interval_seconds: int = Field(ge=30)
     claude_model: str
+    heuristic_weight: float = Field(ge=0.0, le=1.0)
+    escalate_score_threshold: float = Field(gt=0.0, lt=1.0)
+    max_news_age_hours: int = Field(ge=1)
 
 
 class QuantConfig(BaseModel):
