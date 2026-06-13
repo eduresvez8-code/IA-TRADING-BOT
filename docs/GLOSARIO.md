@@ -80,3 +80,41 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   siempre de mainnet (precios reales, públicos, sin API key); las *órdenes*
   van a testnet. La testnet se resetea y su liquidez es ficticia: backtestear
   con sus precios sería estudiar un mercado que no existe.
+
+## Sprint 2
+
+- **EMA (Exponential Moving Average)**: media móvil que pondera más los precios
+  recientes. Fórmula: `EMA_t = precio_t × α + EMA_{t-1} × (1-α)`, con
+  `α = 2/(n+1)`. Con `n=9`, el precio de hace 9 velas pesa solo ~13%.
+  Contraste con SMA: la SMA da el mismo peso a todas las velas de la ventana,
+  reacciona más lento a cambios de tendencia.
+- **EMA cross (cruce de medias)**: señal clásica. Cuando la EMA rápida (n=9)
+  cruza *por encima* de la lenta (n=21), indica inicio de tendencia alcista;
+  cruzar *por debajo* indica bajista. Usamos el spread porcentual continuo
+  (no solo el evento de cruce) para obtener una señal gradual en [-1,+1].
+- **Suavizado de Wilder**: variante del suavizado exponencial con
+  `α = 1/n` en lugar del estándar `2/(n+1)`. Más conservador (más inercia).
+  Wilder lo usó para RSI y ATR porque reduce el ruido de las ganancias/pérdidas
+  diarias. En pandas: `ewm(com = n-1)`.
+- **RSI (Relative Strength Index)**: oscilador de momentum creado por Welles
+  Wilder (1978). `RSI = 100 − 100/(1+RS)`, donde `RS = avg_gain / avg_loss`
+  con suavizado de Wilder. Rango [0,100]. Por encima de 70 = sobrecompra
+  (probable corrección); por debajo de 30 = sobreventa (posible rebote).
+  Un RSI=50 es neutral.
+- **ATR (Average True Range)**: medida de volatilidad que captura gaps entre
+  velas. `TR = max(H-L, |H-C_prev|, |L-C_prev|)`. El ATR es el suavizado de
+  Wilder del TR sobre `n` períodos. Una vela típica de BTCUSDT en 5m tiene
+  ATR ≈ 60 USDT; en 1h ≈ 400 USDT (observado en datos de 2025-2026).
+- **tanh (tangente hiperbólica)**: función `tanh(x) = (eˣ - e⁻ˣ)/(eˣ + e⁻ˣ)`.
+  Mapea cualquier número real a (-1, 1) de forma suave y simétrica. Útil como
+  "compresor" de señales: con un factor de escala 50, un spread de EMA del 1%
+  produce score ≈ 0.46; del 3% → ≈ 0.91. Evita cortes bruscos que distorsionen
+  el comportamiento cerca de los límites.
+- **Función pura (pure function)**: función sin efectos secundarios y sin
+  estado propio — misma entrada produce siempre la misma salida. `indicators.py`
+  está diseñado así para poder testearlo con valores de referencia y reutilizarlo
+  en backtesting sin preocuparse por orden de llamada ni estado interno.
+- **Score normalizado [-1,+1]**: convención del bot para todas las señales.
+  -1 = máxima convicción bajista, +1 = alcista, 0 = neutro. Normalizar permite
+  que la matriz de confluencia combine señales de estrategias distintas (técnica
+  + sentimiento) con una escala común, sin conocer sus detalles internos.

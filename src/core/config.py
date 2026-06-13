@@ -12,7 +12,7 @@ rango, el bot muere en el segundo 0, no tras abrir una posición.
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -60,6 +60,23 @@ class SentimentConfig(BaseModel):
     claude_model: str
 
 
+class QuantConfig(BaseModel):
+    ema_fast_period: int = Field(ge=2, le=50)
+    ema_slow_period: int = Field(ge=2, le=200)
+    rsi_period: int = Field(ge=2, le=50)
+    ema_weight: float = Field(ge=0.0, le=1.0)
+
+    @field_validator("ema_slow_period")
+    @classmethod
+    def slow_must_exceed_fast(cls, v: int, info) -> int:
+        fast = info.data.get("ema_fast_period")
+        if fast is not None and v <= fast:
+            raise ValueError(
+                f"ema_slow_period ({v}) debe ser mayor que ema_fast_period ({fast})"
+            )
+        return v
+
+
 class StorageConfig(BaseModel):
     db_path: str
     candles_dir: str
@@ -70,6 +87,7 @@ class Settings(BaseModel):
     risk: RiskConfig
     confluence: ConfluenceConfig
     sentiment: SentimentConfig
+    quant: QuantConfig
     storage: StorageConfig
 
 

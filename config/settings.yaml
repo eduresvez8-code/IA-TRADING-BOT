@@ -28,6 +28,12 @@ sentiment:
   poll_interval_seconds: 120
   claude_model: "claude-haiku-4-5-20251001"
 
+quant:
+  ema_fast_period: 9
+  ema_slow_period: 21
+  rsi_period: 14
+  ema_weight: 0.6   # peso EMA en el score combinado; peso RSI = 1 - ema_weight
+
 storage:
   db_path: "data/trading.db"
   candles_dir: "data/candles"
