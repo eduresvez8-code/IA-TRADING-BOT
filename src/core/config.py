@@ -83,6 +83,10 @@ class BacktestConfig(BaseModel):
     initial_capital: float = Field(gt=0)
     commission_pct: float = Field(ge=0, le=1.0)
     slippage_pct: float = Field(ge=0, le=1.0)
+    # Multiplicador del slippage dinámico por volatilidad: slip = fijo + k·ATR/precio.
+    # k=0 ⇒ comportamiento idéntico al slippage fijo original (regresión protegida).
+    # le=5.0 ataja un typo absurdo (un k enorme inflaría el slippage sin sentido).
+    slippage_atr_multiplier: float = Field(ge=0, le=5.0)
     entry_threshold: float = Field(gt=0, lt=1)
     exit_threshold: float = Field(ge=0, lt=1)
     take_profit_rr: float = Field(gt=0)

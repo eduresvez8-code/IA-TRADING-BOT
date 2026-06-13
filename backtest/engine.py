@@ -70,7 +70,8 @@ class BacktestEngine:
         atr_mult = self.cfg.risk.atr_stop_multiplier
         risk_pct = self.cfg.risk.risk_per_trade_pct
         comm = bt.commission_pct / 100.0     # de % a fracción
-        slip = bt.slippage_pct / 100.0
+        base_slip = bt.slippage_pct / 100.0  # slippage fijo por lado
+        slip_k = bt.slippage_atr_multiplier  # componente dinámico: k·ATR/precio
 
         df = df.reset_index(drop=True)
         n = len(df)
@@ -92,15 +93,28 @@ class BacktestEngine:
         bars_in_market = 0
         trades: list[Trade] = []
 
+        def slip_at(bar_idx: int, price: float) -> float:
+            """Slippage efectivo en una vela: fijo + componente por volatilidad.
+
+            slip = base_slip + slip_k · ATR_vela / precio.  Con slip_k = 0 se
+            reduce EXACTAMENTE al slippage fijo original (regresión protegida).
+            El ATR se normaliza por el precio para que slip quede en fracción.
+            """
+            a = atrs[bar_idx]
+            if price <= 0 or pd.isna(a):
+                return base_slip
+            return base_slip + slip_k * a / price
+
         def close_position(exit_price: float, bar_idx: int, reason: str) -> None:
             nonlocal cash, position
             p = position
             qty = p["qty"]
+            s = slip_at(bar_idx, exit_price)
             if p["side"] == "LONG":
-                fill = exit_price * (1 - slip)          # vender: peor precio
+                fill = exit_price * (1 - s)             # vender: peor precio
                 gross = qty * (fill - p["entry_price"])
             else:  # SHORT: cerrar = comprar
-                fill = exit_price * (1 + slip)
+                fill = exit_price * (1 + s)
                 gross = qty * (p["entry_price"] - fill)
             exit_comm = qty * fill * comm
             cash += gross - exit_comm
@@ -124,12 +138,13 @@ class BacktestEngine:
                     side, atr_at_decision = pending[1], pending[2]
                     stop_distance = atr_mult * atr_at_decision
                     if stop_distance > 0:
+                        s = slip_at(i, opens[i])
                         if side == "LONG":
-                            entry = opens[i] * (1 + slip)   # comprar: peor precio
+                            entry = opens[i] * (1 + s)      # comprar: peor precio
                             stop = entry - stop_distance
                             tp = entry + bt.take_profit_rr * stop_distance
                         else:
-                            entry = opens[i] * (1 - slip)   # vender en corto
+                            entry = opens[i] * (1 - s)      # vender en corto
                             stop = entry + stop_distance
                             tp = entry - bt.take_profit_rr * stop_distance
                         equity_now = cash  # plano: equity == cash
@@ -149,18 +164,33 @@ class BacktestEngine:
                     close_position(opens[i], i, "signal")
                 pending = None
 
-            # ---- 2. Vigilar stop/TP intrabar (con high/low de ESTA vela) ----
+            # ---- 2. Vigilar stop/TP con ejecución en GAP ----
+            # Si la vela ABRE ya cruzada respecto al nivel, el mercado nunca
+            # cotizó ese nivel: el fill realista es el `open`, no el nivel.
+            # En contra (stop) el open es peor → pesimista; a favor (TP) el open
+            # es mejor → justo. El orden del elif preserva "stop antes que TP"
+            # cuando ambos se tocan intrabar en la misma vela.
             if position is not None:
+                stop = position["stop"]
+                tp = position["tp"]
                 if position["side"] == "LONG":
-                    if lows[i] <= position["stop"]:          # stop primero (pesimista)
-                        close_position(position["stop"], i, "stop_loss")
-                    elif highs[i] >= position["tp"]:
-                        close_position(position["tp"], i, "take_profit")
-                else:  # SHORT
-                    if highs[i] >= position["stop"]:
-                        close_position(position["stop"], i, "stop_loss")
-                    elif lows[i] <= position["tp"]:
-                        close_position(position["tp"], i, "take_profit")
+                    if opens[i] <= stop:                  # gap EN CONTRA: abrió bajo el stop
+                        close_position(opens[i], i, "stop_loss")
+                    elif lows[i] <= stop:                 # tocado intrabar → al nivel
+                        close_position(stop, i, "stop_loss")
+                    elif opens[i] >= tp:                  # gap A FAVOR: abrió sobre el TP
+                        close_position(opens[i], i, "take_profit")
+                    elif highs[i] >= tp:                  # tocado intrabar → al nivel
+                        close_position(tp, i, "take_profit")
+                else:  # SHORT (espejo)
+                    if opens[i] >= stop:                  # gap EN CONTRA: abrió sobre el stop
+                        close_position(opens[i], i, "stop_loss")
+                    elif highs[i] >= stop:
+                        close_position(stop, i, "stop_loss")
+                    elif opens[i] <= tp:                  # gap A FAVOR: abrió bajo el TP
+                        close_position(opens[i], i, "take_profit")
+                    elif lows[i] <= tp:
+                        close_position(tp, i, "take_profit")
 
             # ---- 3. Marcar a mercado: equity con PnL no realizado al cierre ----
             if position is not None:

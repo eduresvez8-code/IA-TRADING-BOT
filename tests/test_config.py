@@ -17,6 +17,7 @@ def test_settings_yaml_del_repo_es_valido():
 def _valid_backtest_kwargs(**overrides):
     base = dict(
         initial_capital=10000.0, commission_pct=0.04, slippage_pct=0.02,
+        slippage_atr_multiplier=0.1,
         entry_threshold=0.5, exit_threshold=0.1, take_profit_rr=2.0,
         allow_short=True,
     )
@@ -27,6 +28,13 @@ def _valid_backtest_kwargs(**overrides):
 def test_backtest_config_valido():
     bt = BacktestConfig(**_valid_backtest_kwargs())
     assert bt.commission_pct == 0.04
+    assert bt.slippage_atr_multiplier == 0.1
+
+
+def test_slippage_multiplier_negativo_es_rechazado():
+    # Un slippage negativo "pagaría" por operar — imposible (ge=0).
+    with pytest.raises(ValidationError):
+        BacktestConfig(**_valid_backtest_kwargs(slippage_atr_multiplier=-0.5))
 
 
 def test_comision_absurda_es_rechazada():

@@ -40,7 +40,8 @@ backtest:
   # ajustables sin tocar código.
   initial_capital: 10000.0   # USDT ficticios de partida
   commission_pct: 0.04       # comisión taker por lado (% del notional) — Binance futures ≈ 0.04
-  slippage_pct: 0.02         # deslizamiento adverso estimado por lado (%)
+  slippage_pct: 0.02         # deslizamiento adverso fijo por lado (%)
+  slippage_atr_multiplier: 0.1  # slippage extra proporcional a la volatilidad: k·ATR/precio. 0 = solo el fijo
   # Reglas de entrada/salida de la simulación (la estrategia emite score en [-1,1]).
   entry_threshold: 0.5       # |score| para abrir posición (idea de "señal fuerte")
   exit_threshold: 0.1        # cierre por debilidad: |score| cae por debajo de esto

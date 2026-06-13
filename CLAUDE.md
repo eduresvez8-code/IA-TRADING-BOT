@@ -29,6 +29,16 @@ uv run python -m src.main --check  # smoke test: config + imports
 - Tests en `tests/`, espejo de `src/` (ej. `src/quant/indicators.py` →
   `tests/quant/test_indicators.py`).
 
+## Política de Cero Hardcoding (Cero Umbrales Ocultos)
+
+**Regla inquebrantable, sin excepciones.** Bajo ninguna circunstancia se pueden
+hardcodear parámetros, multiplicadores, umbrales o "números mágicos" en la
+lógica del negocio (`src/` o `backtest/`). Cualquier valor que modifique el
+comportamiento del bot debe vivir obligatoriamente en `config/settings.yaml` y
+ser tipado en `src/core/config.py`. Si una nueva feature requiere un parámetro,
+la **Vía B** (modificar la config: `settings.yaml` + `config.py` + su test en
+`test_config.py`) es la única vía legal. No se permiten atajos.
+
 ## Protocolo didáctico (obligatorio)
 
 Eduardo quiere entender el porqué de absolutamente todo el código. En cada

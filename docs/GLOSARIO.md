@@ -174,3 +174,22 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   stop) y lo que apuntas a ganar (distancia al take-profit). RR=2 → el objetivo
   está al doble de distancia que el stop; con RR=2 basta acertar >33% para
   empatar.
+
+## Sprint 3.1 (refinamientos de ejecución)
+
+- **Gap (hueco de precio)**: salto entre el cierre de una vela y la apertura de
+  la siguiente sin cotización intermedia (flash-crash, noticia, baja liquidez).
+  Si el `open` ya está más allá de tu stop/TP, el mercado nunca cotizó ese nivel.
+- **Ejecución en gap**: rellenar al `open` (no al nivel) cuando la vela abre ya
+  cruzada. En un stop el gap es EN CONTRA (open peor que el stop → más pérdida);
+  en un take-profit el gap es A FAVOR (open mejor que el TP → más ganancia).
+  Asumir siempre el fill exacto al nivel es un sesgo optimista que la ejecución
+  en gap corrige. Mantiene la asimetría honesta del backtester.
+- **Slippage dinámico (por ATR)**: deslizamiento que crece con la volatilidad,
+  `slip = slip_fijo + k·ATR/precio`, en vez de un % constante. En velas
+  agitadas el libro de órdenes se mueve más y el fill empeora. `k=0` lo apaga y
+  reproduce exactamente el slippage fijo (condición de regresión).
+- **Número mágico / umbral oculto**: constante incrustada en la lógica que
+  cambia el comportamiento del bot sin estar en `settings.yaml`. Prohibidos por
+  la Política de Cero Hardcoding (ver `CLAUDE.md`): todo parámetro vive en la
+  config y se tipa en `config.py`.
