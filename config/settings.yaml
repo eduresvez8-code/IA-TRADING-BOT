@@ -14,6 +14,14 @@ risk:
   max_drawdown_pct: 10.0     # kill switch: requiere reinicio manual
   atr_stop_multiplier: 1.5   # SL = entrada -/+ 1.5 * ATR(14)
   atr_period: 14
+  # objetivo = RR × distancia_al_stop. Copia de simulación del backtest vive en
+  # backtest.take_profit_rr; esta es la del camino EN VIVO (Risk Manager).
+  take_profit_rr: 2.0
+  # Confianza del sentimiento por debajo de este umbral → tamaño reducido.
+  low_confidence_threshold: 0.4
+  low_confidence_size_factor: 0.5   # multiplicador cuando la confianza es baja
+  # Circuit breaker (a): precio más viejo que esto (s) → no abrir nuevas entradas.
+  stale_feed_seconds: 30
 
 confluence:
   quant_strong_threshold: 0.5      # |señal quant| para considerarla "fuerte"

@@ -20,6 +20,18 @@ def check() -> int:
           f"pérdida diaria máx: {settings.risk.max_daily_loss_pct}% | "
           f"drawdown máx: {settings.risk.max_drawdown_pct}%")
 
+    # Sprint 5: confluencia + risk manager listos para integrarse al pipeline.
+    from src.decision.confluence import decide  # noqa: F401
+    from src.risk.manager import RiskManager  # noqa: F401
+
+    c = settings.confluence
+    print(f"✓ confluencia — quant fuerte ≥{c.quant_strong_threshold} | "
+          f"sentimiento confirma ≥{c.sentiment_confirm_threshold} | "
+          f"tamaño reducido ×{c.reduced_size_factor}")
+    print(f"✓ risk manager — máx {settings.risk.max_open_positions} posiciones | "
+          f"TP {settings.risk.take_profit_rr}×SL | "
+          f"feed obsoleto >{settings.risk.stale_feed_seconds:.0f}s")
+
     missing = [name for name, value in [
         ("BINANCE_API_KEY", secrets.binance_api_key),
         ("ANTHROPIC_API_KEY", secrets.anthropic_api_key),

@@ -46,6 +46,13 @@ class RiskConfig(BaseModel):
     max_drawdown_pct: float = Field(gt=0, le=20.0)
     atr_stop_multiplier: float = Field(gt=0)
     atr_period: int = Field(ge=2)
+    # Sprint 5: parámetros del Risk Manager en vivo.
+    take_profit_rr: float = Field(gt=0)
+    # low_confidence_threshold en (0,1): por encima de 1 nunca reduciría, en 0
+    # nunca dispararía. low_confidence_size_factor en (0,1]: 1.0 = no reduce.
+    low_confidence_threshold: float = Field(gt=0.0, lt=1.0)
+    low_confidence_size_factor: float = Field(gt=0.0, le=1.0)
+    stale_feed_seconds: float = Field(gt=0)
 
 
 class ConfluenceConfig(BaseModel):

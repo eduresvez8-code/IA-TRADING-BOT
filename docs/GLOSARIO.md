@@ -240,3 +240,61 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   incorrectamente. `calendar.timegm` lo interpreta siempre como UTC, que es
   el estándar de feedparser. Usar el incorrecto produce timestamps desplazados
   que desordena la deduplicación por antigüedad.
+
+## Sprint 5
+
+- **Confluencia**: exigir que varias fuentes de evidencia independientes apunten
+  en la misma dirección antes de arriesgar. Aquí cruzamos el eje técnico (quant)
+  con el cualitativo (sentimiento). Principio de diseño: el quant manda la
+  DIRECCIÓN, el sentimiento solo CONFIRMA (tamaño pleno), calla (tamaño reducido)
+  o VETA (la noticia contradice el patrón). Nunca se abre por sentimiento solo.
+- **Matriz de confluencia**: tabla de decisión que mapea (señal quant × señal
+  sentimiento) → (acción, tamaño). Vive en `decision/confluence.py` como función
+  pura; cada celda es un test de escenario. Umbrales en `settings.yaml`
+  (`quant_strong_threshold`, `sentiment_confirm_threshold`, `reduced_size_factor`),
+  jamás en el código.
+- **size_factor (factor de tamaño)**: multiplicador en [0,1] que la confluencia
+  adjunta a la `Decision`. 1.0 = convicción plena (técnica + noticia de acuerdo),
+  0.5 = solo técnica, 0.0 = no operar. El Risk Manager lo multiplica dentro de
+  la fórmula de sizing: separa "qué tan convencidos estamos" de "cuánto dinero
+  arriesgamos por unidad de convicción".
+- **Poder de veto (Risk Manager)**: toda orden pasa por `risk/manager.py` antes
+  del executor; ningún módulo llama al executor directamente. El Risk Manager
+  puede rechazar cualquier `Decision` (devuelve `approved=False` con el motivo).
+  Es la defensa contra el peligro #1 de un bot casero: un bug operando sin freno.
+- **Evaluador sobre snapshot**: el Risk Manager no es dueño del estado de la
+  cartera; recibe una foto (`PortfolioState`: equity, pico, equity de inicio de
+  día, posiciones abiertas, salud del feed) y emite un veredicto. La persistencia
+  de ese estado la lleva el orquestador. Diseño puro ⇒ trivialmente testeable.
+- **Riesgo en dinero constante**: con `qty = (equity × riesgo% × size_factor) /
+  distancia_al_stop` y `distancia_al_stop = k·ATR`, la pérdida si salta el stop
+  es siempre ≈ el mismo % del capital, sin importar la volatilidad. En mercado
+  agitado (ATR alto) el stop se aleja y compras MENOS cantidad; en mercado quieto,
+  más. Es la idea central del position sizing por volatilidad.
+- **Apalancamiento / sin apalancamiento**: apalancar es operar un notional mayor
+  que tu capital (multiplica ganancias y pérdidas). Aquí lo prohibimos: tras el
+  sizing, `qty` se topa en `equity/precio` para que `notional ≤ equity`. Un stop
+  muy ajustado podría pedir una cantidad enorme; este techo la contiene.
+- **Kill switch (con latch)**: corte de emergencia que salta al superar el
+  drawdown máximo (10%). *Latcha*: una vez activo, bloquea TODA orden hasta un
+  `reset()` manual, aunque la equity rebote. Un corte que se rearma solo no
+  protege de nada — obliga a una revisión humana antes de volver a operar.
+- **Límite de pérdida diaria**: si la equity cae ≥3% respecto a la del inicio del
+  día UTC, no se abren nuevas entradas hasta el día siguiente (el orquestador
+  resetea `day_start_equity` al cambiar de día). A diferencia del kill switch,
+  se rearma solo con el cambio de día, no requiere intervención.
+- **Confianza del sentimiento (sizing)**: el `SentimentScore` trae un `confidence`
+  en [0,1]. Si está por debajo de `low_confidence_threshold`, el Risk Manager
+  reduce el tamaño con `low_confidence_size_factor`. Un análisis de Claude poco
+  seguro pesa menos en cuánto capital se arriesga.
+- **Circuit breaker (a) feed obsoleto**: si el último precio tiene más de
+  `stale_feed_seconds` (30 s) de antigüedad, se bloquean entradas nuevas: operar
+  sobre un precio viejo es operar a ciegas. (La detección real de la antigüedad
+  es del feed de datos; el Risk Manager solo respeta el dato.)
+- **Circuit breaker (b) sentimiento sin confirmación**: no se actúa sobre un
+  titular extremo si el precio no lo confirma (quant débil). En la matriz, "quant
+  débil → HOLD" lo encarna: una noticia falsa o mal parseada no abre una posición.
+- **Circuit breaker (c) discrepancia de reconciliación**: si el estado local y el
+  del exchange no cuadran, se levanta `halted` y el Risk Manager veta todo. La
+  *detección* de la discrepancia llega en el Sprint 6 (execution); aquí solo se
+  respeta el flag.
