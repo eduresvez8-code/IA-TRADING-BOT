@@ -1,8 +1,9 @@
 """Tests de escenario de la matriz de confluencia (PLAN_MAESTRO §1).
 
 Un test por fila de la matriz, más la simetría LONG/SHORT y los casos borde.
-Los umbrales se inyectan vía settings reales del repo (0.5 / 0.3 / 0.5) para
-que el test también vigile que el settings.yaml sigue siendo coherente.
+Venue en vivo = Spot long-only (allow_short=false): un quant bajista fuerte se
+traduce a HOLD. La simetría SHORT se sigue verificando con una config que
+habilita cortos (la ruta de investigación del backtest).
 """
 
 from datetime import datetime, timezone
@@ -12,7 +13,14 @@ from src.core.models import Action, SentimentScore, Signal
 from src.decision.confluence import decide
 
 NOW = datetime(2026, 6, 13, 12, 0, tzinfo=timezone.utc)
-CFG = load_settings()
+CFG = load_settings()  # repo real: allow_short=false
+
+
+def cfg_con_cortos():
+    """Copia de la config con cortos habilitados (ruta backtest/investigación)."""
+    s = CFG.model_copy(deep=True)
+    s.confluence.allow_short = True
+    return s
 
 
 def make_signal(score: float, symbol: str = "BTCUSDT") -> Signal:
@@ -30,7 +38,6 @@ def make_sentiment(score: float, *, high_impact: bool = False,
 # ---- Fila 0: high-impact bloquea TODA entrada ----
 
 def test_high_impact_bloquea_aunque_quant_y_sentimiento_confirmen():
-    # Quant fuerte + sentimiento confirma, pero hay evento de alto impacto.
     d = decide(make_signal(0.9), make_sentiment(0.8, high_impact=True), CFG)
     assert d.action == Action.HOLD
     assert d.size_factor == 0.0
@@ -60,13 +67,15 @@ def test_long_con_sentimiento_opuesto_es_hold():
     assert d.reason == "sentiment_conflict"
 
 
-def test_short_con_sentimiento_opuesto_es_hold():
+def test_conflicto_tiene_prioridad_sobre_gate_de_cortos():
+    # Quant bajista + sentimiento alcista: el conflicto se evalúa ANTES del gate
+    # de Spot, así que el motivo es el conflicto, no short_disabled_spot.
     d = decide(make_signal(-0.8), make_sentiment(0.6), CFG)
     assert d.action == Action.HOLD
     assert d.reason == "sentiment_conflict"
 
 
-# ---- Fila 3: quant fuerte + sentimiento confirma → tamaño pleno ----
+# ---- Fila 3 y 4 en LONG (Spot) ----
 
 def test_long_confirmado_tamano_pleno():
     d = decide(make_signal(0.8), make_sentiment(0.5), CFG)
@@ -74,15 +83,6 @@ def test_long_confirmado_tamano_pleno():
     assert d.size_factor == 1.0
     assert d.reason == "sentiment_confirms"
 
-
-def test_short_confirmado_tamano_pleno():
-    d = decide(make_signal(-0.8), make_sentiment(-0.5), CFG)
-    assert d.action == Action.SHORT
-    assert d.size_factor == 1.0
-    assert d.reason == "sentiment_confirms"
-
-
-# ---- Fila 4: quant fuerte + sentimiento neutro/ausente → tamaño reducido ----
 
 def test_long_sentimiento_neutro_tamano_reducido():
     d = decide(make_signal(0.8), make_sentiment(0.1), CFG)
@@ -92,15 +92,37 @@ def test_long_sentimiento_neutro_tamano_reducido():
 
 
 def test_long_sin_sentimiento_tamano_reducido():
-    # Sin noticia relevante → operamos la técnica con tamaño reducido.
     d = decide(make_signal(0.8), None, CFG)
     assert d.action == Action.LONG
     assert d.size_factor == CFG.confluence.reduced_size_factor
     assert d.sentiment_score == 0.0
 
 
-def test_short_sin_sentimiento_tamano_reducido():
+# ---- Spot long-only: el corto NO se abre ----
+
+def test_short_confirmado_bloqueado_en_spot():
+    d = decide(make_signal(-0.8), make_sentiment(-0.6), CFG)
+    assert d.action == Action.HOLD
+    assert d.reason == "short_disabled_spot"
+
+
+def test_short_neutro_bloqueado_en_spot():
     d = decide(make_signal(-0.8), None, CFG)
+    assert d.action == Action.HOLD
+    assert d.reason == "short_disabled_spot"
+
+
+# ---- Simetría SHORT con cortos habilitados (ruta de investigación) ----
+
+def test_short_confirmado_con_cortos_habilitados():
+    d = decide(make_signal(-0.8), make_sentiment(-0.6), cfg_con_cortos())
+    assert d.action == Action.SHORT
+    assert d.size_factor == 1.0
+    assert d.reason == "sentiment_confirms"
+
+
+def test_short_neutro_con_cortos_habilitados():
+    d = decide(make_signal(-0.8), None, cfg_con_cortos())
     assert d.action == Action.SHORT
     assert d.size_factor == CFG.confluence.reduced_size_factor
 
@@ -108,7 +130,6 @@ def test_short_sin_sentimiento_tamano_reducido():
 # ---- Bordes y auditoría ----
 
 def test_quant_justo_en_el_umbral_es_fuerte():
-    # |quant| == umbral cuenta como fuerte (>=), no como débil.
     thr = CFG.confluence.quant_strong_threshold
     d = decide(make_signal(thr), None, CFG)
     assert d.action == Action.LONG

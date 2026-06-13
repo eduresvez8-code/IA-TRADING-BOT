@@ -22,11 +22,19 @@ risk:
   low_confidence_size_factor: 0.5   # multiplicador cuando la confianza es baja
   # Circuit breaker (a): precio más viejo que esto (s) → no abrir nuevas entradas.
   stale_feed_seconds: 30
+  # Exposición agregada máxima en Spot: la suma de nocionales abiertos + la nueva
+  # orden jamás supera este % de la equity. El 5% restante es colchón para fees
+  # taker + slippage (evita el INSUFFICIENT_BALANCE por gastar el 100% del cash).
+  max_portfolio_exposure_pct: 95.0
 
 confluence:
   quant_strong_threshold: 0.5      # |señal quant| para considerarla "fuerte"
   sentiment_confirm_threshold: 0.3 # |sentimiento| mínimo para confirmar
   reduced_size_factor: 0.5         # tamaño al operar sin confirmación de sentimiento
+  # Binance SPOT: no se pueden ABRIR cortos. En vivo va en false → un quant
+  # bajista fuerte se traduce a HOLD. El backtest puede ponerlo en true como
+  # investigación (usa su propia config, no esta misma sesión en vivo).
+  allow_short: false
 
 sentiment:
   rss_feeds:

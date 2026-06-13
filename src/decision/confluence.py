@@ -79,6 +79,12 @@ def decide(
     if sent_significant and not sent_aligned:
         return _decision(Action.HOLD, 0.0, "sentiment_conflict")
 
+    # Binance Spot no permite ABRIR cortos. Un quant bajista fuerte que querría
+    # abrir SHORT se traduce a HOLD. (Cerrar un largo ya abierto es un EXIT, no
+    # una apertura: no compete a la confluencia; lo gestiona el executor en S6.)
+    if direction == Action.SHORT and not cfg.allow_short:
+        return _decision(Action.HOLD, 0.0, "short_disabled_spot")
+
     # (3) Sentimiento confirma la dirección técnica → convicción plena.
     if sent_significant and sent_aligned:
         return _decision(direction, 1.0, "sentiment_confirms")

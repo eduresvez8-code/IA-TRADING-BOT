@@ -53,12 +53,18 @@ class RiskConfig(BaseModel):
     low_confidence_threshold: float = Field(gt=0.0, lt=1.0)
     low_confidence_size_factor: float = Field(gt=0.0, le=1.0)
     stale_feed_seconds: float = Field(gt=0)
+    # Tope de exposición agregada (% de equity). >100 sería apalancamiento, que
+    # en Spot no existe → le=100. El (100 - este) es el colchón de fees/slippage.
+    max_portfolio_exposure_pct: float = Field(gt=0, le=100.0)
 
 
 class ConfluenceConfig(BaseModel):
     quant_strong_threshold: float = Field(gt=0, lt=1)
     sentiment_confirm_threshold: float = Field(gt=0, lt=1)
     reduced_size_factor: float = Field(gt=0, le=1)
+    # Spot no permite ABRIR cortos; en vivo va en false. El backtest usa su
+    # propia ruta y puede reactivarlos como investigación.
+    allow_short: bool
 
 
 class SentimentConfig(BaseModel):

@@ -298,3 +298,46 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   del exchange no cuadran, se levanta `halted` y el Risk Manager veta todo. La
   *detección* de la discrepancia llega en el Sprint 6 (execution); aquí solo se
   respeta el flag.
+
+## Sprint 5.1 (hardening Spot — auditoría de microestructura)
+
+- **Spot vs. Futures/Margin**: en *Spot* compras/vendes el activo al contado con
+  tu propio capital — sin apalancamiento y **sin poder abrir cortos** (un `SELL`
+  solo cierra algo que ya tienes). En *Futures/Margin* operas con margen
+  prestado: hay leverage y los cortos son nativos. El bot es Spot long-only, así
+  que la rama SHORT se desactiva en vivo (`confluence.allow_short=false`).
+- **Equity vs. free_balance (saldo libre)**: la *equity* es el valor TOTAL de la
+  cuenta (USDT libre + valor de mercado de lo abierto); el *free_balance* es el
+  USDT que puedes gastar AHORA. El riesgo (1%) se calcula sobre la equity (para
+  que sea constante), pero el techo FÍSICO de la orden se calcula sobre el saldo
+  libre: gastar más cash del libre da `INSUFFICIENT_BALANCE` en el exchange.
+- **Dinero fantasma**: el bug de dimensionar contra la equity total ignorando lo
+  ya comprometido. Con $10k de equity pero $2k libres, una orden de $3.5k "cabe
+  en la equity" pero el exchange la rechaza. Se corrige topando por free_balance.
+- **Exposición agregada**: suma de los nocionales (qty×precio, *mark-to-market*)
+  de todas las posiciones abiertas. En Spot, `comprometido + nueva orden` nunca
+  puede superar un % del capital (`max_portfolio_exposure_pct`, 95%): sin este
+  tope, 3 señales simultáneas intentarían comprometer hasta el 300%, imposible.
+- **Colchón de exposición (buffer)**: el `100 − 95 = 5%` que dejamos sin
+  desplegar. Cubre la comisión taker y el slippage de la orden; sin él, gastar el
+  100% del cash dejaría sin fondos para pagar el propio fee de la compra.
+- **Filtros de microestructura (Binance exchangeInfo)**: reglas del exchange por
+  par. `LOT_SIZE`/**stepSize** (la cantidad debe ser múltiplo de este paso),
+  `PRICE_FILTER`/**tickSize** (el precio debe ser múltiplo de este paso) y
+  `MIN_NOTIONAL`/**minNotional** (qty×precio mínimo, ~$5–10 en pares USDT). Una
+  orden que los viola muere en el exchange; el Risk Manager es el último filtro
+  que las cumple antes del executor. No son parámetros nuestros: son hechos del
+  exchange (no van a `settings.yaml`).
+- **Truncar (floor) vs. redondear**: la cantidad se ajusta al stepSize SIEMPRE
+  hacia abajo (floor), nunca hacia arriba: subir aumentaría el riesgo y el cash
+  comprometido. El SL/TP se redondean al tickSize más cercano, y luego se
+  recalcula la distancia real al stop para que el sizing corresponda al stop que
+  de verdad se coloca.
+- **Decimal vs. float**: la aritmética de pasos exige `decimal.Decimal`. En float
+  binario, `0.3 // 0.1 == 2.0` (porque `0.3/0.1 == 2.9999…`), lo que truncaría
+  mal una cantidad. `Decimal` da el `3` correcto. Un floor mal hecho violaría el
+  riesgo por unos satoshis — un bug real de microestructura.
+- **Rechazar, nunca inflar (minNotional)**: si la confluencia reduce el tamaño
+  (baja confianza) y el nocional cae bajo el mínimo de Binance, la orden se
+  RECHAZA. Subir la cantidad hasta el mínimo rompería el presupuesto de riesgo:
+  una operación que no cabe sin violar el riesgo, simplemente no se hace.

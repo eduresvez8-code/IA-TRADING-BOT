@@ -10,6 +10,7 @@ en el mismo cambio.
 """
 
 from datetime import datetime, timezone
+from decimal import Decimal
 from enum import Enum
 
 from pydantic import BaseModel, Field, field_validator
@@ -99,6 +100,24 @@ class Decision(BaseModel):
     size_factor: float = Field(ge=0.0, le=1.0)  # 1.0 = tamaño pleno, 0.5 = reducido
     reason: str  # regla de la matriz que disparó la decisión (auditoría)
     timestamp: datetime
+
+
+class SymbolFilters(BaseModel):
+    """Restricciones de microestructura de un par, leídas de Binance exchangeInfo.
+
+    NO son parámetros tuneables nuestros (no van a settings.yaml): son hechos del
+    exchange que el binance_client lee de `GET /api/v3/exchangeInfo` y cachea. El
+    Risk Manager los recibe como input y es el último filtro antes del executor.
+
+    Se usan Decimal (no float) porque el ajuste a stepSize/tickSize debe ser
+    exacto: con float, truncar 0.3 a paso 0.1 da 0.2 por el error binario.
+    """
+
+    symbol: str
+    tick_size: Decimal = Field(gt=0)     # PRICE_FILTER: paso mínimo de precio
+    step_size: Decimal = Field(gt=0)     # LOT_SIZE: paso mínimo de cantidad
+    min_qty: Decimal = Field(ge=0)       # LOT_SIZE: cantidad mínima por orden
+    min_notional: Decimal = Field(ge=0)  # MIN_NOTIONAL: valor mínimo (qty×precio)
 
 
 class Order(BaseModel):

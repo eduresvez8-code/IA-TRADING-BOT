@@ -27,10 +27,12 @@ def check() -> int:
     c = settings.confluence
     print(f"✓ confluencia — quant fuerte ≥{c.quant_strong_threshold} | "
           f"sentimiento confirma ≥{c.sentiment_confirm_threshold} | "
-          f"tamaño reducido ×{c.reduced_size_factor}")
+          f"tamaño reducido ×{c.reduced_size_factor} | "
+          f"cortos {'ON' if c.allow_short else 'OFF (Spot long-only)'}")
     print(f"✓ risk manager — máx {settings.risk.max_open_positions} posiciones | "
           f"TP {settings.risk.take_profit_rr}×SL | "
-          f"feed obsoleto >{settings.risk.stale_feed_seconds:.0f}s")
+          f"feed obsoleto >{settings.risk.stale_feed_seconds:.0f}s | "
+          f"exposición máx {settings.risk.max_portfolio_exposure_pct:.0f}%")
 
     missing = [name for name, value in [
         ("BINANCE_API_KEY", secrets.binance_api_key),

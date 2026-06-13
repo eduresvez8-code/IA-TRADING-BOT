@@ -5,11 +5,12 @@ relaja una validación en models.py, esto falla y lo delata.
 """
 
 from datetime import datetime, timezone
+from decimal import Decimal
 
 import pytest
 from pydantic import ValidationError
 
-from src.core.models import Candle, Order, Side, Signal
+from src.core.models import Candle, Order, Side, Signal, SymbolFilters
 
 NOW = datetime(2026, 6, 12, 12, 0, tzinfo=timezone.utc)
 
@@ -70,3 +71,19 @@ def test_orden_sin_stop_loss_no_existe():
     with pytest.raises(ValidationError):
         Order(symbol="BTCUSDT", side=Side.BUY, quantity=0.01,
               entry_price=100_000.0, decision_reason="test", created_at=NOW)
+
+
+def test_symbol_filters_coerce_a_decimal():
+    # Los strings de exchangeInfo deben quedar como Decimal exacto (no float).
+    f = SymbolFilters(symbol="BTCUSDT", tick_size="0.01", step_size="0.0001",
+                      min_qty="0.0001", min_notional="5")
+    assert f.tick_size == Decimal("0.01")
+    assert f.step_size == Decimal("0.0001")
+    assert f.min_notional == Decimal("5")
+
+
+def test_symbol_filters_tick_size_cero_es_invalido():
+    # Un tickSize de 0 haría imposible cuantizar el precio (gt=0).
+    with pytest.raises(ValidationError):
+        SymbolFilters(symbol="BTCUSDT", tick_size="0", step_size="0.0001",
+                      min_qty="0", min_notional="5")
