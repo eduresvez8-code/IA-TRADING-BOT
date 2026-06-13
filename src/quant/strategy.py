@@ -3,13 +3,20 @@
 Consume un DataFrame de velas cerradas y emite un Signal normalizado
 en [-1, +1]. El diseño es funcional: compute_signal() no tiene estado
 propio y puede evaluarse sobre cualquier ventana histórica.
+
+Dos puntos de entrada que comparten EXACTAMENTE la misma matemática:
+    - compute_signal()        → un Signal con la última vela (uso en vivo).
+    - compute_signal_series() → una pd.Series de scores para todo el histórico
+                                (uso en backtesting, O(n) en vez de O(n²)).
+El núcleo `_scores_from_indicators()` es el único lugar donde vive la fórmula,
+así que el motor en vivo y el backtester nunca pueden divergir.
 """
 
 from __future__ import annotations
 
-import math
 from datetime import datetime, timezone
 
+import numpy as np
 import pandas as pd
 
 from src.core.config import load_settings
@@ -17,6 +24,58 @@ from src.core.models import Signal
 from src.quant.indicators import atr, ema, rsi
 
 STRATEGY_NAME = "ema_cross_rsi"
+
+
+def _scores_from_indicators(ema_fast, ema_slow, rsi_vals, ema_weight):
+    """Convierte valores de indicadores en componentes de score.
+
+    Funciona igual con escalares (float) o con pd.Series gracias a numpy:
+    np.tanh y la aritmética se vectorizan transparentemente. Es el ÚNICO
+    sitio donde se define la fórmula de la señal.
+
+    Returns:
+        (raw_score, ema_diff_pct, ema_score, rsi_score) — sin clamp todavía.
+    """
+    # Spread porcentual entre EMAs, squash con tanh al rango (-1, 1).
+    # Factor 50: un spread del 1% da tanh(0.5)≈0.46; del 3% da tanh(1.5)≈0.91.
+    ema_diff_pct = (ema_fast - ema_slow) / ema_slow
+    ema_score = np.tanh(ema_diff_pct * 50)
+
+    # RSI centrado en 50 y escalado a (-1, 1). Lineal: RSI=70 → +0.4, RSI=30 → -0.4.
+    rsi_score = (rsi_vals - 50.0) / 50.0
+
+    raw_score = ema_weight * ema_score + (1.0 - ema_weight) * rsi_score
+    return raw_score, ema_diff_pct, ema_score, rsi_score
+
+
+def compute_signal_series(candles_df: pd.DataFrame) -> pd.Series:
+    """Score [-1,+1] vectorizado para CADA vela del DataFrame.
+
+    Los indicadores son causales (el valor en t solo depende de velas ≤ t),
+    por eso calcularlos sobre toda la serie de una vez NO introduce sesgo de
+    anticipación: el score en t es idéntico al que daría compute_signal() sobre
+    la ventana que termina en t. Esto convierte el backtest de O(n²) a O(n).
+
+    Args:
+        candles_df: DataFrame con columnas 'open','high','low','close','volume',
+                    en orden cronológico ascendente.
+
+    Returns:
+        pd.Series alineada al índice de entrada, con NaN donde los indicadores
+        aún no tienen suficientes datos.
+    """
+    cfg = load_settings()
+    q = cfg.quant
+
+    close = candles_df["close"]
+    ema_fast_s = ema(close, q.ema_fast_period)
+    ema_slow_s = ema(close, q.ema_slow_period)
+    rsi_s = rsi(close, q.rsi_period)
+
+    raw, _, _, _ = _scores_from_indicators(ema_fast_s, ema_slow_s, rsi_s, q.ema_weight)
+
+    # Clamp defensivo idéntico al de compute_signal. np.clip conserva los NaN.
+    return raw.clip(lower=-1.0, upper=1.0)
 
 
 def compute_signal(candles_df: pd.DataFrame, symbol: str) -> Signal | None:
@@ -58,24 +117,18 @@ def compute_signal(candles_df: pd.DataFrame, symbol: str) -> Signal | None:
 
     # Cualquier NaN en los indicadores → datos insuficientes para señal fiable
     if any(
-        math.isnan(v)
+        np.isnan(v)
         for v in (last_ema_fast, last_ema_slow, last_rsi, last_atr)
     ):
         return None
 
-    # Spread porcentual entre EMAs, luego squash con tanh al rango (-1, 1).
-    # Factor 50: un spread del 1% da tanh(0.5)≈0.46; del 3% da tanh(1.5)≈0.91.
-    ema_diff_pct = (last_ema_fast - last_ema_slow) / last_ema_slow
-    ema_score = math.tanh(ema_diff_pct * 50)
-
-    # RSI centrado en 50 y escalado a (-1, 1). Lineal: RSI=70 → +0.4, RSI=30 → -0.4.
-    rsi_score = (last_rsi - 50.0) / 50.0
-
-    raw_score = q.ema_weight * ema_score + (1.0 - q.ema_weight) * rsi_score
+    raw_score, ema_diff_pct, ema_score, rsi_score = _scores_from_indicators(
+        last_ema_fast, last_ema_slow, last_rsi, q.ema_weight
+    )
 
     # Clamp defensivo: la suma de componentes ya está en (-1,1), pero si los
     # pesos fueran >1 por error de configuración el clamp lo contiene.
-    score = max(-1.0, min(1.0, raw_score))
+    score = float(max(-1.0, min(1.0, raw_score)))
 
     return Signal(
         symbol=symbol,

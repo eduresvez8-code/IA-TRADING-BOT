@@ -11,7 +11,7 @@ Verifica que compute_signal:
 import pandas as pd
 import pytest
 
-from src.quant.strategy import compute_signal
+from src.quant.strategy import compute_signal, compute_signal_series
 
 
 def _make_df(close_prices: list[float]) -> pd.DataFrame:
@@ -96,3 +96,32 @@ class TestComputeSignal:
         assert sig is not None
         ema_diff = sig.features["ema_diff_pct"]
         assert (ema_diff > 0) == (sig.score > 0)
+
+
+class TestComputeSignalSeries:
+    """La versión vectorizada (backtesting) debe coincidir con la escalar (vivo)."""
+
+    def test_last_value_matches_compute_signal(self):
+        import math
+        close = [100.0 + math.sin(i * 0.3) * 15 + i * 0.2 for i in range(120)]
+        df = _make_df(close)
+        series = compute_signal_series(df)
+        sig = compute_signal(df, "BTCUSDT")
+        assert sig is not None
+        assert series.iloc[-1] == pytest.approx(sig.score)
+
+    def test_series_aligned_and_clamped(self):
+        close = [100.0 + i for i in range(100)]
+        df = _make_df(close)
+        series = compute_signal_series(df)
+        assert len(series) == len(df)
+        valid = series.dropna()
+        assert ((valid >= -1.0) & (valid <= 1.0)).all()
+
+    def test_early_rows_are_nan(self):
+        """Antes de que los indicadores tengan datos, el score es NaN."""
+        close = [100.0 + i for i in range(100)]
+        df = _make_df(close)
+        series = compute_signal_series(df)
+        # ema_slow=21 → las primeras 20 posiciones no tienen EMA lenta válida.
+        assert series.iloc[0] != series.iloc[0]  # NaN != NaN

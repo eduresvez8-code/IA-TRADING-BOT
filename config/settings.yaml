@@ -34,6 +34,19 @@ quant:
   rsi_period: 14
   ema_weight: 0.6   # peso EMA en el score combinado; peso RSI = 1 - ema_weight
 
+backtest:
+  # Costos: se cobran en CADA lado (entrada y salida). Una estrategia que solo
+  # gana sin costos no es una estrategia. Valores por defecto conservadores;
+  # ajustables sin tocar código.
+  initial_capital: 10000.0   # USDT ficticios de partida
+  commission_pct: 0.04       # comisión taker por lado (% del notional) — Binance futures ≈ 0.04
+  slippage_pct: 0.02         # deslizamiento adverso estimado por lado (%)
+  # Reglas de entrada/salida de la simulación (la estrategia emite score en [-1,1]).
+  entry_threshold: 0.5       # |score| para abrir posición (idea de "señal fuerte")
+  exit_threshold: 0.1        # cierre por debilidad: |score| cae por debajo de esto
+  take_profit_rr: 2.0        # objetivo = RR × distancia_al_stop (riesgo:beneficio 1:RR)
+  allow_short: true          # operar también en corto, no solo en largo
+
 storage:
   db_path: "data/trading.db"
   candles_dir: "data/candles"

@@ -77,6 +77,30 @@ class QuantConfig(BaseModel):
         return v
 
 
+class BacktestConfig(BaseModel):
+    # Costos en % de notional por lado. El le=1.0 ataja un typo tipo
+    # commission_pct: 40 (interpretado como 40%, no 0.04%).
+    initial_capital: float = Field(gt=0)
+    commission_pct: float = Field(ge=0, le=1.0)
+    slippage_pct: float = Field(ge=0, le=1.0)
+    entry_threshold: float = Field(gt=0, lt=1)
+    exit_threshold: float = Field(ge=0, lt=1)
+    take_profit_rr: float = Field(gt=0)
+    allow_short: bool = True
+
+    @field_validator("exit_threshold")
+    @classmethod
+    def exit_below_entry(cls, v: float, info) -> float:
+        # Si el umbral de salida ≥ el de entrada, abriríamos y cerraríamos en la
+        # misma vela (la condición de salida ya se cumple al entrar). Sin sentido.
+        entry = info.data.get("entry_threshold")
+        if entry is not None and v >= entry:
+            raise ValueError(
+                f"exit_threshold ({v}) debe ser menor que entry_threshold ({entry})"
+            )
+        return v
+
+
 class StorageConfig(BaseModel):
     db_path: str
     candles_dir: str
@@ -88,6 +112,7 @@ class Settings(BaseModel):
     confluence: ConfluenceConfig
     sentiment: SentimentConfig
     quant: QuantConfig
+    backtest: BacktestConfig
     storage: StorageConfig
 
 

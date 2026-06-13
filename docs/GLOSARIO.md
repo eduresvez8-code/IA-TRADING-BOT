@@ -118,3 +118,59 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   -1 = máxima convicción bajista, +1 = alcista, 0 = neutro. Normalizar permite
   que la matriz de confluencia combine señales de estrategias distintas (técnica
   + sentimiento) con una escala común, sin conocer sus detalles internos.
+
+## Sprint 3
+
+- **Backtesting**: simular una estrategia sobre datos históricos, barra a
+  barra, como si se viviera en tiempo real, para estimar cómo se habría
+  comportado. Su valor no es prometer ganancias futuras, sino descartar
+  estrategias malas *antes* de arriesgar dinero.
+- **Sesgo de anticipación (look-ahead bias)**: usar, para decidir en la vela
+  t, información que en la realidad no existía hasta t+1. Es el error #1 del
+  backtesting amateur. Lo evitamos decidiendo con el cierre de t y ejecutando
+  en la apertura de t+1, y vigilando stops solo con velas posteriores a la
+  entrada.
+- **Comisión maker/taker**: el exchange cobra un % del notional por operar.
+  *Maker* (pones una orden límite que aporta liquidez) es más barato; *taker*
+  (orden a mercado que retira liquidez) es más caro. Un bot que entra a mercado
+  paga taker. Se cobra en cada lado (entrada y salida).
+- **Slippage (deslizamiento)**: diferencia entre el precio esperado y el
+  realmente obtenido, porque el libro de órdenes se movió o tu tamaño barrió
+  varios niveles. Se modela como un % adverso: compras un poco más caro,
+  vendes un poco más barato.
+- **Notional**: valor monetario de una posición = cantidad × precio. La base
+  sobre la que se calcula la comisión y el límite de "sin apalancamiento"
+  (notional ≤ capital).
+- **Marcado a mercado (mark-to-market)**: valorar una posición abierta al
+  precio actual, incluyendo el PnL *no realizado*. La curva de equity del
+  backtester se marca a mercado en cada vela para que el drawdown refleje el
+  sufrimiento intra-trade, no solo el resultado al cerrar.
+- **Curva de equity (equity curve)**: serie temporal del valor del capital.
+  Es la entrada de casi todas las métricas de riesgo (Sharpe, drawdown).
+- **Ratio de Sharpe**: retorno medio por unidad de riesgo TOTAL.
+  `Sharpe = mean(r)/std(r) × √(barras_por_año)`. Anualizado para comparar
+  estrategias de distinto timeframe. >1 decente, >2 bueno. Castiga TODA la
+  volatilidad, también la de las subidas.
+- **Ratio de Sortino**: como Sharpe pero usando solo la desviación a la baja
+  `σ_down = √(mean(min(r,0)²))`. Más justo: no penaliza la volatilidad al alza,
+  que a nadie le molesta.
+- **Anualización**: escalar una métrica de su frecuencia nativa (por vela) a
+  base anual. La varianza crece lineal con el tiempo y la desviación con su
+  raíz, de ahí el factor `√(barras_por_año)`: 5m → 105.120, 1h → 8.760.
+- **Profit factor**: ganancia bruta / pérdida bruta (en valor absoluto). >1 =
+  rentable; 2 = ganas el doble de lo que pierdes. ∞ si no hubo pérdidas.
+- **Win rate**: fracción de trades ganadores. Por sí solo engaña: un 30% de
+  aciertos puede ser muy rentable si las ganancias son grandes y las pérdidas
+  pequeñas (hay que leerlo junto al profit factor y la expectancy).
+- **Expectancy**: PnL medio esperado por trade. Positivo = la estrategia gana
+  en promedio; negativo = pierde aunque el win rate parezca alto.
+- **Exposure (tiempo en mercado)**: fracción de velas con una posición abierta.
+  Baja exposure con buen retorno = capital ocioso la mayor parte del tiempo
+  (menos riesgo de mercado, pero también menos oportunidades).
+- **CAGR (Compound Annual Growth Rate)**: retorno anualizado compuesto,
+  `(E_final/E_inicial)^(1/años) − 1`. Permite comparar backtests de distinta
+  duración en una tasa anual común.
+- **Riesgo:Beneficio (RR)**: relación entre lo que arriesgas (distancia al
+  stop) y lo que apuntas a ganar (distancia al take-profit). RR=2 → el objetivo
+  está al doble de distancia que el stop; con RR=2 basta acertar >33% para
+  empatar.
