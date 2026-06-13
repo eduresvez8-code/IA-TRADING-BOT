@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"/Users/eduardorestrepo/Desktop/IA TRADING\" && git add -A && (git diff --cached --quiet || (git commit -m \"Auto-save: $(date '+%Y-%m-%d %H:%M')\" && git push origin main))",
+            "timeout": 30,
+            "statusMessage": "Guardando cambios en GitHub..."
+          }
+        ]
+      }
+    ]
+  }
+}
