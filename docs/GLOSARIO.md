@@ -416,3 +416,33 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   microestructura, precisión). El executor lo lee al arrancar para poblar los
   `SymbolFilters` reales; en futuros el mínimo es `MIN_NOTIONAL.notional` (en spot
   era `minNotional`).
+
+## Sprint 7 (orquestador en vivo + hardening)
+
+- **Orquestador**: el lazo que une todos los motores. Por cada vela cerrada
+  ejecuta data→quant→sentimiento→confluencia→risk→executor. Es el "director de
+  orquesta" que hasta ahora faltaba: convierte módulos aislados en un bot que opera.
+- **Una pierna por símbolo (política de flip)**: regla de gestión de posición. Si
+  estamos planos y hay señal aprobada → abrir; si ya tenemos esa dirección → no
+  duplicar; si llega la dirección OPUESTA → *flip* (cerrar la actual y abrir la
+  nueva). Evita acumular piernas LONG y SHORT a la vez (doble margen y funding).
+- **Fuente de verdad = el exchange**: el orquestador deriva qué tiene abierto del
+  snapshot del exchange cada ciclo, no de un contador interno. Así un SL/TP que
+  cerró una pierna se absorbe solo, sin quedar desincronizado.
+- **Resync vs. halt (reconciliación)**: al comparar el modelo interno con el
+  exchange, una pierna esperada que ya no está = cierre por SL/TP → *resync*
+  (benigno, resincronizamos); una pierna desconocida o con cantidad divergente =
+  peligro → *halt* (circuit breaker c, el bot se detiene). Distinguirlos evita
+  tanto falsos paros como ignorar un riesgo real.
+- **AlertSink**: abstracción de "esto debe verlo un humano". Desacopla el evento
+  (kill switch, halt, feed caído, fallo de orden) del canal (log hoy; webhook
+  Telegram/Discord mañana) sin tocar el orquestador.
+- **Supervisión de tareas (auto-restart + backoff)**: cada tarea async (stream de
+  velas, poller de sentimiento, watchdog) se vigila; si cae por un error no
+  esperado, se reinicia tras una espera. La caída de una pieza no tumba el bot.
+- **Watchdog del feed**: tarea periódica que comprueba si alguna vela lleva sin
+  llegar más de `stale_feed_seconds`; si es así, activa el circuit breaker (a) y
+  detiene nuevas entradas (operar sobre un precio viejo es operar a ciegas).
+- **Warmup (calentamiento)**: las velas mínimas que el buffer debe acumular antes
+  de operar, para que EMA/RSI/ATR tengan suficiente historia y no emitan señales
+  sobre datos insuficientes.

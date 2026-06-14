@@ -133,6 +133,12 @@ class ExecutionConfig(BaseModel):
     stop_working_type: Literal["MARK_PRICE", "CONTRACT_PRICE"]
 
 
+class OrchestratorConfig(BaseModel):
+    # warmup_candles: velas mínimas antes de operar. ge=20 evita un buffer tan
+    # corto que los indicadores nunca tengan datos; le=1000 ataja un typo.
+    warmup_candles: int = Field(ge=20, le=1000)
+
+
 class StorageConfig(BaseModel):
     db_path: str
     candles_dir: str
@@ -146,6 +152,7 @@ class Settings(BaseModel):
     quant: QuantConfig
     backtest: BacktestConfig
     execution: ExecutionConfig
+    orchestrator: OrchestratorConfig
     storage: StorageConfig
 
 

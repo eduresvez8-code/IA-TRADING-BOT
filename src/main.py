@@ -35,9 +35,12 @@ def check() -> int:
           f"feed obsoleto >{settings.risk.stale_feed_seconds:.0f}s | "
           f"leverage máx {settings.risk.max_leverage}x | "
           f"margen máx {settings.risk.max_portfolio_margin_pct:.0f}%")
+    from src.orchestrator.engine import Orchestrator  # noqa: F401
     print(f"✓ execution — hedge mode al arrancar | stops sobre "
           f"{settings.execution.stop_working_type} | "
           f"reconciliación ±{settings.execution.reconcile_position_tolerance:.1%}")
+    print(f"✓ orchestrator — warmup {settings.orchestrator.warmup_candles} velas | "
+          f"política: una pierna por símbolo (flip en señal opuesta)")
 
     missing = [name for name, value in [
         ("BINANCE_API_KEY", secrets.binance_api_key),
@@ -51,17 +54,60 @@ def check() -> int:
     return 0
 
 
+async def live() -> int:
+    """Lazo en vivo: datos de SPOT mainnet (públicos) + órdenes a FUTUROS testnet.
+
+    Capa operativa (red): se valida en testnet. La lógica de decisión está
+    cubierta por tests. Requiere BINANCE_API_KEY/SECRET de la testnet de Futuros.
+    """
+    from binance import AsyncClient
+
+    from src.core.config import load_secrets, load_settings
+    from src.data.storage import Storage
+    from src.execution.binance_futures import BinanceFuturesExchange
+    from src.execution.executor import Executor
+    from src.orchestrator.engine import Orchestrator
+
+    settings, secrets = load_settings(), load_secrets()
+    if not (secrets.binance_api_key and secrets.binance_api_secret):
+        print("⚠ faltan claves de Binance en .env — el modo en vivo necesita "
+              "credenciales de la testnet de Futuros.")
+        return 1
+
+    # Datos: spot mainnet, públicos (sin claves). Órdenes: futuros testnet.
+    data_client = await AsyncClient.create()
+    exchange = await BinanceFuturesExchange.connect(
+        secrets.binance_api_key, secrets.binance_api_secret,
+        testnet=secrets.binance_testnet)
+    storage = await Storage(settings.storage.db_path, settings.storage.candles_dir).init()
+    executor = Executor(exchange, settings, storage)
+    orch = Orchestrator(executor, settings)
+
+    print("▶ Iniciando lazo en vivo (Futuros testnet). Ctrl-C para detener.")
+    try:
+        await orch.run(data_client)  # sentiment_fetch=… se enchufa en el hardening
+    finally:
+        await data_client.close_connection()
+        await exchange.close()
+        await storage.close()
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Bot de trading híbrido")
     parser.add_argument("--check", action="store_true",
                         help="validar configuración e imports, sin operar")
+    parser.add_argument("--live", action="store_true",
+                        help="lazo en vivo contra la testnet de Futuros (requiere claves)")
     args = parser.parse_args()
 
     if args.check:
         return check()
+    if args.live:
+        import asyncio
+        return asyncio.run(live())
 
-    print("El pipeline en vivo se implementa en los Sprints 1-6. "
-          "Usa --check para validar la configuración.")
+    print("Usa --check para validar la configuración o --live para operar en testnet.")
     return 0
 
 

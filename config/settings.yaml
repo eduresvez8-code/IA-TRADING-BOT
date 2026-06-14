@@ -78,6 +78,11 @@ execution:
   # manipulación en un libro fino no activa el stop. Alternativa: CONTRACT_PRICE.
   stop_working_type: "MARK_PRICE"
 
+orchestrator:
+  # Velas mínimas en el buffer antes de operar: los indicadores (ema_slow + rsi)
+  # necesitan historia para ser fiables; dejamos holgura sobre ese mínimo.
+  warmup_candles: 60
+
 storage:
   db_path: "data/trading.db"
   candles_dir: "data/candles"

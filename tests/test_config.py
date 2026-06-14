@@ -198,3 +198,15 @@ def test_settings_yaml_execution():
     s = load_settings()
     assert 0.0 < s.execution.reconcile_position_tolerance < 1.0
     assert s.execution.stop_working_type in ("MARK_PRICE", "CONTRACT_PRICE")
+
+
+def test_settings_yaml_orchestrator():
+    s = load_settings()
+    assert 20 <= s.orchestrator.warmup_candles <= 1000
+
+
+def test_warmup_demasiado_corto_es_rechazado():
+    # Un buffer < 20 velas no daría datos a los indicadores (ge=20).
+    from src.core.config import OrchestratorConfig
+    with pytest.raises(ValidationError):
+        OrchestratorConfig(warmup_candles=5)
