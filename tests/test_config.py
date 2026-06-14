@@ -3,7 +3,13 @@
 import pytest
 from pydantic import ValidationError
 
-from src.core.config import BacktestConfig, RiskConfig, SentimentConfig, load_settings
+from src.core.config import (
+    BacktestConfig,
+    ExecutionConfig,
+    RiskConfig,
+    SentimentConfig,
+    load_settings,
+)
 
 
 def _valid_sentiment_kwargs(**overrides):
@@ -162,3 +168,33 @@ def test_settings_yaml_risk_futuros():
     assert 1 <= s.risk.max_leverage <= 10
     assert 0.0 < s.risk.max_portfolio_margin_pct <= 100.0
     assert s.confluence.allow_short is True
+
+
+def _valid_execution_kwargs(**overrides):
+    base = dict(reconcile_position_tolerance=0.001, stop_working_type="MARK_PRICE")
+    base.update(overrides)
+    return base
+
+
+def test_execution_config_valido():
+    e = ExecutionConfig(**_valid_execution_kwargs())
+    assert e.reconcile_position_tolerance == 0.001
+    assert e.stop_working_type == "MARK_PRICE"
+
+
+def test_working_type_invalido_es_rechazado():
+    # Solo MARK_PRICE / CONTRACT_PRICE; un valor libre es un typo (Literal).
+    with pytest.raises(ValidationError):
+        ExecutionConfig(**_valid_execution_kwargs(stop_working_type="LAST_PRICE"))
+
+
+def test_tolerancia_de_reconciliacion_fuera_de_rango():
+    # 0 marcaría todo como discrepancia; ≥1 nunca detectaría una (0<tol<1).
+    with pytest.raises(ValidationError):
+        ExecutionConfig(**_valid_execution_kwargs(reconcile_position_tolerance=0.0))
+
+
+def test_settings_yaml_execution():
+    s = load_settings()
+    assert 0.0 < s.execution.reconcile_position_tolerance < 1.0
+    assert s.execution.stop_working_type in ("MARK_PRICE", "CONTRACT_PRICE")

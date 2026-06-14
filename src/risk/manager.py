@@ -37,7 +37,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from src.core.config import Settings, load_settings
-from src.core.models import Action, Decision, Order, Side, SymbolFilters
+from src.core.models import Action, Decision, Order, PositionSide, Side, SymbolFilters
 from src.risk.filters import floor_to_step, round_to_tick
 
 
@@ -211,7 +211,8 @@ class RiskManager:
         if notional < filters.min_notional:
             return RiskAssessment(False, "below_min_notional")
 
-        # (10) Construir la orden (BUY en LONG, SELL en SHORT) con su leverage.
+        # (10) Construir la orden (BUY en LONG, SELL en SHORT) con su leverage y
+        #      el cubo de hedge mode (positionSide) que el executor impondrá.
         order = Order(
             symbol=decision.symbol,
             side=Side.BUY if is_long else Side.SELL,
@@ -220,6 +221,7 @@ class RiskManager:
             stop_loss=stop_loss,
             take_profit=take_profit if take_profit > 0 else None,
             leverage=L,
+            position_side=PositionSide.LONG if is_long else PositionSide.SHORT,
             decision_reason=decision.reason,
             created_at=datetime.now(timezone.utc),
         )

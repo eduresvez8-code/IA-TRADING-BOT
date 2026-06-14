@@ -70,6 +70,14 @@ backtest:
   take_profit_rr: 2.0        # objetivo = RR × distancia_al_stop (riesgo:beneficio 1:RR)
   allow_short: true          # operar también en corto, no solo en largo
 
+execution:
+  # Reconciliación: discrepancia RELATIVA de cantidad por encima de la cual el
+  # estado local y el del exchange se consideran desincronizados → halt (cb c).
+  reconcile_position_tolerance: 0.001
+  # Disparo de stops sobre el precio de MARCA, no el último negociado: un wick de
+  # manipulación en un libro fino no activa el stop. Alternativa: CONTRACT_PRICE.
+  stop_working_type: "MARK_PRICE"
+
 storage:
   db_path: "data/trading.db"
   candles_dir: "data/candles"

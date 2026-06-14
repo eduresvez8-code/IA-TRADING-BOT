@@ -374,3 +374,45 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
 - **PnL no realizado**: ganancia/pérdida de una posición abierta valorada a
   precio de mercado, aún sin cerrar. El `available_balance` lo descuenta (una
   posición perdiendo reduce el margen libre); el `wallet_balance` no lo incluye.
+
+## Sprint 6 (Execution Engine)
+
+- **Position mode (One-Way vs Hedge)**: configuración de la cuenta de Futuros.
+  En *one-way* hay una posición NETA por símbolo (un SELL netea un LONG previo);
+  en *hedge* (`dualSidePosition=true`) conviven piernas LONG y SHORT
+  independientes. El bot impone hedge al arrancar para que su suposición de
+  posiciones independientes sea cierta y un SHORT no netee accidentalmente un LONG.
+- **side vs positionSide**: dos ejes ortogonales de una orden en hedge mode.
+  `positionSide` (LONG/SHORT) dice EN QUÉ cubo opero (lo fija la dirección);
+  `side` (BUY/SELL) dice si ABRO o CIERRO. Matriz: abrir LONG=BUY+LONG, cerrar
+  LONG=SELL+LONG, abrir SHORT=SELL+SHORT, cerrar SHORT=BUY+SHORT. El `side` solo
+  es ambiguo (un SELL puede abrir-short o cerrar-long), por eso el `positionSide`
+  es explícito, nunca inferido.
+- **STOP_MARKET / TAKE_PROFIT_MARKET**: órdenes condicionales que disparan a
+  mercado al tocar `stopPrice`. Son las protectoras de la posición: lado opuesto
+  al de entrada, mismo `positionSide`, con `closePosition=true` (cierran la
+  pierna entera, inmunes al drift de cantidad por fills parciales).
+- **closePosition vs reduceOnly**: dos formas de marcar "esto cierra, no abre".
+  `reduceOnly` se RECHAZA en hedge mode (el par side+positionSide ya lo
+  determina); `closePosition=true` sí se usa, pero solo en órdenes condicionales.
+  Un cierre a mercado, en cambio, lleva la `quantity` de la pierna.
+- **workingType (MARK_PRICE vs CONTRACT_PRICE)**: precio sobre el que dispara un
+  stop. `MARK_PRICE` (precio de marca, una media robusta) evita que un wick de
+  manipulación en el último precio active el stop; `CONTRACT_PRICE` usa el último
+  negociado. Usamos MARK_PRICE.
+- **clientOrderId (idempotencia)**: identificador que asignamos a cada orden
+  ANTES de enviarla. Si un envío hace timeout pero el exchange sí la ejecutó,
+  reintentar con el mismo id hace que Binance rechace el duplicado en vez de
+  abrir dos. La PK del log auditado es este id, por la misma razón.
+- **Reconciliación**: comparar periódicamente lo que el bot CREE tener (estado
+  local) con lo que el exchange REPORTA. Una diferencia por encima de la
+  tolerancia activa el circuit breaker (c): el bot se detiene en vez de operar
+  sobre una imagen falsa de la cartera.
+- **Protocol / adaptador (puerto-adaptador)**: `FuturesExchange` es un Protocol
+  que define lo que el Executor necesita del exchange. Un fake en memoria y el
+  adaptador real de python-binance lo implementan; el Executor no sabe cuál usa,
+  así que su lógica se prueba entera sin red. Es el patrón puerto-adaptador.
+- **exchangeInfo**: endpoint de Binance con los metadatos de cada par (filtros de
+  microestructura, precisión). El executor lo lee al arrancar para poblar los
+  `SymbolFilters` reales; en futuros el mínimo es `MIN_NOTIONAL.notional` (en spot
+  era `minNotional`).

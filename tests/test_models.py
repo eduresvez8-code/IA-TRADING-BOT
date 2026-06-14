@@ -10,7 +10,15 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from src.core.models import Candle, Order, Side, Signal, SymbolFilters
+from src.core.models import (
+    Candle,
+    Order,
+    OrderType,
+    PositionSide,
+    Side,
+    Signal,
+    SymbolFilters,
+)
 
 NOW = datetime(2026, 6, 12, 12, 0, tzinfo=timezone.utc)
 
@@ -82,6 +90,34 @@ def test_orden_leverage_por_defecto_y_explicito():
 def test_orden_leverage_cero_es_invalido():
     with pytest.raises(ValidationError):
         make_order(leverage=0)
+
+
+def test_orden_position_side_por_defecto_es_both():
+    # Sin especificar (one-way / sin hedge), el cubo es BOTH.
+    assert make_order().position_side == PositionSide.BOTH
+
+
+def test_apertura_long_con_buy_es_valida():
+    o = make_order(side=Side.BUY, position_side=PositionSide.LONG)
+    assert o.position_side == PositionSide.LONG
+
+
+def test_apertura_long_con_sell_es_incoherente():
+    # Abrir LONG con SELL no es una apertura válida en hedge mode.
+    with pytest.raises(ValidationError):
+        make_order(side=Side.SELL, position_side=PositionSide.LONG)
+
+
+def test_apertura_short_con_buy_es_incoherente():
+    # make_order usa side=BUY con un SL válido de compra; solo el position_side
+    # SHORT lo hace incoherente (aísla el validador de apertura del de SL).
+    with pytest.raises(ValidationError, match="position_side SHORT"):
+        make_order(position_side=PositionSide.SHORT)
+
+
+def test_order_type_y_position_side_enums():
+    assert OrderType.STOP_MARKET.value == "STOP_MARKET"
+    assert PositionSide.SHORT.value == "SHORT"
 
 
 def test_symbol_filters_coerce_a_decimal():

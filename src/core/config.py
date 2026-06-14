@@ -10,6 +10,7 @@ rango, el bot muere en el segundo 0, no tras abrir una posición.
 """
 
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -123,6 +124,15 @@ class BacktestConfig(BaseModel):
         return v
 
 
+class ExecutionConfig(BaseModel):
+    # Tolerancia RELATIVA de reconciliación en (0,1): 0.001 = 0.1%. Un valor de 0
+    # marcaría como discrepancia cualquier diferencia de redondeo; ≥1 nunca
+    # detectaría una desincronización. workingType solo admite los dos modos de
+    # disparo de Binance Futuros.
+    reconcile_position_tolerance: float = Field(gt=0.0, lt=1.0)
+    stop_working_type: Literal["MARK_PRICE", "CONTRACT_PRICE"]
+
+
 class StorageConfig(BaseModel):
     db_path: str
     candles_dir: str
@@ -135,6 +145,7 @@ class Settings(BaseModel):
     sentiment: SentimentConfig
     quant: QuantConfig
     backtest: BacktestConfig
+    execution: ExecutionConfig
     storage: StorageConfig
 
 

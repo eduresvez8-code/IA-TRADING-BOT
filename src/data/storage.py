@@ -33,6 +33,24 @@ CREATE TABLE IF NOT EXISTS candles (
 )
 """
 
+# Log auditado de órdenes (Sprint 6). La PK es el client_order_id: re-guardar la
+# misma orden tras un reintento idempotente actualiza la fila, no la duplica.
+ORDERS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS orders (
+    client_order_id   TEXT    PRIMARY KEY,
+    ts                INTEGER NOT NULL,  -- epoch ms UTC del envío
+    symbol            TEXT    NOT NULL,
+    side              TEXT    NOT NULL,  -- BUY | SELL
+    position_side     TEXT    NOT NULL,  -- LONG | SHORT | BOTH
+    type              TEXT    NOT NULL,  -- MARKET | STOP_MARKET | TAKE_PROFIT_MARKET
+    quantity          REAL,
+    price             REAL,              -- stop_price (protectoras) o avg fill (entrada)
+    status            TEXT    NOT NULL,  -- NEW | FILLED | ...
+    exchange_order_id TEXT,
+    decision_reason   TEXT
+)
+"""
+
 
 class Storage:
     def __init__(self, db_path: str | Path, candles_dir: str | Path):
@@ -45,6 +63,7 @@ class Storage:
         self._db = await aiosqlite.connect(self.db_path)
         await self._db.execute("PRAGMA journal_mode=WAL")
         await self._db.execute(SCHEMA)
+        await self._db.execute(ORDERS_SCHEMA)
         await self._db.commit()
         return self
 
@@ -83,6 +102,34 @@ class Storage:
             )
             for r in reversed(rows)
         ]
+
+    # ---------- SQLite: log auditado de órdenes ----------
+
+    async def save_order(
+        self, *, client_order_id: str, ts_ms: int, symbol: str, side: str,
+        position_side: str, type: str, quantity: float | None, price: float | None,
+        status: str, exchange_order_id: str | None, decision_reason: str,
+    ) -> None:
+        # INSERT OR REPLACE + PK = idempotente: un reintento con el mismo
+        # client_order_id actualiza el estado de la orden, no crea otra fila.
+        await self._db.execute(
+            "INSERT OR REPLACE INTO orders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (client_order_id, ts_ms, symbol, side, position_side, type,
+             quantity, price, status, exchange_order_id, decision_reason),
+        )
+        await self._db.commit()
+
+    async def get_orders(self, limit: int = 200) -> list[dict]:
+        """Las últimas `limit` órdenes registradas, de la más reciente a la más antigua."""
+        cur = await self._db.execute(
+            "SELECT client_order_id, ts, symbol, side, position_side, type,"
+            " quantity, price, status, exchange_order_id, decision_reason"
+            " FROM orders ORDER BY ts DESC LIMIT ?",
+            (limit,),
+        )
+        cols = [c[0] for c in cur.description]
+        rows = await cur.fetchall()
+        return [dict(zip(cols, r)) for r in rows]
 
     # ---------- Parquet: histórico para backtesting ----------
 

@@ -11,7 +11,15 @@ from datetime import datetime, timezone
 import pytest
 
 from src.core.config import load_settings
-from src.core.models import Action, Decision, Side, SentimentScore, Signal, SymbolFilters
+from src.core.models import (
+    Action,
+    Decision,
+    PositionSide,
+    Side,
+    SentimentScore,
+    Signal,
+    SymbolFilters,
+)
 from src.risk.manager import PortfolioState, RiskManager
 
 NOW = datetime(2026, 6, 13, 12, 0, tzinfo=timezone.utc)
@@ -51,6 +59,7 @@ def test_long_aprobado_construye_orden_con_sl_y_tp():
     assert a.approved is True
     o = a.order
     assert o.side == Side.BUY
+    assert o.position_side == PositionSide.LONG
     assert o.leverage == L
     assert o.stop_loss == pytest.approx(925.0)      # 1000 - 1.5*50
     assert o.take_profit == pytest.approx(1150.0)    # 1000 + 2*1.5*50
@@ -64,6 +73,7 @@ def test_short_aprobado_simetrico():
     assert a.approved is True
     o = a.order
     assert o.side == Side.SELL
+    assert o.position_side == PositionSide.SHORT
     assert o.stop_loss == pytest.approx(1075.0)
     assert o.take_profit == pytest.approx(850.0)
     assert o.take_profit < o.entry_price < o.stop_loss

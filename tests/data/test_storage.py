@@ -58,6 +58,32 @@ async def test_limit_devuelve_las_mas_recientes(storage):
     assert out[-1].open_time == NOW + timedelta(minutes=20)
 
 
+async def test_orders_roundtrip_y_orden_temporal(storage):
+    for i, status in enumerate(["FILLED", "NEW", "NEW"]):
+        await storage.save_order(
+            client_order_id=f"c{i}", ts_ms=1000 + i, symbol="BTCUSDT",
+            side="BUY", position_side="LONG", type="MARKET", quantity=1.0,
+            price=100.0, status=status, exchange_order_id=str(i), decision_reason="t")
+    out = await storage.get_orders()
+    assert len(out) == 3
+    assert out[0]["client_order_id"] == "c2"  # el más reciente primero (ts DESC)
+    assert out[0]["position_side"] == "LONG"
+
+
+async def test_order_idempotente_por_client_order_id(storage):
+    await storage.save_order(
+        client_order_id="x", ts_ms=1, symbol="BTCUSDT", side="BUY",
+        position_side="LONG", type="MARKET", quantity=1.0, price=100.0,
+        status="NEW", exchange_order_id="1", decision_reason="t")
+    # Mismo client_order_id (reintento idempotente): actualiza, no duplica.
+    await storage.save_order(
+        client_order_id="x", ts_ms=1, symbol="BTCUSDT", side="BUY",
+        position_side="LONG", type="MARKET", quantity=1.0, price=100.0,
+        status="FILLED", exchange_order_id="1", decision_reason="t")
+    out = await storage.get_orders()
+    assert len(out) == 1 and out[0]["status"] == "FILLED"
+
+
 def test_parquet_roundtrip(tmp_path):
     s = Storage(tmp_path / "test.db", tmp_path / "candles")
     df = pd.DataFrame({

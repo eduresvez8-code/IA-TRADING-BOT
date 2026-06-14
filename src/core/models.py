@@ -29,6 +29,31 @@ class Action(str, Enum):
     HOLD = "HOLD"  # no operar: desacuerdo entre motores o sin señal
 
 
+class PositionSide(str, Enum):
+    """Modo de posición en Futuros USD-M.
+
+    BOTH = one-way mode (una posición neta por símbolo). LONG/SHORT = hedge mode
+    (piernas LONG y SHORT independientes). El bot fuerza hedge mode al arrancar,
+    así que sus aperturas siempre llevan LONG o SHORT.
+    """
+
+    LONG = "LONG"
+    SHORT = "SHORT"
+    BOTH = "BOTH"
+
+
+class OrderType(str, Enum):
+    """Tipos de orden que el executor envía a Binance Futuros.
+
+    MARKET para entradas/cierres; STOP_MARKET y TAKE_PROFIT_MARKET (con
+    closePosition) para las protectoras que vigilan la posición.
+    """
+
+    MARKET = "MARKET"
+    STOP_MARKET = "STOP_MARKET"
+    TAKE_PROFIT_MARKET = "TAKE_PROFIT_MARKET"
+
+
 class Candle(BaseModel):
     """Vela OHLCV tal como llega de Binance (websocket o REST)."""
 
@@ -137,6 +162,9 @@ class Order(BaseModel):
     # defecto 1 (sin apalancar): así el executor SIEMPRE recibe el L que el Risk
     # Manager asumió para calcular el margen, no uno divergente.
     leverage: int = Field(default=1, ge=1)
+    # Cubo de la posición en hedge mode. Por defecto BOTH (one-way/sin
+    # especificar); el Risk Manager lo fija a LONG/SHORT al construir la orden.
+    position_side: PositionSide = PositionSide.BOTH
     decision_reason: str  # trazabilidad: qué decisión originó esta orden
     created_at: datetime
 
@@ -152,4 +180,17 @@ class Order(BaseModel):
             raise ValueError("stop_loss de una compra debe ser menor que entry_price")
         if side == Side.SELL and v <= entry:
             raise ValueError("stop_loss de una venta debe ser mayor que entry_price")
+        return v
+
+    @field_validator("position_side")
+    @classmethod
+    def opening_is_consistent(cls, v: "PositionSide", info) -> "PositionSide":
+        # Una orden de APERTURA en hedge mode empareja BUY↔LONG y SELL↔SHORT.
+        # (Una orden de cierre invertiría esto, pero el Risk Manager solo
+        # construye aperturas; los cierres los deriva el executor como OrderRequest.)
+        side = info.data.get("side")
+        if v == PositionSide.LONG and side == Side.SELL:
+            raise ValueError("position_side LONG requiere side BUY en una apertura")
+        if v == PositionSide.SHORT and side == Side.BUY:
+            raise ValueError("position_side SHORT requiere side SELL en una apertura")
         return v

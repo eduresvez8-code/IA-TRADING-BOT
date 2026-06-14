@@ -20,9 +20,10 @@ def check() -> int:
           f"pérdida diaria máx: {settings.risk.max_daily_loss_pct}% | "
           f"drawdown máx: {settings.risk.max_drawdown_pct}%")
 
-    # Sprint 5: confluencia + risk manager listos para integrarse al pipeline.
+    # Sprints 5-6: confluencia + risk manager + execution listos para el pipeline.
     from src.decision.confluence import decide  # noqa: F401
     from src.risk.manager import RiskManager  # noqa: F401
+    from src.execution.executor import Executor  # noqa: F401
 
     c = settings.confluence
     print(f"✓ confluencia — quant fuerte ≥{c.quant_strong_threshold} | "
@@ -34,6 +35,9 @@ def check() -> int:
           f"feed obsoleto >{settings.risk.stale_feed_seconds:.0f}s | "
           f"leverage máx {settings.risk.max_leverage}x | "
           f"margen máx {settings.risk.max_portfolio_margin_pct:.0f}%")
+    print(f"✓ execution — hedge mode al arrancar | stops sobre "
+          f"{settings.execution.stop_working_type} | "
+          f"reconciliación ±{settings.execution.reconcile_position_tolerance:.1%}")
 
     missing = [name for name, value in [
         ("BINANCE_API_KEY", secrets.binance_api_key),
