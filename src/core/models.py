@@ -133,6 +133,10 @@ class Order(BaseModel):
     entry_price: float = Field(gt=0)
     stop_loss: float = Field(gt=0)
     take_profit: float | None = None
+    # Apalancamiento con el que el executor debe abrir (Futuros USD-M). Por
+    # defecto 1 (sin apalancar): así el executor SIEMPRE recibe el L que el Risk
+    # Manager asumió para calcular el margen, no uno divergente.
+    leverage: int = Field(default=1, ge=1)
     decision_reason: str  # trazabilidad: qué decisión originó esta orden
     created_at: datetime
 

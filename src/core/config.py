@@ -53,9 +53,11 @@ class RiskConfig(BaseModel):
     low_confidence_threshold: float = Field(gt=0.0, lt=1.0)
     low_confidence_size_factor: float = Field(gt=0.0, le=1.0)
     stale_feed_seconds: float = Field(gt=0)
-    # Tope de exposición agregada (% de equity). >100 sería apalancamiento, que
-    # en Spot no existe → le=100. El (100 - este) es el colchón de fees/slippage.
-    max_portfolio_exposure_pct: float = Field(gt=0, le=100.0)
+    # Futuros USD-M. max_leverage: entero ≥1; le=10 ataja un apalancamiento de
+    # casino (un 20x sería un typo en este bot). max_portfolio_margin_pct: % del
+    # wallet comprometible como margen inicial; >100 no tiene sentido → le=100.
+    max_leverage: int = Field(ge=1, le=10)
+    max_portfolio_margin_pct: float = Field(gt=0, le=100.0)
 
 
 class ConfluenceConfig(BaseModel):

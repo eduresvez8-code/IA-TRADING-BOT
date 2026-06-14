@@ -28,11 +28,12 @@ def check() -> int:
     print(f"✓ confluencia — quant fuerte ≥{c.quant_strong_threshold} | "
           f"sentimiento confirma ≥{c.sentiment_confirm_threshold} | "
           f"tamaño reducido ×{c.reduced_size_factor} | "
-          f"cortos {'ON' if c.allow_short else 'OFF (Spot long-only)'}")
-    print(f"✓ risk manager — máx {settings.risk.max_open_positions} posiciones | "
-          f"TP {settings.risk.take_profit_rr}×SL | "
+          f"cortos {'ON (simétrico)' if c.allow_short else 'OFF'}")
+    print(f"✓ risk manager (Futuros USD-M) — máx {settings.risk.max_open_positions} "
+          f"posiciones | TP {settings.risk.take_profit_rr}×SL | "
           f"feed obsoleto >{settings.risk.stale_feed_seconds:.0f}s | "
-          f"exposición máx {settings.risk.max_portfolio_exposure_pct:.0f}%")
+          f"leverage máx {settings.risk.max_leverage}x | "
+          f"margen máx {settings.risk.max_portfolio_margin_pct:.0f}%")
 
     missing = [name for name, value in [
         ("BINANCE_API_KEY", secrets.binance_api_key),

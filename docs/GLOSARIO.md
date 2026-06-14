@@ -341,3 +341,36 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   (baja confianza) y el nocional cae bajo el mínimo de Binance, la orden se
   RECHAZA. Subir la cantidad hasta el mínimo rompería el presupuesto de riesgo:
   una operación que no cabe sin violar el riesgo, simplemente no se hace.
+
+## Sprint 5.2 (pivote a Futuros USD-M)
+
+- **Futuros USD-M**: contratos perpetuos liquidados en USDT. A diferencia de
+  Spot, hay **apalancamiento** y los **cortos son nativos** (no necesitas poseer
+  el activo para venderlo). Es lo que permite capitalizar catalizadores
+  negativos del Sentiment Engine (hacks, exploits, FUD) operando en corto.
+- **Apalancamiento (leverage)**: multiplicador que permite controlar un nocional
+  mayor que el margen aportado. Con leverage L, abrir un nocional N solo
+  inmoviliza `N/L` de margen. NO cambia la cantidad (esa la fija el riesgo); solo
+  decide cuánto margen consume. El bot se auto-limita con `max_leverage` (3x):
+  nada de apalancamiento de casino.
+- **Margen inicial**: colateral que el exchange bloquea para abrir una posición,
+  `margen_inicial = nocional / leverage`. Es lo que de verdad "cuesta" abrir en
+  futuros, y contra lo que se valida el techo de entrada (no contra el nocional).
+- **wallet_balance**: colateral total de la cuenta de futuros SIN contar el PnL
+  no realizado. Es la base del riesgo (1%), del drawdown (kill switch) y de la
+  pérdida diaria — magnitudes que no deben inflarse con ganancias aún sin cerrar.
+- **available_balance**: margen libre que el exchange reporta AHORA para abrir
+  nuevas posiciones (descontados el margen comprometido y las pérdidas no
+  realizadas). Es el **techo físico** real de una apertura: `margen_inicial ≤
+  available_balance`, o el exchange devuelve margen insuficiente.
+- **committed_margin (margen agregado)**: margen inicial ya inmovilizado por las
+  posiciones abiertas. El bot exige `committed_margin + nuevo ≤
+  max_portfolio_margin_pct (85%) del wallet`, dejando un 15% de colchón para
+  fluctuaciones de PnL no realizado y comisiones de liquidación.
+- **Stop vs. liquidación**: el precio de liquidación está a ~`1/L` de movimiento
+  adverso (33% con 3x); nuestro stop (≈1.5·ATR) está mucho más cerca, así que el
+  SL salta MUCHO antes de que el exchange liquide. Por eso un leverage bajo con
+  stops ajustados es seguro: nunca llegamos a la zona de liquidación.
+- **PnL no realizado**: ganancia/pérdida de una posición abierta valorada a
+  precio de mercado, aún sin cerrar. El `available_balance` lo descuenta (una
+  posición perdiendo reduce el margen libre); el `wallet_balance` no lo incluye.

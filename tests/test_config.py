@@ -96,7 +96,7 @@ def _valid_risk_kwargs(**overrides):
         atr_stop_multiplier=1.5, atr_period=14,
         take_profit_rr=2.0, low_confidence_threshold=0.4,
         low_confidence_size_factor=0.5, stale_feed_seconds=30,
-        max_portfolio_exposure_pct=95.0,
+        max_leverage=3, max_portfolio_margin_pct=85.0,
     )
     base.update(overrides)
     return base
@@ -134,19 +134,31 @@ def test_stale_feed_seconds_cero_es_rechazado():
         RiskConfig(**_valid_risk_kwargs(stale_feed_seconds=0))
 
 
-def test_exposicion_mayor_que_100_es_rechazada():
-    # >100% sería apalancamiento, imposible en Spot (le=100).
+def test_leverage_de_casino_es_rechazado():
+    # 20x sería un typo en este bot (le=10): nada de apalancamiento de casino.
     with pytest.raises(ValidationError):
-        RiskConfig(**_valid_risk_kwargs(max_portfolio_exposure_pct=120.0))
+        RiskConfig(**_valid_risk_kwargs(max_leverage=20))
 
 
-def test_settings_yaml_risk_sprint5():
-    # El settings.yaml real del repo debe traer los campos del Sprint 5.
+def test_leverage_cero_es_rechazado():
+    with pytest.raises(ValidationError):
+        RiskConfig(**_valid_risk_kwargs(max_leverage=0))
+
+
+def test_margen_mayor_que_100_es_rechazado():
+    # Comprometer >100% del wallet como margen no tiene sentido (le=100).
+    with pytest.raises(ValidationError):
+        RiskConfig(**_valid_risk_kwargs(max_portfolio_margin_pct=120.0))
+
+
+def test_settings_yaml_risk_futuros():
+    # El settings.yaml real del repo debe traer los campos de Futuros USD-M.
     s = load_settings()
     assert s.risk.take_profit_rr > 0
     assert 0.0 < s.risk.low_confidence_threshold < 1.0
     assert 0.0 < s.risk.low_confidence_size_factor <= 1.0
     assert s.risk.stale_feed_seconds > 0
-    # Hardening Spot: tope de exposición agregada y cortos desactivados en vivo.
-    assert 0.0 < s.risk.max_portfolio_exposure_pct <= 100.0
-    assert s.confluence.allow_short is False
+    # Futuros: apalancamiento auto-limitado, margen agregado acotado, cortos ON.
+    assert 1 <= s.risk.max_leverage <= 10
+    assert 0.0 < s.risk.max_portfolio_margin_pct <= 100.0
+    assert s.confluence.allow_short is True

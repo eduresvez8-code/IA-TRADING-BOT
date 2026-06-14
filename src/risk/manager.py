@@ -4,20 +4,30 @@ PLAN_MAESTRO §4. El peligro #1 de un bot casero no es una mala estrategia: es
 un bug operando sin control. Por eso ningún módulo llama al executor
 directamente — toda Decision pasa primero por aquí, y aquí puede morir.
 
-Venue: **Binance Spot, long-only**. Implicaciones que moldean el diseño:
-    - No hay apalancamiento: comprometido + nuevo nunca puede exceder el capital.
-      Por eso el techo físico se calcula sobre el SALDO LIBRE (free_balance), no
-      sobre la equity total (que incluye lo ya inmovilizado en posiciones).
-    - No se ABREN cortos: una Decision SHORT se veta (red de seguridad; la
-      confluencia ya debería haberla convertido en HOLD).
+Venue: **Binance Futuros USD-M** (testnet primero). Implicaciones de diseño:
+    - Hay apalancamiento, pero el bot se AUTO-LIMITA a `max_leverage`. El
+      apalancamiento NO cambia la cantidad (la fija el riesgo: 1% del wallet por
+      el stop ATR); solo decide cuánto MARGEN inmoviliza el nocional
+      (margen_inicial = nocional / leverage).
+    - Los cortos son nativos y simétricos a los largos.
+    - El "techo físico" de una apertura ya no es cash libre, sino que el
+      **margen inicial requerido (nocional/L) ≤ available_balance**; y el margen
+      agregado de la cartera ≤ `max_portfolio_margin_pct` del wallet_balance.
     - El Risk Manager es el ÚLTIMO filtro antes del executor: ajusta la orden a
-      los filtros de microestructura (LOT_SIZE/PRICE_FILTER/MIN_NOTIONAL) para
-      que Binance no la rechace.
+      los filtros de microestructura (LOT_SIZE/PRICE_FILTER/MIN_NOTIONAL).
+
+Saldos (terminología del exchange):
+    - wallet_balance: colateral total de la cuenta de futuros, SIN PnL no
+      realizado. Base del riesgo (1%), del drawdown (kill switch) y de la
+      pérdida diaria.
+    - available_balance: margen libre que el exchange reporta AHORA para abrir
+      nuevas posiciones. Techo físico de la apertura.
+    - committed_margin: margen inicial ya inmovilizado por las posiciones
+      abiertas. Base del límite de margen agregado de la cartera.
 
 Diseño: evaluador sobre un snapshot del estado (`PortfolioState`); no es dueño
-del estado. La persistencia (equity/peak/día/posiciones) la lleva el orquestador
-en Sprint 6. El único estado interno es el kill switch, que LATCHA: una vez
-salta, requiere reset() manual.
+del estado. La persistencia la lleva el orquestador en Sprint 6. El único estado
+interno es el kill switch, que LATCHA: una vez salta, requiere reset() manual.
 """
 
 from __future__ import annotations
@@ -33,13 +43,13 @@ from src.risk.filters import floor_to_step, round_to_tick
 
 @dataclass
 class PortfolioState:
-    """Foto de la cartera en el instante de evaluar una Decision (Spot)."""
+    """Foto de la cuenta de Futuros USD-M al evaluar una Decision."""
 
-    equity: float            # E: equity TOTAL (USDT libre + valor MtM abierto)
-    free_balance: float      # F: USDT libre AHORA (techo físico de la orden)
-    committed_notional: float  # C: suma de nocionales MtM de posiciones abiertas
-    peak_equity: float       # máximo histórico de equity (base del drawdown)
-    day_start_equity: float  # equity al inicio del día UTC (base de pérdida diaria)
+    wallet_balance: float    # colateral total SIN PnL no realizado (base de riesgo/DD)
+    available_balance: float  # margen libre AHORA para abrir (techo físico)
+    committed_margin: float  # margen inicial ya inmovilizado por lo abierto
+    peak_wallet_balance: float    # máximo histórico del wallet (base del drawdown)
+    day_start_wallet_balance: float  # wallet al inicio del día UTC (pérdida diaria)
     open_positions: int      # posiciones abiertas ahora mismo
     feed_age_seconds: float = 0.0  # antigüedad del último precio (circuit breaker a)
     halted: bool = False     # parada manual / discrepancia de reconciliación (cb c)
@@ -76,13 +86,13 @@ class RiskManager:
         filters: SymbolFilters,
         confidence: float = 1.0,
     ) -> RiskAssessment:
-        """Evalúa una Decision contra el estado de la cartera y la microestructura.
+        """Evalúa una Decision contra el estado de la cuenta y la microestructura.
 
         Args:
-            decision:   salida de la matriz de confluencia.
+            decision:   salida de la matriz de confluencia (LONG/SHORT/HOLD).
             price:      precio actual (base del sizing y de los stops).
             atr:        ATR(14) actual; fija la distancia al stop por volatilidad.
-            state:      snapshot de la cartera (equity, free, comprometido…).
+            state:      snapshot de la cuenta de futuros (wallet/available/…).
             filters:    restricciones del par (tick/step/min) de exchangeInfo.
             confidence: confianza del sentimiento [0,1]; baja → tamaño reducido.
 
@@ -94,9 +104,12 @@ class RiskManager:
 
         # ===== Vetos de estado (del más grave al menos grave) =====
 
-        # Kill switch por drawdown: latcha y bloquea hasta reset() manual.
-        if state.peak_equity > 0:
-            drawdown = (state.peak_equity - state.equity) / state.peak_equity
+        # Kill switch por drawdown sobre el WALLET: latcha hasta reset() manual.
+        if state.peak_wallet_balance > 0:
+            drawdown = (
+                (state.peak_wallet_balance - state.wallet_balance)
+                / state.peak_wallet_balance
+            )
             if drawdown >= r.max_drawdown_pct / 100.0:
                 self.kill_switch_active = True
         if self.kill_switch_active:
@@ -110,9 +123,12 @@ class RiskManager:
         if state.feed_age_seconds > r.stale_feed_seconds:
             return RiskAssessment(False, "stale_feed")
 
-        # Pérdida diaria: detiene nuevas entradas hasta el siguiente día UTC.
-        if state.day_start_equity > 0:
-            daily_loss = (state.day_start_equity - state.equity) / state.day_start_equity
+        # Pérdida diaria sobre el WALLET: detiene entradas hasta el día UTC siguiente.
+        if state.day_start_wallet_balance > 0:
+            daily_loss = (
+                (state.day_start_wallet_balance - state.wallet_balance)
+                / state.day_start_wallet_balance
+            )
             if daily_loss >= r.max_daily_loss_pct / 100.0:
                 return RiskAssessment(False, "daily_loss_limit")
 
@@ -124,74 +140,86 @@ class RiskManager:
 
         if decision.action == Action.HOLD:
             return RiskAssessment(False, "hold")
+        # En Futuros operamos LONG y SHORT de forma simétrica.
+        is_long = decision.action == Action.LONG
 
-        # Spot: jamás ABRIR un corto. Red de seguridad — la confluencia ya
-        # debería haberlo convertido en HOLD ("short_disabled_spot").
-        if decision.action == Action.SHORT:
-            return RiskAssessment(False, "short_not_allowed_spot")
-
-        # ===== Pipeline de construcción de la orden (LONG / BUY) =====
+        # ===== Pipeline de construcción de la orden =====
 
         # (1) Precio de entrada (orden a mercado: el fill esperado es el precio).
         entry = price
         if entry <= 0 or atr <= 0:
-            # ATR/precio inválidos: no se puede colocar un stop con sentido.
             return RiskAssessment(False, "invalid_sizing_inputs")
 
-        # (2-3) SL/TP crudos por ATR, ajustados al tickSize del par.
+        # (2-3) SL/TP crudos por ATR (el stop va en el lado perdedor: bajo la
+        #       entrada en LONG, sobre la entrada en SHORT) y ajuste al tickSize.
         stop_distance_raw = r.atr_stop_multiplier * atr
-        stop_loss = float(round_to_tick(entry - stop_distance_raw, filters.tick_size))
+        direction = 1.0 if is_long else -1.0
+        stop_loss = float(
+            round_to_tick(entry - direction * stop_distance_raw, filters.tick_size)
+        )
         take_profit = float(
-            round_to_tick(entry + r.take_profit_rr * stop_distance_raw, filters.tick_size)
+            round_to_tick(
+                entry + direction * r.take_profit_rr * stop_distance_raw,
+                filters.tick_size,
+            )
         )
 
-        # (4) Distancia REAL al stop, recalculada desde el SL ya redondeado: así
-        #     el sizing corresponde al stop que de verdad se coloca.
-        stop_distance = entry - stop_loss
-        if stop_distance <= 0:
-            # El tick es ≥ que la distancia al stop: redondeó hasta/sobre la
-            # entrada y dejaría de proteger. No se puede operar este par así.
+        # (4) Distancia REAL al stop, recalculada desde el SL ya redondeado, y
+        #     verificación de que sigue del lado que protege.
+        protective = (stop_loss < entry) if is_long else (stop_loss > entry)
+        if not protective:
+            # El tick es ≥ que la distancia: el SL redondeó hasta/sobre la entrada
+            # y dejaría de proteger. No se puede operar este par así.
             return RiskAssessment(False, "stop_rounds_to_entry")
+        stop_distance = abs(entry - stop_loss)
 
-        # (5) Cantidad por RIESGO (sobre equity, para mantener el 1% constante).
-        risk_amount = state.equity * (r.risk_per_trade_pct / 100.0) * decision.size_factor
+        # (5) Cantidad por RIESGO sobre el wallet (1% constante por el stop ATR).
+        risk_amount = (
+            state.wallet_balance * (r.risk_per_trade_pct / 100.0) * decision.size_factor
+        )
         if confidence < r.low_confidence_threshold:
             risk_amount *= r.low_confidence_size_factor
         qty_risk = risk_amount / stop_distance
 
-        # (6) Techos en NOCIONAL: físico (saldo libre) y de política (exposición
-        #     agregada). λ = max_portfolio_exposure_pct; el (1-λ) es el colchón.
-        lam = r.max_portfolio_exposure_pct / 100.0
-        cap_free = lam * state.free_balance                          # físico
-        cap_policy = lam * state.equity - state.committed_notional   # agregado
-        if cap_policy <= 0:
-            # Ya estamos al/por encima del tope de exposición de la cartera.
-            return RiskAssessment(False, "portfolio_exposure")
-        notional_cap = min(cap_free, cap_policy)
+        # (6) Techos de MARGEN, expresados como tope de NOCIONAL (= margen × L).
+        #     Físico:   margen_nuevo ≤ available_balance        → nocional ≤ avail·L
+        #     Agregado: margen_comprometido + nuevo ≤ μ·wallet  → nocional ≤ (μ·wallet − comprometido)·L
+        L = r.max_leverage
+        margin_room = (
+            state.wallet_balance * (r.max_portfolio_margin_pct / 100.0)
+            - state.committed_margin
+        )
+        if margin_room <= 0:
+            # La cartera ya está al/por encima del tope de margen agregado.
+            return RiskAssessment(False, "portfolio_margin")
+        cap_phys_notional = state.available_balance * L     # techo físico
+        cap_policy_notional = margin_room * L               # techo agregado
+        notional_cap = min(cap_phys_notional, cap_policy_notional)
         if notional_cap < filters.min_notional:
-            # Ni la orden mínima de Binance cabe en el cash/política disponible.
-            return RiskAssessment(False, "insufficient_free_balance")
+            # Ni la orden mínima de Binance cabe en el margen disponible.
+            return RiskAssessment(False, "insufficient_margin")
         qty = min(qty_risk, notional_cap / entry)
 
         # (7) Truncar al stepSize (LOT_SIZE) — floor con Decimal, nunca arriba.
         qty_dec = floor_to_step(qty, filters.step_size)
 
         # (8-9) Validación de microestructura. Si la orden cae bajo el mínimo, se
-        #       RECHAZA — jamás se infla, eso violaría el riesgo y el saldo libre.
+        #       RECHAZA — jamás se infla (violaría el riesgo y el margen).
         if qty_dec <= 0 or qty_dec < filters.min_qty:
             return RiskAssessment(False, "below_min_qty")
         notional = qty_dec * Decimal(str(entry))
         if notional < filters.min_notional:
             return RiskAssessment(False, "below_min_notional")
 
-        # (10) Construir la orden (siempre BUY en Spot long-only).
+        # (10) Construir la orden (BUY en LONG, SELL en SHORT) con su leverage.
         order = Order(
             symbol=decision.symbol,
-            side=Side.BUY,
+            side=Side.BUY if is_long else Side.SELL,
             quantity=float(qty_dec),
             entry_price=entry,
             stop_loss=stop_loss,
             take_profit=take_profit if take_profit > 0 else None,
+            leverage=L,
             decision_reason=decision.reason,
             created_at=datetime.now(timezone.utc),
         )

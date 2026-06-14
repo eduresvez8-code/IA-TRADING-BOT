@@ -1,9 +1,8 @@
 """Tests de escenario de la matriz de confluencia (PLAN_MAESTRO §1).
 
 Un test por fila de la matriz, más la simetría LONG/SHORT y los casos borde.
-Venue en vivo = Spot long-only (allow_short=false): un quant bajista fuerte se
-traduce a HOLD. La simetría SHORT se sigue verificando con una config que
-habilita cortos (la ruta de investigación del backtest).
+Venue en vivo = Futuros USD-M (allow_short=true): los cortos fluyen simétricos.
+El gate de cortos (config) se verifica con una copia que lo desactiva.
 """
 
 from datetime import datetime, timezone
@@ -13,13 +12,13 @@ from src.core.models import Action, SentimentScore, Signal
 from src.decision.confluence import decide
 
 NOW = datetime(2026, 6, 13, 12, 0, tzinfo=timezone.utc)
-CFG = load_settings()  # repo real: allow_short=false
+CFG = load_settings()  # repo real: allow_short=true (Futuros)
 
 
-def cfg_con_cortos():
-    """Copia de la config con cortos habilitados (ruta backtest/investigación)."""
+def cfg_sin_cortos():
+    """Copia de la config con el gate de cortos desactivado (long-only)."""
     s = CFG.model_copy(deep=True)
-    s.confluence.allow_short = True
+    s.confluence.allow_short = False
     return s
 
 
@@ -98,33 +97,27 @@ def test_long_sin_sentimiento_tamano_reducido():
     assert d.sentiment_score == 0.0
 
 
-# ---- Spot long-only: el corto NO se abre ----
+# ---- Futuros: la rama SHORT es simétrica a la LONG ----
 
-def test_short_confirmado_bloqueado_en_spot():
+def test_short_confirmado_tamano_pleno():
     d = decide(make_signal(-0.8), make_sentiment(-0.6), CFG)
-    assert d.action == Action.HOLD
-    assert d.reason == "short_disabled_spot"
-
-
-def test_short_neutro_bloqueado_en_spot():
-    d = decide(make_signal(-0.8), None, CFG)
-    assert d.action == Action.HOLD
-    assert d.reason == "short_disabled_spot"
-
-
-# ---- Simetría SHORT con cortos habilitados (ruta de investigación) ----
-
-def test_short_confirmado_con_cortos_habilitados():
-    d = decide(make_signal(-0.8), make_sentiment(-0.6), cfg_con_cortos())
     assert d.action == Action.SHORT
     assert d.size_factor == 1.0
     assert d.reason == "sentiment_confirms"
 
 
-def test_short_neutro_con_cortos_habilitados():
-    d = decide(make_signal(-0.8), None, cfg_con_cortos())
+def test_short_neutro_tamano_reducido():
+    d = decide(make_signal(-0.8), None, CFG)
     assert d.action == Action.SHORT
     assert d.size_factor == CFG.confluence.reduced_size_factor
+
+
+# ---- Gate de cortos desactivado (config long-only) ----
+
+def test_short_bloqueado_si_gate_desactivado():
+    d = decide(make_signal(-0.8), make_sentiment(-0.6), cfg_sin_cortos())
+    assert d.action == Action.HOLD
+    assert d.reason == "short_disabled"
 
 
 # ---- Bordes y auditoría ----

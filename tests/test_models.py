@@ -73,6 +73,17 @@ def test_orden_sin_stop_loss_no_existe():
               entry_price=100_000.0, decision_reason="test", created_at=NOW)
 
 
+def test_orden_leverage_por_defecto_y_explicito():
+    # Por defecto 1 (sin apalancar); en Futuros el Risk Manager lo fija.
+    assert make_order().leverage == 1
+    assert make_order(leverage=3).leverage == 3
+
+
+def test_orden_leverage_cero_es_invalido():
+    with pytest.raises(ValidationError):
+        make_order(leverage=0)
+
+
 def test_symbol_filters_coerce_a_decimal():
     # Los strings de exchangeInfo deben quedar como Decimal exacto (no float).
     f = SymbolFilters(symbol="BTCUSDT", tick_size="0.01", step_size="0.0001",

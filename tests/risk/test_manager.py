@@ -1,9 +1,9 @@
 """Tests de escenario del Risk Manager — uno por regla de riesgo (PLAN_MAESTRO §4).
 
-Venue: Binance Spot, long-only. Cubren: stop-loss obligatorio, sizing por
-volatilidad y sus reductores, los dos techos (saldo libre + exposición agregada),
-microestructura (stepSize/tickSize/minNotional), y cada veto. Cierra con la
-cadena completa señal → confluencia → orden.
+Venue: Binance Futuros USD-M. Cubren: stop-loss obligatorio, simetría LONG/SHORT,
+sizing por volatilidad y sus reductores, los dos techos de MARGEN (available_balance
++ margen agregado del wallet), microestructura (stepSize/tickSize/minNotional),
+leverage en la orden, y cada veto. Cierra con la cadena señal → confluencia → orden.
 """
 
 from datetime import datetime, timezone
@@ -12,14 +12,13 @@ import pytest
 
 from src.core.config import load_settings
 from src.core.models import Action, Decision, Side, SentimentScore, Signal, SymbolFilters
-from src.decision.confluence import decide
 from src.risk.manager import PortfolioState, RiskManager
 
 NOW = datetime(2026, 6, 13, 12, 0, tzinfo=timezone.utc)
 CFG = load_settings()
+L = CFG.risk.max_leverage  # 3
 
-# Filtros "sin fricción": paso/tick finísimos y sin mínimos → aíslan la
-# matemática de sizing del ajuste de microestructura.
+# Filtros "sin fricción": paso/tick finísimos y sin mínimos → aíslan el sizing.
 FINE = SymbolFilters(symbol="BTCUSDT", tick_size="0.01", step_size="0.00000001",
                      min_qty="0", min_notional="0")
 
@@ -35,15 +34,15 @@ def make_decision(action: Action, size_factor: float = 1.0,
 
 def healthy_state(**overrides) -> PortfolioState:
     base = dict(
-        equity=10_000.0, free_balance=10_000.0, committed_notional=0.0,
-        peak_equity=10_000.0, day_start_equity=10_000.0,
+        wallet_balance=10_000.0, available_balance=10_000.0, committed_margin=0.0,
+        peak_wallet_balance=10_000.0, day_start_wallet_balance=10_000.0,
         open_positions=0, feed_age_seconds=0.0, halted=False,
     )
     base.update(overrides)
     return PortfolioState(**base)
 
 
-# ---------- Aprobación, stop-loss obligatorio y geometría de la orden ----------
+# ---------- Aprobación, stop-loss obligatorio, simetría y leverage ----------
 
 def test_long_aprobado_construye_orden_con_sl_y_tp():
     rm = RiskManager(CFG)
@@ -52,25 +51,35 @@ def test_long_aprobado_construye_orden_con_sl_y_tp():
     assert a.approved is True
     o = a.order
     assert o.side == Side.BUY
-    assert o.stop_loss == pytest.approx(925.0)              # 1000 - 1.5*50
-    assert o.take_profit == pytest.approx(1150.0)           # 1000 + 2*1.5*50
+    assert o.leverage == L
+    assert o.stop_loss == pytest.approx(925.0)      # 1000 - 1.5*50
+    assert o.take_profit == pytest.approx(1150.0)    # 1000 + 2*1.5*50
     assert o.stop_loss < o.entry_price < o.take_profit
 
 
-def test_short_open_vetado_en_spot():
-    # Red de seguridad: aunque llegue una Decision SHORT, no se abre en Spot.
+def test_short_aprobado_simetrico():
     rm = RiskManager(CFG)
     a = rm.assess(make_decision(Action.SHORT), price=1000.0, atr=50.0,
                   state=healthy_state(), filters=FINE)
-    assert a.approved is False
-    assert a.reason == "short_not_allowed_spot"
-    assert a.order is None
+    assert a.approved is True
+    o = a.order
+    assert o.side == Side.SELL
+    assert o.stop_loss == pytest.approx(1075.0)
+    assert o.take_profit == pytest.approx(850.0)
+    assert o.take_profit < o.entry_price < o.stop_loss
+
+
+def test_orden_lleva_el_leverage_del_bot():
+    rm = RiskManager(CFG)
+    a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
+                  state=healthy_state(), filters=FINE)
+    assert a.order.leverage == CFG.risk.max_leverage
 
 
 # ---------------------------- Position sizing ----------------------------
 
 def test_sizing_formula_riesgo_constante():
-    # qty = (equity × risk% × size_factor) / stop_distance = 100 / 75.
+    # qty = (wallet × risk% × size_factor) / stop_distance = 100 / 75.
     rm = RiskManager(CFG)
     a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
                   state=healthy_state(), filters=FINE)
@@ -102,47 +111,48 @@ def test_atr_cero_no_opera():
     assert a.approved is False and a.reason == "invalid_sizing_inputs"
 
 
-# ------------- Techos: saldo libre y exposición agregada (Spot) -------------
+# ------------- Techos de margen: available_balance y margen agregado -------------
 
-def test_techo_exposicion_con_colchon():
-    # ATR diminuto → la cantidad por riesgo es enorme; el nocional se topa en el
-    # 95% de la equity (no el 100%): queda 5% de colchón para fees/slippage.
+def test_techo_margen_agregado_con_colchon():
+    # ATR diminuto → qty por riesgo enorme; el margen inicial se topa en el 85%
+    # del wallet (deja 15% de colchón para PnL/liquidación).
     rm = RiskManager(CFG)
     a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=1.0,
                   state=healthy_state(), filters=FINE)
-    assert a.order.quantity * a.order.entry_price == pytest.approx(9_500.0)
+    margin = a.order.quantity * a.order.entry_price / a.order.leverage
+    assert margin == pytest.approx(8_500.0)   # 0.85 × 10000
 
 
-def test_dinero_fantasma_se_topa_en_saldo_libre():
-    # Equity 10k pero solo 2k libres y 8k comprometidos. El código viejo habría
-    # permitido hasta equity/price=10 (10k de nocional) → INSUFFICIENT_BALANCE.
+def test_available_balance_es_el_techo_fisico():
+    # Margen libre escaso (1k) pese a wallet grande (10k): el techo físico manda.
     rm = RiskManager(CFG)
-    state = healthy_state(free_balance=2_000.0, committed_notional=8_000.0, open_positions=2)
+    state = healthy_state(available_balance=1_000.0, committed_margin=2_000.0, open_positions=2)
     a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=1.0,
                   state=state, filters=FINE)
     assert a.approved is True
-    # Política: 0.95×10000 − 8000 = 1500 es el binding (más restrictivo que free).
-    assert a.order.quantity * a.order.entry_price == pytest.approx(1_500.0)
-    assert a.order.quantity * a.order.entry_price <= state.free_balance
+    margin = a.order.quantity * a.order.entry_price / a.order.leverage
+    assert margin == pytest.approx(1_000.0)   # = available_balance
+    assert margin <= state.available_balance + 1e-9
 
 
-def test_veto_exposicion_agregada():
+def test_veto_margen_agregado():
     rm = RiskManager(CFG)
-    state = healthy_state(committed_notional=9_600.0, open_positions=2)
+    # 8600 comprometido > 85% del wallet (8500) → sin sitio para más margen.
+    state = healthy_state(committed_margin=8_600.0, available_balance=1_400.0, open_positions=2)
     a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
                   state=state, filters=FINE)
-    assert a.approved is False and a.reason == "portfolio_exposure"
+    assert a.approved is False and a.reason == "portfolio_margin"
 
 
-def test_veto_saldo_libre_insuficiente():
-    # Con 4 USDT libres no cabe ni la orden mínima de Binance (minNotional=5).
+def test_veto_margen_insuficiente():
+    # Con 1 USDT de margen libre no cabe ni la orden mínima (minNotional=5).
     rm = RiskManager(CFG)
     filt = SymbolFilters(symbol="BTCUSDT", tick_size="0.01", step_size="0.00000001",
                          min_qty="0", min_notional="5")
-    state = healthy_state(free_balance=4.0)
+    state = healthy_state(available_balance=1.0)
     a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
                   state=state, filters=filt)
-    assert a.approved is False and a.reason == "insufficient_free_balance"
+    assert a.approved is False and a.reason == "insufficient_margin"
 
 
 # ----------------------- Microestructura (filtros) -----------------------
@@ -153,7 +163,6 @@ def test_qty_truncada_a_step():
                          min_qty="0", min_notional="0")
     a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
                   state=healthy_state(), filters=filt)
-    # 1.33333… truncado (no redondeado) al paso 0.001 → 1.333.
     assert a.order.quantity == pytest.approx(1.333, abs=1e-9)
 
 
@@ -163,13 +172,11 @@ def test_sl_tp_redondeados_a_tick():
                          min_qty="0", min_notional="0")
     a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=33.34,
                   state=healthy_state(), filters=filt)
-    # SL/TP crudos (949.99 / 1100.02) cuantizados al tick de 0.5.
     assert a.order.stop_loss == pytest.approx(950.0)
     assert a.order.take_profit == pytest.approx(1100.0)
 
 
 def test_below_min_notional_rechaza_no_infla():
-    # Baja confianza encoge el nocional bajo el mínimo → se RECHAZA (no se sube).
     rm = RiskManager(CFG)
     filt = SymbolFilters(symbol="BTCUSDT", tick_size="0.01", step_size="0.00000001",
                          min_qty="0", min_notional="500")
@@ -184,12 +191,10 @@ def test_below_min_qty_rechaza():
                          min_qty="2", min_notional="5")
     a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
                   state=healthy_state(), filters=filt)
-    # 1.333 → floor a paso 1 → 1.0, menor que minQty 2.
     assert a.approved is False and a.reason == "below_min_qty"
 
 
 def test_stop_que_redondea_a_la_entrada_se_rechaza():
-    # Tick gigante (200): el SL crudo 925 redondea a 1000 = entrada → sin protección.
     rm = RiskManager(CFG)
     filt = SymbolFilters(symbol="BTCUSDT", tick_size="200", step_size="0.00000001",
                          min_qty="0", min_notional="0")
@@ -218,7 +223,7 @@ def test_veto_max_posiciones():
 def test_veto_perdida_diaria():
     rm = RiskManager(CFG)
     a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
-                  state=healthy_state(equity=9_650.0), filters=FINE)
+                  state=healthy_state(wallet_balance=9_650.0), filters=FINE)
     assert a.approved is False and a.reason == "daily_loss_limit"
 
 
@@ -239,13 +244,13 @@ def test_veto_halt_por_reconciliacion():
 
 def test_kill_switch_drawdown_latcha_hasta_reset():
     rm = RiskManager(CFG)
-    breached = healthy_state(equity=8_900.0, free_balance=8_900.0)  # 11% drawdown
+    breached = healthy_state(wallet_balance=8_900.0, available_balance=8_900.0)  # 11% DD
     a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
                   state=breached, filters=FINE)
     assert a.approved is False and a.reason == "kill_switch_drawdown"
     assert rm.kill_switch_active is True
 
-    recovered = healthy_state(equity=9_999.0, free_balance=9_999.0)
+    recovered = healthy_state(wallet_balance=9_999.0, available_balance=9_999.0)
     a2 = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
                    state=recovered, filters=FINE)
     assert a2.approved is False and a2.reason == "kill_switch_drawdown"
@@ -256,18 +261,21 @@ def test_kill_switch_drawdown_latcha_hasta_reset():
     assert a3.approved is True
 
 
-# --------------------- Cadena completa señal → orden ---------------------
+# --------------------- Cadena completa señal → orden (SHORT) ---------------------
 
-def test_pipeline_confluencia_a_orden():
-    sig = Signal(symbol="BTCUSDT", score=0.8, strategy="ema_cross_rsi", timestamp=NOW)
-    sent = SentimentScore(news_id="n1", symbol_scope=["BTCUSDT"], score=0.5,
+def test_pipeline_confluencia_a_orden_short():
+    # Hack/FUD: quant bajista + sentimiento negativo fuerte → SHORT pleno.
+    sig = Signal(symbol="BTCUSDT", score=-0.8, strategy="ema_cross_rsi", timestamp=NOW)
+    sent = SentimentScore(news_id="n1", symbol_scope=["BTCUSDT"], score=-0.7,
                           confidence=0.8, high_impact=False, analyzed_at=NOW)
+    from src.decision.confluence import decide
     decision = decide(sig, sent, CFG)
-    assert decision.action == Action.LONG and decision.size_factor == 1.0
+    assert decision.action == Action.SHORT and decision.size_factor == 1.0
 
     rm = RiskManager(CFG)
     a = rm.assess(decision, price=1000.0, atr=50.0, state=healthy_state(),
                   filters=FINE, confidence=sent.confidence)
     assert a.approved is True
+    assert a.order.side == Side.SELL
+    assert a.order.stop_loss > a.order.entry_price
     assert a.order.decision_reason == "sentiment_confirms"
-    assert a.order.stop_loss < a.order.entry_price
