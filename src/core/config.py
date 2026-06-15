@@ -137,6 +137,10 @@ class OrchestratorConfig(BaseModel):
     # warmup_candles: velas mínimas antes de operar. ge=20 evita un buffer tan
     # corto que los indicadores nunca tengan datos; le=1000 ataja un typo.
     warmup_candles: int = Field(ge=20, le=1000)
+    # Ciclos de gracia antes de declarar una pierna desconocida → HALT. ge=1
+    # (al menos una confirmación); le=20 ataja un valor que volvería inútil el
+    # circuit breaker.
+    reconcile_grace_cycles: int = Field(ge=1, le=20)
 
 
 class StorageConfig(BaseModel):

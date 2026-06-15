@@ -446,3 +446,46 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
 - **Warmup (calentamiento)**: las velas mínimas que el buffer debe acumular antes
   de operar, para que EMA/RSI/ATR tengan suficiente historia y no emitan señales
   sobre datos insuficientes.
+
+## Sprint 7.2 (hardening de concurrencia y ciclo de vida)
+
+- **Serialización con `asyncio.Lock`**: un candado que garantiza que la sección
+  crítica (reconciliar→decidir→actuar→actualizar estado) se ejecute de a una por
+  vez. Sin él, la vela de un símbolo podría leer la cuenta mientras otro símbolo
+  está a mitad de una apertura → estado intermedio observado → decisiones falsas.
+- **Orden en vuelo (in-flight)**: pierna que YA abrimos (fill confirmado por el
+  REST) pero que el endpoint de cuenta del exchange aún no reporta, por latencia
+  de propagación. El registro `_in_flight` las marca para que la reconciliación
+  las ignore: ni las trata como "desconocidas" (evita HALT falso) ni como
+  "cerradas por SL/TP" (evita RESYNC falso y una doble apertura). Se *promueven*
+  a confirmadas cuando el exchange por fin las reporta; si nunca aparecen tras la
+  gracia, se declaran no confirmadas y se descartan.
+- **Ventana de gracia (reconciliación)**: una pierna "desconocida" (presente en
+  el exchange, ausente de nuestro modelo) no dispara el HALT a la primera vista,
+  sino tras N observaciones consecutivas. Absorbe blips transitorios de latencia;
+  solo una divergencia *sostenida* es un peligro real (circuit breaker c).
+- **Eventual consistencia (exchange)**: el motor de matching y el endpoint de
+  cuenta de Binance no se actualizan en el mismo instante. Una orden puede estar
+  FILLED en el ACK del REST y el `availableBalance`/posición tardar decenas de ms
+  en reflejarlo. Todo el blindaje de in-flight/gracia existe por esto.
+- **FLIP desacoplado**: ante una señal opuesta, el bot solo CIERRA la pierna
+  actual en esta vela; la apertura inversa ocurre en la vela siguiente, con un
+  snapshot fresco. Evita la carrera de margen (abrir antes de que el exchange
+  libere el margen del cierre → INSUFFICIENT_BALANCE). Encaja con el horizonte
+  swing: una vela de latencia es irrelevante.
+- **Backfill REST**: al (re)arrancar, rellenar el buffer de velas pidiendo las
+  últimas N *cerradas* por REST (contiguas y autoritativas del exchange) en lugar
+  de esperar horas a reconstruirlo del stream en vivo. La detección de huecos
+  fuerza un re-backfill: nunca se calculan indicadores sobre una serie con saltos.
+- **Adopción de posiciones**: tras un reinicio en caliente, el bot lee las
+  piernas que el exchange ya tiene y las incorpora a su modelo (`expected`) en
+  vez de verlas como "desconocidas" y detenerse. Verifica que cada una conserve
+  su STOP protector.
+- **Posición desnuda (naked)**: una posición abierta SIN stop-loss en el exchange
+  (p. ej. si un reinicio dejó la entrada pero perdió sus protectoras). Es el
+  riesgo #1; al detectarla en la adopción, el bot hace HALT y alerta para
+  revisión manual en vez de operar a ciegas.
+- **Persistencia de estado de sesión**: guardar en SQLite el pico de wallet, el
+  wallet de inicio de día y el latch del kill switch, para que sobrevivan a un
+  reinicio. Si no, tras una caída el drawdown se mediría desde cero y el kill
+  switch podría no saltar ante una pérdida ocurrida a través del corte.

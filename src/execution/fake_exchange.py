@@ -47,6 +47,9 @@ class FakeFuturesExchange:
         # órdenes condicionales en reposo (SL/TP), por símbolo
         self.resting: dict[str, list[OrderResult]] = {}
         self.sent: list[OrderRequest] = []   # historial para auditar en tests
+        # piernas que existen pero que get_account aún NO reporta: simula la
+        # latencia entre el fill (motor de matching) y el endpoint de cuenta.
+        self.hidden: set[tuple[str, PositionSide]] = set()
         self._oid = 0
 
     def _next_oid(self) -> str:
@@ -75,11 +78,17 @@ class FakeFuturesExchange:
     # ---------- cuenta ----------
 
     async def get_account(self) -> AccountSnapshot:
+        # Las piernas "hidden" existen pero el endpoint de cuenta aún no las
+        # reporta (latencia de visibilidad del fill).
+        visible = [p for k, p in self.positions.items() if k not in self.hidden]
         return AccountSnapshot(
             wallet_balance=self.wallet_balance,
             available_balance=self.available_balance,
-            positions=list(self.positions.values()),
+            positions=visible,
         )
+
+    async def get_open_orders(self, symbol: str) -> list[OrderResult]:
+        return list(self.resting.get(symbol, []))
 
     # ---------- órdenes ----------
 

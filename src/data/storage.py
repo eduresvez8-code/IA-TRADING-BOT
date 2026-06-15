@@ -51,6 +51,19 @@ CREATE TABLE IF NOT EXISTS orders (
 )
 """
 
+# Estado de sesión del orquestador (Sprint 7.2). Fila única (id=1): debe
+# sobrevivir a reinicios en caliente para que el kill switch y la pérdida diaria
+# no se reinicien (y vuelvan a permitir operar) tras una caída.
+SESSION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS session_state (
+    id                INTEGER PRIMARY KEY CHECK (id = 1),
+    peak_wallet       REAL    NOT NULL,
+    day_start_wallet  REAL    NOT NULL,
+    day               TEXT    NOT NULL,  -- fecha UTC ISO (YYYY-MM-DD)
+    kill_switch       INTEGER NOT NULL   -- 0 | 1 (latch)
+)
+"""
+
 
 class Storage:
     def __init__(self, db_path: str | Path, candles_dir: str | Path):
@@ -64,6 +77,7 @@ class Storage:
         await self._db.execute("PRAGMA journal_mode=WAL")
         await self._db.execute(SCHEMA)
         await self._db.execute(ORDERS_SCHEMA)
+        await self._db.execute(SESSION_SCHEMA)
         await self._db.commit()
         return self
 
@@ -130,6 +144,28 @@ class Storage:
         cols = [c[0] for c in cur.description]
         rows = await cur.fetchall()
         return [dict(zip(cols, r)) for r in rows]
+
+    # ---------- SQLite: estado de sesión (sobrevive a reinicios) ----------
+
+    async def save_session_state(self, *, peak_wallet: float, day_start_wallet: float,
+                                 day: str, kill_switch: bool) -> None:
+        await self._db.execute(
+            "INSERT OR REPLACE INTO session_state VALUES (1, ?, ?, ?, ?)",
+            (peak_wallet, day_start_wallet, day, int(kill_switch)),
+        )
+        await self._db.commit()
+
+    async def load_session_state(self) -> dict | None:
+        """Estado de sesión guardado, o None si es el primer arranque."""
+        cur = await self._db.execute(
+            "SELECT peak_wallet, day_start_wallet, day, kill_switch"
+            " FROM session_state WHERE id = 1"
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return None
+        return {"peak_wallet": row[0], "day_start_wallet": row[1],
+                "day": row[2], "kill_switch": bool(row[3])}
 
     # ---------- Parquet: histórico para backtesting ----------
 

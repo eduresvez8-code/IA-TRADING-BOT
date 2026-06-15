@@ -84,6 +84,19 @@ class Executor:
         self._day_start_wallet = 0.0
         self._day: object = None
 
+    # ------------------- estado de sesión (persistencia) -------------------
+
+    def load_session(self, *, peak_wallet: float, day_start_wallet: float,
+                     day: object) -> None:
+        """Restaura el pico y el inicio de día tras un reinicio en caliente."""
+        self._peak_wallet = peak_wallet
+        self._day_start_wallet = day_start_wallet
+        self._day = day
+
+    def session_state(self) -> tuple[float, float, object]:
+        """(peak_wallet, day_start_wallet, day) para persistir."""
+        return self._peak_wallet, self._day_start_wallet, self._day
+
     # ---------------------------- arranque ----------------------------
 
     async def startup(self) -> "Executor":

@@ -82,6 +82,10 @@ orchestrator:
   # Velas mínimas en el buffer antes de operar: los indicadores (ema_slow + rsi)
   # necesitan historia para ser fiables; dejamos holgura sobre ese mínimo.
   warmup_candles: 60
+  # Observaciones consecutivas de una pierna "desconocida" antes de declarar
+  # desincronización y disparar el HALT (circuit breaker c). Absorbe la latencia
+  # del WebSocket: una aparición transitoria no detiene el bot, una sostenida sí.
+  reconcile_grace_cycles: 3
 
 storage:
   db_path: "data/trading.db"

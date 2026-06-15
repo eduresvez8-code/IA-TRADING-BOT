@@ -97,6 +97,10 @@ class FuturesExchange(Protocol):
         """Envía una orden y devuelve su resultado."""
         ...
 
+    async def get_open_orders(self, symbol: str) -> list[OrderResult]:
+        """Órdenes abiertas (resting) de un símbolo — p. ej. los SL/TP protectores."""
+        ...
+
     async def cancel_all(self, symbol: str) -> None:
         """Cancela todas las órdenes abiertas (resting) de un símbolo."""
         ...

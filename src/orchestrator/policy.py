@@ -11,9 +11,13 @@ tabla. Aquí viven dos políticas:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
 
 from src.core.models import PositionSide
+
+# Clave de una pierna: (símbolo, lado de posición).
+LegKey = tuple[str, PositionSide]
 
 
 class PositionAction(str, Enum):
@@ -47,42 +51,66 @@ def decide_position_action(
 
 
 class ReconVerdict(str, Enum):
-    OK = "ok"          # estado local y exchange coinciden
-    RESYNC = "resync"  # benigno: una pierna esperada ya no está (SL/TP disparó)
-    HALT = "halt"      # peligroso: pierna desconocida o cantidad divergente
+    OK = "ok"            # estado local y exchange coinciden
+    RESYNC = "resync"    # benigno: una pierna esperada ya no está (SL/TP disparó)
+    SUSPECT = "suspect"  # anomalía esta vela: necesita gracia antes de un HALT
+
+
+@dataclass(frozen=True)
+class ReconReport:
+    """Resultado de clasificar la reconciliación de UNA vela.
+
+    No decide el HALT (eso es estatal: el motor cuenta observaciones de gracia).
+    Solo separa lo benigno (resync) de lo sospechoso (suspect).
+    """
+
+    verdict: ReconVerdict
+    resync_keys: tuple[LegKey, ...] = ()    # piernas esperadas que el exchange ya no tiene
+    suspect_keys: tuple[LegKey, ...] = ()   # piernas desconocidas o con cantidad divergente
 
 
 def classify_reconciliation(
-    expected: dict[tuple[str, PositionSide], float],
-    actual: dict[tuple[str, PositionSide], float],
+    expected: dict[LegKey, float],
+    actual: dict[LegKey, float],
     tolerance: float,
-) -> ReconVerdict:
+    in_flight: set[LegKey] | frozenset[LegKey] = frozenset(),
+) -> ReconReport:
     """Compara el modelo interno con lo que reporta el exchange.
 
-    - Pierna esperada AUSENTE en el exchange → cierre por SL/TP (RESYNC, benigno).
-    - Pierna presente pero con cantidad divergente (> tolerancia) → HALT.
-    - Pierna en el exchange que NO abrimos → HALT (riesgo desconocido).
+    Las piernas EN VUELO (`in_flight`) se ignoran por completo: son operaciones
+    en tránsito y la latencia del WebSocket puede mostrarlas o no de forma
+    transitoria. No deben provocar ni resync ni HALT.
 
-    HALT domina sobre RESYNC: ante cualquier señal peligrosa, detenerse.
+    Del resto:
+    - Pierna esperada AUSENTE en el exchange → cierre por SL/TP (resync, benigno).
+    - Pierna esperada con cantidad divergente (> tolerancia) → sospechosa.
+    - Pierna en el exchange que NO abrimos ni tenemos en vuelo → sospechosa.
+
+    El motor aplica la ventana de gracia sobre `suspect_keys` antes de detener.
     """
-    halt = False
-    resync = False
+    resync: list[LegKey] = []
+    suspect: list[LegKey] = []
 
     for key, eq in expected.items():
+        if key in in_flight:
+            continue
         aq = actual.get(key)
         if aq is None:
-            resync = True
+            resync.append(key)
         else:
             denom = max(abs(eq), abs(aq), 1e-12)
             if abs(aq - eq) / denom > tolerance:
-                halt = True
+                suspect.append(key)
 
     for key in actual:
-        if key not in expected:
-            halt = True
+        if key in expected or key in in_flight:
+            continue
+        suspect.append(key)
 
-    if halt:
-        return ReconVerdict.HALT
-    if resync:
-        return ReconVerdict.RESYNC
-    return ReconVerdict.OK
+    if suspect:
+        verdict = ReconVerdict.SUSPECT
+    elif resync:
+        verdict = ReconVerdict.RESYNC
+    else:
+        verdict = ReconVerdict.OK
+    return ReconReport(verdict, tuple(resync), tuple(suspect))

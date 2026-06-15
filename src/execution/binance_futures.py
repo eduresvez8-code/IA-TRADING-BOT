@@ -126,6 +126,21 @@ class BinanceFuturesExchange:
             client_order_id=resp.get("clientOrderId", req.client_order_id),
         )
 
+    async def get_open_orders(self, symbol: str) -> list[OrderResult]:
+        raw = await retry_with_backoff(lambda: self.client.futures_get_open_orders(
+            symbol=symbol))
+        out = []
+        for o in raw:
+            out.append(OrderResult(
+                order_id=str(o["orderId"]), symbol=o["symbol"], status=o["status"],
+                side=Side(o["side"]), position_side=PositionSide(o.get("positionSide", "BOTH")),
+                type=OrderType(o["type"]) if o["type"] in OrderType._value2member_map_ else OrderType.MARKET,
+                executed_qty=float(o.get("executedQty", 0.0)),
+                avg_price=float(o.get("avgPrice", 0.0)),
+                client_order_id=o.get("clientOrderId"),
+            ))
+        return out
+
     async def cancel_all(self, symbol: str) -> None:
         await retry_with_backoff(lambda: self.client.futures_cancel_all_open_orders(
             symbol=symbol))

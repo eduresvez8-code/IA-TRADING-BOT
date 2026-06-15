@@ -203,10 +203,18 @@ def test_settings_yaml_execution():
 def test_settings_yaml_orchestrator():
     s = load_settings()
     assert 20 <= s.orchestrator.warmup_candles <= 1000
+    assert 1 <= s.orchestrator.reconcile_grace_cycles <= 20
 
 
 def test_warmup_demasiado_corto_es_rechazado():
     # Un buffer < 20 velas no daría datos a los indicadores (ge=20).
     from src.core.config import OrchestratorConfig
     with pytest.raises(ValidationError):
-        OrchestratorConfig(warmup_candles=5)
+        OrchestratorConfig(warmup_candles=5, reconcile_grace_cycles=3)
+
+
+def test_gracia_cero_es_rechazada():
+    # Una gracia de 0 dispararía el HALT a la primera observación (ge=1).
+    from src.core.config import OrchestratorConfig
+    with pytest.raises(ValidationError):
+        OrchestratorConfig(warmup_candles=60, reconcile_grace_cycles=0)
