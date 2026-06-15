@@ -125,6 +125,24 @@ class BacktestConfig(BaseModel):
         return v
 
 
+class EdgeConfig(BaseModel):
+    # Diagnóstico (no afecta al trading). forward_horizons: velas hacia adelante a
+    # las que medir el IC; cada una ≥1 y la lista no vacía. n_quantiles: cubos de
+    # la tabla de monotonicidad; ge=2 (un solo cubo no discrimina nada), le=20
+    # ataja un valor que dejaría cada cubo sin observaciones suficientes.
+    forward_horizons: list[int]
+    n_quantiles: int = Field(ge=2, le=20)
+
+    @field_validator("forward_horizons")
+    @classmethod
+    def horizons_validos(cls, v: list[int]) -> list[int]:
+        if not v:
+            raise ValueError("forward_horizons no puede estar vacío")
+        if any(h < 1 for h in v):
+            raise ValueError("cada horizonte de forward_horizons debe ser ≥ 1 vela")
+        return v
+
+
 class ExecutionConfig(BaseModel):
     # Tolerancia RELATIVA de reconciliación en (0,1): 0.001 = 0.1%. Un valor de 0
     # marcaría como discrepancia cualquier diferencia de redondeo; ≥1 nunca
@@ -156,6 +174,7 @@ class Settings(BaseModel):
     sentiment: SentimentConfig
     quant: QuantConfig
     backtest: BacktestConfig
+    edge: EdgeConfig
     execution: ExecutionConfig
     orchestrator: OrchestratorConfig
     storage: StorageConfig

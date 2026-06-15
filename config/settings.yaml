@@ -70,6 +70,12 @@ backtest:
   take_profit_rr: 2.0        # objetivo = RR × distancia_al_stop (riesgo:beneficio 1:RR)
   allow_short: true          # operar también en corto, no solo en largo
 
+edge:
+  # Diagnóstico del edge de la señal quant (backtest.run_edge). NO afecta al
+  # trading en vivo: solo mide si la señal predice el retorno futuro.
+  forward_horizons: [1, 4, 12, 24]   # velas hacia adelante a las que medir el IC
+  n_quantiles: 5                     # cubos para la tabla de monotonicidad señal→retorno
+
 execution:
   # Reconciliación: discrepancia RELATIVA de cantidad por encima de la cual el
   # estado local y el del exchange se consideran desincronizados → halt (cb c).

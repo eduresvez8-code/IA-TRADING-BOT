@@ -550,3 +550,32 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   consistencia: ¿el resultado se repite entre periodos o fue un tramo afortunado?
   Si la estrategia pierde en los 4 tramos, no hay edge — y eso es un hallazgo,
   no un fracaso.
+
+## Sprint C.3 (edge test de la señal quant)
+
+- **Edge**: ventaja estadística real de una estrategia — que las ganancias
+  esperadas superen a las pérdidas y a los costos *de forma sistemática*, no por
+  suerte. Sin edge, ningún sizing ni overlay la vuelve rentable.
+- **Information Coefficient (IC)**: correlación entre la señal en `t` y el
+  retorno realizado en `[t, t+N]`. Mide directamente el poder predictivo, sin
+  pasar por el PnL. `IC≈0` ⇒ la señal no informa; `IC>0` ⇒ predice; `IC<0` ⇒
+  *anti*-predice (apunta al lado contrario). En cripto/acciones un IC usable es
+  pequeño (0.02–0.05) pero **consistente** y, sobre todo, mayor que los costos.
+- **Spearman vs. Pearson**: Spearman es Pearson sobre los *rangos* — mide
+  relación *monótona* (robusta a outliers y no-linealidad); Pearson mide relación
+  *lineal*. Si Spearman ≫ Pearson, la señal informa en las colas pero no de forma
+  proporcional.
+- **Retornos solapados / muestra efectiva (n_eff)**: dos velas consecutivas
+  comparten `N−1` barras de su retorno forward, así que NO son observaciones
+  independientes. La muestra efectiva es `≈ n/N`. El t-stat de la correlación se
+  calcula con `n_eff`, no con `n`, para no inflar la significancia (con `n`
+  cualquier IC minúsculo "sale significativo" — autoengaño clásico).
+- **Monotonicidad por cuantiles**: agrupar las velas por valor de señal y mirar
+  el retorno medio futuro de cada cubo. Con edge, crece de forma monótona del
+  cubo más bajista al más alcista. Un perfil plano = sin discriminación; un
+  perfil en "U" o "∩" = la señal se comporta distinto en los extremos (típico de
+  una señal de momentum que dispara justo en agotamientos → reversión).
+- **Acierto direccional**: % de velas con `signo(retorno futuro)=signo(señal)`
+  entre las que superan el umbral de apertura. Su benchmark es la *deriva* del
+  mercado `P(retorno>0)`: acertar por debajo de ella es peor que apostar a favor
+  de la tendencia de fondo.

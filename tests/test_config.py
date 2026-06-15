@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from src.core.config import (
     BacktestConfig,
+    EdgeConfig,
     ExecutionConfig,
     RiskConfig,
     SentimentConfig,
@@ -198,6 +199,37 @@ def test_settings_yaml_execution():
     s = load_settings()
     assert 0.0 < s.execution.reconcile_position_tolerance < 1.0
     assert s.execution.stop_working_type in ("MARK_PRICE", "CONTRACT_PRICE")
+
+
+def test_edge_config_valido():
+    e = EdgeConfig(forward_horizons=[1, 4, 12, 24], n_quantiles=5)
+    assert e.forward_horizons == [1, 4, 12, 24]
+    assert e.n_quantiles == 5
+
+
+def test_edge_horizons_vacio_es_rechazado():
+    # Sin horizontes no hay nada que medir.
+    with pytest.raises(ValidationError):
+        EdgeConfig(forward_horizons=[], n_quantiles=5)
+
+
+def test_edge_horizonte_cero_es_rechazado():
+    # Un horizonte de 0 velas no mira al futuro (cada horizonte ≥ 1).
+    with pytest.raises(ValidationError):
+        EdgeConfig(forward_horizons=[0, 4], n_quantiles=5)
+
+
+def test_edge_un_solo_cuantil_es_rechazado():
+    # Un solo cubo no discrimina la señal (ge=2).
+    with pytest.raises(ValidationError):
+        EdgeConfig(forward_horizons=[1], n_quantiles=1)
+
+
+def test_settings_yaml_edge():
+    s = load_settings()
+    assert len(s.edge.forward_horizons) >= 1
+    assert all(h >= 1 for h in s.edge.forward_horizons)
+    assert 2 <= s.edge.n_quantiles <= 20
 
 
 def test_settings_yaml_orchestrator():
