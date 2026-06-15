@@ -159,17 +159,28 @@ class BacktestEngine:
                 kind = pending[0]
                 if kind == "enter" and position is None:
                     side, atr_at_decision, size_factor = pending[1], pending[2], pending[3]
-                    stop_distance = atr_mult * atr_at_decision
-                    if stop_distance > 0:
-                        s = slip_at(i, opens[i])
+                    stop_px, tp_px = pending[4], pending[5]
+                    s = slip_at(i, opens[i])
+                    entry = opens[i] * (1 + s) if side == "LONG" else opens[i] * (1 - s)
+                    if stop_px is None:
+                        # Defecto (Sprint 3): stop a ATR de la decisión, TP por RR.
+                        stop_distance = atr_mult * atr_at_decision
                         if side == "LONG":
-                            entry = opens[i] * (1 + s)      # comprar: peor precio
                             stop = entry - stop_distance
                             tp = entry + bt.take_profit_rr * stop_distance
                         else:
-                            entry = opens[i] * (1 - s)      # vender en corto
                             stop = entry + stop_distance
                             tp = entry - bt.take_profit_rr * stop_distance
+                    else:
+                        # Stop/TP explícitos del decider: niveles de precio fijados con
+                        # datos causales de la vela de decisión (canal de Donchian, etc.).
+                        # tp_px puede ser None → salir solo por señal o por stop.
+                        stop, tp = stop_px, tp_px
+                        stop_distance = abs(entry - stop)
+                    # El stop debe quedar en el lado correcto; si no, no se abre.
+                    valid_stop = ((side == "LONG" and stop < entry)
+                                  or (side == "SHORT" and stop > entry))
+                    if stop_distance > 0 and valid_stop:
                         equity_now = cash  # plano: equity == cash
                         # El size_factor de la confluencia escala el riesgo del trade.
                         risk_amount = equity_now * risk_pct / 100.0 * size_factor
@@ -197,23 +208,24 @@ class BacktestEngine:
             if position is not None:
                 stop = position["stop"]
                 tp = position["tp"]
+                # tp puede ser None (arquetipo de reversión: salida solo por señal).
                 if position["side"] == "LONG":
                     if opens[i] <= stop:                  # gap EN CONTRA: abrió bajo el stop
                         close_position(opens[i], i, "stop_loss")
                     elif lows[i] <= stop:                 # tocado intrabar → al nivel
                         close_position(stop, i, "stop_loss")
-                    elif opens[i] >= tp:                  # gap A FAVOR: abrió sobre el TP
+                    elif tp is not None and opens[i] >= tp:   # gap A FAVOR: abrió sobre el TP
                         close_position(opens[i], i, "take_profit")
-                    elif highs[i] >= tp:                  # tocado intrabar → al nivel
+                    elif tp is not None and highs[i] >= tp:   # tocado intrabar → al nivel
                         close_position(tp, i, "take_profit")
                 else:  # SHORT (espejo)
                     if opens[i] >= stop:                  # gap EN CONTRA: abrió sobre el stop
                         close_position(opens[i], i, "stop_loss")
                     elif highs[i] >= stop:
                         close_position(stop, i, "stop_loss")
-                    elif opens[i] <= tp:                  # gap A FAVOR: abrió bajo el TP
+                    elif tp is not None and opens[i] <= tp:   # gap A FAVOR: abrió bajo el TP
                         close_position(opens[i], i, "take_profit")
-                    elif lows[i] <= tp:
+                    elif tp is not None and lows[i] <= tp:
                         close_position(tp, i, "take_profit")
 
             # ---- 3. Marcar a mercado: equity con PnL no realizado al cierre ----
@@ -234,7 +246,11 @@ class BacktestEngine:
             if dec is None:
                 continue
             if dec[0] == "enter" and position is None:
-                pending = ("enter", dec[1], atrs[i], dec[2])
+                # ("enter", side, size_factor[, stop_px, tp_px]). Sin stop/tp
+                # explícitos → None → el motor usa el stop ATR + TP por RR.
+                stop_px = dec[3] if len(dec) > 3 else None
+                tp_px = dec[4] if len(dec) > 4 else None
+                pending = ("enter", dec[1], atrs[i], dec[2], stop_px, tp_px)
             elif dec[0] == "exit" and position is not None:
                 pending = ("exit",)
 

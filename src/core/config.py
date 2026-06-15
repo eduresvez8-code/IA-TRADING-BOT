@@ -143,6 +143,50 @@ class EdgeConfig(BaseModel):
         return v
 
 
+class ScanConfig(BaseModel):
+    # Universo y parámetros del escáner de arquetipos (laboratorio de estrategia).
+    # symbols no vacío; history_days ≥1; folds ge=2 (un solo tramo no testea
+    # consistencia) le=20; edge_profit_factor_min gt=1 (PF≤1 ya es no-edge).
+    symbols: list[str]
+    history_days: int = Field(ge=1)
+    walk_forward_folds: int = Field(ge=2, le=20)
+    edge_profit_factor_min: float = Field(gt=1.0)
+
+    @field_validator("symbols")
+    @classmethod
+    def symbols_no_vacio(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("scan.symbols no puede estar vacío")
+        return v
+
+
+class MeanReversionConfig(BaseModel):
+    # Arquetipo 2. bb_num_std gt=0 (bandas no degeneradas); RSI en [0,100] con
+    # oversold < overbought (si no, la zona de compra y venta se cruzarían).
+    bb_period: int = Field(ge=2, le=500)
+    bb_num_std: float = Field(gt=0)
+    rsi_oversold: float = Field(ge=0.0, le=100.0)
+    rsi_overbought: float = Field(ge=0.0, le=100.0)
+
+    @field_validator("rsi_overbought")
+    @classmethod
+    def overbought_sobre_oversold(cls, v: float, info) -> float:
+        os = info.data.get("rsi_oversold")
+        if os is not None and v <= os:
+            raise ValueError(
+                f"rsi_overbought ({v}) debe ser mayor que rsi_oversold ({os})"
+            )
+        return v
+
+
+class BreakoutConfig(BaseModel):
+    # Arquetipo 3. Periodos ge=2; volume_multiplier ge=0 (0 = sin filtro de
+    # volumen, cualquier ruptura vale).
+    donchian_period: int = Field(ge=2, le=500)
+    volume_ma_period: int = Field(ge=2, le=500)
+    volume_multiplier: float = Field(ge=0.0)
+
+
 class ExecutionConfig(BaseModel):
     # Tolerancia RELATIVA de reconciliación en (0,1): 0.001 = 0.1%. Un valor de 0
     # marcaría como discrepancia cualquier diferencia de redondeo; ≥1 nunca
@@ -175,6 +219,9 @@ class Settings(BaseModel):
     quant: QuantConfig
     backtest: BacktestConfig
     edge: EdgeConfig
+    scan: ScanConfig
+    mean_reversion: MeanReversionConfig
+    breakout: BreakoutConfig
     execution: ExecutionConfig
     orchestrator: OrchestratorConfig
     storage: StorageConfig

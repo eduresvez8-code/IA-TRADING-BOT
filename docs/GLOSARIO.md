@@ -579,3 +579,36 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   entre las que superan el umbral de apertura. Su benchmark es la *deriva* del
   mercado `P(retorno>0)`: acertar por debajo de ella es peor que apostar a favor
   de la tendencia de fondo.
+
+## Sprint de investigación quant (escáner de 3 arquetipos)
+
+- **SMA (media móvil simple)**: promedio de los últimos N cierres, ponderando por
+  igual toda la ventana (a diferencia de la EMA, que pondera más lo reciente). Es
+  la línea central de Bollinger y la referencia de salida de la reversión.
+- **Bandas de Bollinger**: media (SMA N) ± k·σ. σ es la desviación POBLACIONAL de
+  la ventana. Las bandas se ensanchan con la volatilidad: "tocar la banda" es una
+  desviación relativa al régimen actual, no un nivel fijo. Mide *cuán extremo* es
+  el precio respecto a su propia historia reciente.
+- **Canal de Donchian**: máximo y mínimo de los últimos N periodos. Un cierre por
+  encima del máximo previo = ruptura alcista. Para evitar look-ahead, el canal se
+  desplaza una vela (`shift(1)`): la vela t rompe niveles conocidos ANTES de t.
+- **Arquetipo de estrategia**: una *familia* de lógica con una raíz matemática y
+  una tesis de mercado propias. Los tres opuestos del escáner:
+  1. **Tendencia (trend-following)**: EMA-cross + RSI. Asume que el movimiento
+     persiste; gana en expansiones, sangra en lateral (whipsaw).
+  2. **Reversión a la media (mean-reversion)**: compra barato/vende caro contra
+     las bandas; asume que el precio vuelve a su media. Gana en rango, MUERE en
+     tendencia (se pone corto en un toro y lo arrolla).
+  3. **Ruptura (breakout)**: entra cuando el precio rompe un canal con volumen;
+     asume que la ruptura inicia un impulso. Pocas operaciones, ganadores grandes.
+- **Filtro de volumen**: confirmar una ruptura solo si el volumen supera su media
+  reciente. Una ruptura sin volumen suele ser una trampa (false breakout): nadie
+  está empujando el precio, revierte enseguida.
+- **Multiple hypothesis testing (data-mining bias)**: si pruebas 30 combinaciones
+  [activo × arquetipo] y eliges "la mejor", esa puede ser ruido afortunado, no
+  edge. El antídoto es exigir consistencia entre tramos del walk-forward, no solo
+  un buen número agregado. Una estrategia que gana en 4/4 tramos es creíble; una
+  que gana solo en agregado pero pierde en la mitad de los tramos, no.
+- **Ancla Cuántica**: el combo [activo × arquetipo] que demuestra edge real
+  (expectancy>0, PF>umbral) de forma consistente en el walk-forward. Sería la base
+  sobre la que reacoplar el Sentiment Engine — solo si existe.

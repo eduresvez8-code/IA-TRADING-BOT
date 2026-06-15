@@ -1,4 +1,4 @@
-"""Indicadores de análisis técnico: EMA, RSI, ATR.
+"""Indicadores de análisis técnico: EMA, RSI, ATR, SMA, Bollinger, Donchian.
 
 Funciones puras sobre pd.Series / pd.DataFrame. Sin efectos secundarios
 ni dependencias de configuración. Devuelven una Series con el mismo índice
@@ -104,3 +104,57 @@ def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     ).max(axis=1)
 
     return _wilder_smooth(true_range, period)
+
+
+def sma(series: pd.Series, period: int) -> pd.Series:
+    """Media Móvil Simple: promedio de los últimos `period` valores.
+
+    A diferencia de la EMA (que pondera más lo reciente), la SMA pondera por
+    igual toda la ventana. Es la línea central de las Bandas de Bollinger y la
+    referencia de salida del arquetipo de reversión a la media.
+
+    Returns:
+        SMA con NaN en las primeras period-1 posiciones.
+    """
+    return series.rolling(window=period, min_periods=period).mean()
+
+
+def bollinger_bands(
+    close: pd.Series, period: int = 20, num_std: float = 2.0
+) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Bandas de Bollinger: (media, banda superior, banda inferior).
+
+    media   = SMA(close, period)
+    banda   = media ± num_std · σ(close, period)
+
+    σ es la desviación estándar POBLACIONAL (ddof=0), la definición original de
+    Bollinger: tratamos la ventana como la población observada, no una muestra.
+    Las bandas se ensanchan con la volatilidad y se estrechan en calma, así que
+    "tocar la banda" es una desviación relativa al régimen actual, no absoluta.
+
+    Returns:
+        (middle, upper, lower), cada una con NaN en las primeras period-1 filas.
+    """
+    middle = close.rolling(window=period, min_periods=period).mean()
+    sd = close.rolling(window=period, min_periods=period).std(ddof=0)
+    return middle, middle + num_std * sd, middle - num_std * sd
+
+
+def donchian_channel(
+    high: pd.Series, low: pd.Series, period: int = 20
+) -> tuple[pd.Series, pd.Series]:
+    """Canal de Donchian: (máximo, mínimo) de los últimos `period` periodos.
+
+    upper = max(high, period);  lower = min(low, period)
+
+    Incluye la vela actual. El arquetipo de ruptura desplaza el canal una vela
+    (`.shift(1)`) para comparar el cierre de t contra niveles conocidos ANTES de
+    t — de lo contrario la propia vela definiría su canal y la ruptura sería un
+    artefacto de look-ahead. La causalidad vive en la estrategia, no aquí.
+
+    Returns:
+        (upper, lower), cada una con NaN en las primeras period-1 filas.
+    """
+    upper = high.rolling(window=period, min_periods=period).max()
+    lower = low.rolling(window=period, min_periods=period).min()
+    return upper, lower

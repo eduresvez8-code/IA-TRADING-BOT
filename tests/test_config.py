@@ -5,9 +5,12 @@ from pydantic import ValidationError
 
 from src.core.config import (
     BacktestConfig,
+    BreakoutConfig,
     EdgeConfig,
     ExecutionConfig,
+    MeanReversionConfig,
     RiskConfig,
+    ScanConfig,
     SentimentConfig,
     load_settings,
 )
@@ -230,6 +233,71 @@ def test_settings_yaml_edge():
     assert len(s.edge.forward_horizons) >= 1
     assert all(h >= 1 for h in s.edge.forward_horizons)
     assert 2 <= s.edge.n_quantiles <= 20
+
+
+def test_scan_config_valido():
+    sc = ScanConfig(symbols=["BTCUSDT"], history_days=1095,
+                    walk_forward_folds=4, edge_profit_factor_min=1.15)
+    assert sc.symbols == ["BTCUSDT"]
+    assert sc.edge_profit_factor_min == 1.15
+
+
+def test_scan_symbols_vacio_es_rechazado():
+    with pytest.raises(ValidationError):
+        ScanConfig(symbols=[], history_days=1095,
+                   walk_forward_folds=4, edge_profit_factor_min=1.15)
+
+
+def test_scan_pf_min_no_mayor_que_uno_es_rechazado():
+    # Un PF≤1 ya es "sin edge"; el umbral de edge debe ser >1 (gt=1.0).
+    with pytest.raises(ValidationError):
+        ScanConfig(symbols=["BTCUSDT"], history_days=1095,
+                   walk_forward_folds=4, edge_profit_factor_min=1.0)
+
+
+def test_scan_un_solo_tramo_es_rechazado():
+    # Un solo fold no testea consistencia entre periodos (ge=2).
+    with pytest.raises(ValidationError):
+        ScanConfig(symbols=["BTCUSDT"], history_days=1095,
+                   walk_forward_folds=1, edge_profit_factor_min=1.15)
+
+
+def test_mean_reversion_config_valido():
+    mr = MeanReversionConfig(bb_period=20, bb_num_std=2.0,
+                             rsi_oversold=30.0, rsi_overbought=70.0)
+    assert mr.bb_period == 20 and mr.bb_num_std == 2.0
+
+
+def test_mean_reversion_overbought_bajo_oversold_es_rechazado():
+    # Si la zona de sobrecompra ≤ la de sobreventa, comprar y vender se cruzan.
+    with pytest.raises(ValidationError):
+        MeanReversionConfig(bb_period=20, bb_num_std=2.0,
+                            rsi_oversold=70.0, rsi_overbought=30.0)
+
+
+def test_mean_reversion_bandas_degeneradas_es_rechazado():
+    with pytest.raises(ValidationError):
+        MeanReversionConfig(bb_period=20, bb_num_std=0.0,
+                            rsi_oversold=30.0, rsi_overbought=70.0)
+
+
+def test_breakout_config_valido():
+    bo = BreakoutConfig(donchian_period=20, volume_ma_period=20, volume_multiplier=1.0)
+    assert bo.donchian_period == 20 and bo.volume_multiplier == 1.0
+
+
+def test_breakout_periodo_demasiado_corto_es_rechazado():
+    with pytest.raises(ValidationError):
+        BreakoutConfig(donchian_period=1, volume_ma_period=20, volume_multiplier=1.0)
+
+
+def test_settings_yaml_laboratorio_estrategia():
+    s = load_settings()
+    assert len(s.scan.symbols) == 5
+    assert "SOLUSDT" in s.scan.symbols
+    assert s.scan.edge_profit_factor_min > 1.0
+    assert s.mean_reversion.rsi_overbought > s.mean_reversion.rsi_oversold
+    assert s.breakout.donchian_period >= 2
 
 
 def test_settings_yaml_orchestrator():

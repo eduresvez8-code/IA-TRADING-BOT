@@ -76,6 +76,27 @@ edge:
   forward_horizons: [1, 4, 12, 24]   # velas hacia adelante a las que medir el IC
   n_quantiles: 5                     # cubos para la tabla de monotonicidad señal→retorno
 
+# --- Laboratorio de estrategia (Sprint de investigación quant) ---
+# Escáner multi-activo de arquetipos. Todo parámetro vive aquí (cero hardcoding).
+scan:
+  symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "LINKUSDT"]
+  history_days: 1095            # ~3 años de histórico a descargar/backtestear
+  walk_forward_folds: 4         # tramos contiguos para el test de consistencia
+  edge_profit_factor_min: 1.15  # PF mínimo (con expectancy>0) para declarar "edge"
+
+mean_reversion:
+  # Arquetipo 2 (anti-chop): Bollinger + RSI en extremos; salida en la media.
+  bb_period: 20
+  bb_num_std: 2.0
+  rsi_oversold: 30.0            # RSI < esto + banda inferior → LONG
+  rsi_overbought: 70.0          # RSI > esto + banda superior → SHORT
+
+breakout:
+  # Arquetipo 3 (ruptura de volatilidad): Donchian + filtro de volumen.
+  donchian_period: 20           # nº de periodos del canal (máx/mín previos)
+  volume_ma_period: 20          # media de volumen para el filtro de confirmación
+  volume_multiplier: 1.0        # volumen de ruptura > este × media → válida
+
 execution:
   # Reconciliación: discrepancia RELATIVA de cantidad por encima de la cual el
   # estado local y el del exchange se consideran desincronizados → halt (cb c).

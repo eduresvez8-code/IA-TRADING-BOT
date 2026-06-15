@@ -10,7 +10,14 @@ Estrategia de testing:
 import pandas as pd
 import pytest
 
-from src.quant.indicators import atr, ema, rsi
+from src.quant.indicators import (
+    atr,
+    bollinger_bands,
+    donchian_channel,
+    ema,
+    rsi,
+    sma,
+)
 
 
 # ─── EMA ──────────────────────────────────────────────────────────────────────
@@ -185,3 +192,61 @@ class TestATR:
             {"open": [10.0] * n, "high": [12.0] * n, "low": [8.0] * n, "close": [10.0] * n, "volume": [1.0] * n}
         )
         assert atr(narrow, 3).iloc[-1] < atr(wide, 3).iloc[-1]
+
+
+# ─── SMA ──────────────────────────────────────────────────────────────────────
+
+
+class TestSMA:
+    def test_known_values_period3(self):
+        prices = pd.Series([10.0, 11.0, 12.0, 13.0, 14.0])
+        result = sma(prices, period=3)
+        assert pd.isna(result.iloc[0]) and pd.isna(result.iloc[1])
+        assert result.iloc[2] == pytest.approx(11.0)  # (10+11+12)/3
+        assert result.iloc[3] == pytest.approx(12.0)  # (11+12+13)/3
+        assert result.iloc[4] == pytest.approx(13.0)  # (12+13+14)/3
+
+
+# ─── Bollinger ────────────────────────────────────────────────────────────────
+
+
+class TestBollinger:
+    def test_bandas_simetricas_alrededor_de_la_media(self):
+        # Serie con desviación poblacional conocida: [9,10,11], σ=√(2/3).
+        close = pd.Series([9.0, 10.0, 11.0, 12.0, 13.0])
+        mid, up, lo = bollinger_bands(close, period=3, num_std=2.0)
+        import math
+        sd = math.sqrt(2.0 / 3.0)  # poblacional de {9,10,11}
+        assert mid.iloc[2] == pytest.approx(10.0)
+        assert up.iloc[2] == pytest.approx(10.0 + 2.0 * sd)
+        assert lo.iloc[2] == pytest.approx(10.0 - 2.0 * sd)
+        # la media siempre equidista de ambas bandas
+        assert (up.iloc[2] - mid.iloc[2]) == pytest.approx(mid.iloc[2] - lo.iloc[2])
+
+    def test_mas_desviaciones_bandas_mas_anchas(self):
+        close = pd.Series([float(x) for x in range(1, 21)])
+        _, up2, lo2 = bollinger_bands(close, 20, 2.0)
+        _, up3, lo3 = bollinger_bands(close, 20, 3.0)
+        assert up3.iloc[-1] > up2.iloc[-1] and lo3.iloc[-1] < lo2.iloc[-1]
+
+
+# ─── Donchian ─────────────────────────────────────────────────────────────────
+
+
+class TestDonchian:
+    def test_max_y_min_de_la_ventana(self):
+        high = pd.Series([10.0, 12.0, 11.0, 9.0, 15.0])
+        low = pd.Series([8.0, 9.0, 7.0, 6.0, 10.0])
+        up, lo = donchian_channel(high, low, period=3)
+        assert pd.isna(up.iloc[1]) and pd.isna(lo.iloc[1])
+        assert up.iloc[2] == pytest.approx(12.0)  # max(10,12,11)
+        assert lo.iloc[2] == pytest.approx(7.0)   # min(8,9,7)
+        assert up.iloc[4] == pytest.approx(15.0)  # max(11,9,15)
+        assert lo.iloc[4] == pytest.approx(6.0)   # min(7,6,10)
+
+    def test_incluye_la_vela_actual(self):
+        # El canal incluye t; el shift anti-look-ahead lo aplica la estrategia.
+        high = pd.Series([1.0, 2.0, 3.0, 10.0])
+        low = pd.Series([1.0, 2.0, 3.0, 10.0])
+        up, _ = donchian_channel(high, low, period=2)
+        assert up.iloc[3] == pytest.approx(10.0)  # max(3,10) usa la vela actual
