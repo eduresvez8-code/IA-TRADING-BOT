@@ -514,6 +514,20 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
 - **Paginación por cursor `next`**: CryptoPanic devuelve en cada página una URL
   `next` a la siguiente; se sigue ese cursor hasta agotarlo o el tope de páginas.
   Ante un 429 (rate limit del free tier) se reintenta con backoff exponencial.
+  *(Nota: CryptoPanic eliminó su free tier el 1-abr-2026; el cliente queda para
+  uso de pago. La fuente $0 elegida pasó a ser el índice Fear & Greed — abajo.)*
+- **Índice Fear & Greed (alternative.me)**: gauge diario [0,100] de sentimiento
+  de mercado cripto, calculado de volatilidad, momentum, dominancia, tendencias
+  y **redes sociales (Twitter/X ~15%)**. Gratis, sin API key, con histórico
+  completo desde 2018 — tras investigar todo el mercado, resultó ser la ÚNICA
+  fuente de sentimiento histórico a $0 (las noticias cripto históricas gratis
+  desaparecieron: todos los proveedores pusieron el archivo tras un muro de pago
+  en 2025-26). Se mapea a nuestro score con `(valor−50)/50`.
+- **Interpretación momentum vs. contraria (Fear & Greed)**: mapear codicia→alcista
+  asume *seguimiento de tendencia* (la confluencia trata el sentimiento como
+  confirmación). La lectura *contraria* clásica (codicia extrema = techo → bajista)
+  es la hipótesis opuesta; se prueba negando el score. Cuál funciona es una
+  pregunta empírica que el backtest debe responder, no un supuesto a hardcodear.
 
 ## Sprint C.2 (backtest de confluencia + walk-forward)
 
