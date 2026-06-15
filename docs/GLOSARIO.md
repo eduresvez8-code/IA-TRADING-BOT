@@ -514,3 +514,25 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
 - **Paginación por cursor `next`**: CryptoPanic devuelve en cada página una URL
   `next` a la siguiente; se sigue ese cursor hasta agotarlo o el tope de páginas.
   Ante un 429 (rate limit del free tier) se reintenta con backoff exponencial.
+
+## Sprint C.2 (backtest de confluencia + walk-forward)
+
+- **A/B honesto (sentimiento ON/OFF)**: el backtester corre la MISMA
+  `confluence.decide` que el bot en vivo; la única diferencia entre los dos
+  brazos es si se le pasa la serie de sentimiento o no. Así la diferencia de
+  métricas aísla la contribución del sentimiento, sin cambiar la ruta de decisión.
+- **Decider inyectable**: el motor de backtest acepta una función que decide la
+  acción de cada vela. Por defecto es la estrategia por umbrales del Sprint 3
+  (comportamiento intacto); la ruta de confluencia inyecta su propio decider con
+  el sentimiento. Un único núcleo de ejecución (sizing, stops, GAP, costos) para
+  ambos → backtest y vivo no divergen.
+- **Alineación anti-look-ahead**: cada vela t solo ve el sentimiento con
+  `published_at <= t` y dentro de la ventana de antigüedad. Es un merge de dos
+  series ordenadas, O(n+m). Usar el score de una noticia antes de su publicación
+  sería ver el futuro — el sesgo de anticipación clásico.
+- **Walk-forward (robustez)**: dividir el histórico en tramos contiguos y
+  backtestear cada uno por separado. Sin optimización de parámetros (aún no hay
+  perillas que ajustar) no es el walk-forward "de optimización", sino un test de
+  consistencia: ¿el resultado se repite entre periodos o fue un tramo afortunado?
+  Si la estrategia pierde en los 4 tramos, no hay edge — y eso es un hallazgo,
+  no un fracaso.

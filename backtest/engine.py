@@ -65,7 +65,15 @@ class BacktestEngine:
     def __init__(self, settings: Settings | None = None):
         self.cfg = settings or load_settings()
 
-    def run(self, df: pd.DataFrame, symbol: str, timeframe: str) -> BacktestResult:
+    def run(self, df: pd.DataFrame, symbol: str, timeframe: str,
+            *, decider=None) -> BacktestResult:
+        """Simula la estrategia barra a barra.
+
+        `decider(i, position_side, score, ts)` decide la acción de cada vela y
+        devuelve ("enter", side, size_factor) | ("exit",) | None. Por defecto usa
+        la estrategia por umbrales del Sprint 3 (comportamiento intacto); la ruta
+        de confluencia (Sprint C.2) inyecta su propio decider con sentimiento.
+        """
         bt = self.cfg.backtest
         atr_mult = self.cfg.risk.atr_stop_multiplier
         risk_pct = self.cfg.risk.risk_per_trade_pct
@@ -130,12 +138,27 @@ class BacktestEngine:
             ))
             position = None
 
+        if decider is None:
+            # Estrategia por umbrales del Sprint 3 (comportamiento de referencia).
+            def decider(i, position_side, score, ts):
+                if position_side is None:
+                    if score >= bt.entry_threshold:
+                        return ("enter", "LONG", 1.0)
+                    if score <= -bt.entry_threshold and bt.allow_short:
+                        return ("enter", "SHORT", 1.0)
+                    return None
+                if position_side == "LONG" and score <= bt.exit_threshold:
+                    return ("exit",)
+                if position_side == "SHORT" and score >= -bt.exit_threshold:
+                    return ("exit",)
+                return None
+
         for i in range(n):
             # ---- 1. Ejecutar acción pendiente a la APERTURA de esta vela ----
             if pending is not None:
                 kind = pending[0]
                 if kind == "enter" and position is None:
-                    side, atr_at_decision = pending[1], pending[2]
+                    side, atr_at_decision, size_factor = pending[1], pending[2], pending[3]
                     stop_distance = atr_mult * atr_at_decision
                     if stop_distance > 0:
                         s = slip_at(i, opens[i])
@@ -148,7 +171,8 @@ class BacktestEngine:
                             stop = entry + stop_distance
                             tp = entry - bt.take_profit_rr * stop_distance
                         equity_now = cash  # plano: equity == cash
-                        risk_amount = equity_now * risk_pct / 100.0
+                        # El size_factor de la confluencia escala el riesgo del trade.
+                        risk_amount = equity_now * risk_pct / 100.0 * size_factor
                         qty = risk_amount / stop_distance
                         # Sin apalancamiento: el notional no excede la equity.
                         qty = min(qty, equity_now / entry) if entry > 0 else 0.0
@@ -204,21 +228,15 @@ class BacktestEngine:
                 equity_list.append(cash)
 
             # ---- 4. Decidir acción para la vela SIGUIENTE (con cierre de t) ----
-            score = scores[i]
-            a = atrs[i]
-            if pd.isna(score) or pd.isna(a):
+            if pd.isna(scores[i]) or pd.isna(atrs[i]):
                 continue
-            if position is None:
-                if score >= bt.entry_threshold:
-                    pending = ("enter", "LONG", a)
-                elif score <= -bt.entry_threshold and bt.allow_short:
-                    pending = ("enter", "SHORT", a)
-            else:
-                # Salida por debilidad/giro de la señal.
-                if position["side"] == "LONG" and score <= bt.exit_threshold:
-                    pending = ("exit",)
-                elif position["side"] == "SHORT" and score >= -bt.exit_threshold:
-                    pending = ("exit",)
+            dec = decider(i, position["side"] if position else None, scores[i], times[i])
+            if dec is None:
+                continue
+            if dec[0] == "enter" and position is None:
+                pending = ("enter", dec[1], atrs[i], dec[2])
+            elif dec[0] == "exit" and position is not None:
+                pending = ("exit",)
 
         # ---- Cierre forzado si quedó una posición abierta al final ----
         if position is not None:
