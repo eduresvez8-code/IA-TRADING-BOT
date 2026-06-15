@@ -30,6 +30,7 @@ class Secrets(BaseSettings):
     binance_api_secret: str = ""
     binance_testnet: bool = True
     anthropic_api_key: str = ""
+    cryptopanic_token: str = ""  # token del free tier para noticias históricas
 
 
 class MarketConfig(BaseModel):

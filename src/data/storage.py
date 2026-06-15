@@ -11,13 +11,14 @@ Varios módulos async comparten esta BD; sin WAL, una escritura bloquea todas
 las lecturas y aparecen errores `database is locked`.
 """
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
 import aiosqlite
 import pandas as pd
 
-from src.core.models import Candle
+from src.core.models import Candle, NewsItem
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS candles (
@@ -64,6 +65,31 @@ CREATE TABLE IF NOT EXISTS session_state (
 )
 """
 
+# Corpus histórico de noticias y sus scores (Sprint C). La PK (hash de URL) hace
+# idempotente acumular el corpus en ejecuciones sucesivas del free tier.
+NEWS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS news (
+    id        TEXT    PRIMARY KEY,
+    ts        INTEGER NOT NULL,  -- published_at en epoch ms UTC (alineación a velas)
+    title     TEXT    NOT NULL,
+    source    TEXT,
+    url       TEXT,
+    summary   TEXT
+)
+"""
+
+SCORES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS sentiment_scores (
+    news_id      TEXT    PRIMARY KEY,
+    ts           INTEGER NOT NULL,  -- = published_at de la noticia (NO analyzed_at)
+    score        REAL    NOT NULL,
+    confidence   REAL    NOT NULL,
+    high_impact  INTEGER NOT NULL,
+    symbol_scope TEXT    NOT NULL,  -- JSON, ej. ["BTC","ETH"] o ["*"]
+    rationale    TEXT
+)
+"""
+
 
 class Storage:
     def __init__(self, db_path: str | Path, candles_dir: str | Path):
@@ -78,6 +104,8 @@ class Storage:
         await self._db.execute(SCHEMA)
         await self._db.execute(ORDERS_SCHEMA)
         await self._db.execute(SESSION_SCHEMA)
+        await self._db.execute(NEWS_SCHEMA)
+        await self._db.execute(SCORES_SCHEMA)
         await self._db.commit()
         return self
 
@@ -166,6 +194,67 @@ class Storage:
             return None
         return {"peak_wallet": row[0], "day_start_wallet": row[1],
                 "day": row[2], "kill_switch": bool(row[3])}
+
+    # ---------- SQLite: corpus histórico de noticias y scores ----------
+
+    async def save_news(self, item: NewsItem) -> None:
+        await self._db.execute(
+            "INSERT OR REPLACE INTO news VALUES (?, ?, ?, ?, ?, ?)",
+            (item.id, int(item.published_at.timestamp() * 1000), item.title,
+             item.source, item.url, item.summary),
+        )
+        await self._db.commit()
+
+    async def get_news(self, *, since_ms: int | None = None,
+                       until_ms: int | None = None) -> list[NewsItem]:
+        """Noticias en [since_ms, until_ms], orden cronológico ascendente."""
+        clauses, params = [], []
+        if since_ms is not None:
+            clauses.append("ts >= ?"); params.append(since_ms)
+        if until_ms is not None:
+            clauses.append("ts <= ?"); params.append(until_ms)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        cur = await self._db.execute(
+            f"SELECT id, ts, title, source, url, summary FROM news{where}"
+            " ORDER BY ts ASC", params,
+        )
+        rows = await cur.fetchall()
+        return [
+            NewsItem(id=r[0],
+                     published_at=datetime.fromtimestamp(r[1] / 1000, tz=timezone.utc),
+                     title=r[2], source=r[3] or "", url=r[4] or "", summary=r[5] or "")
+            for r in rows
+        ]
+
+    async def save_sentiment_score(self, score, *, ts_ms: int) -> None:
+        # ts_ms es el published_at de la noticia (no analyzed_at): así el score
+        # se alinea al instante en que la información estuvo disponible.
+        await self._db.execute(
+            "INSERT OR REPLACE INTO sentiment_scores VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (score.news_id, ts_ms, score.score, score.confidence,
+             int(score.high_impact), json.dumps(score.symbol_scope), score.rationale),
+        )
+        await self._db.commit()
+
+    async def get_sentiment_scores(self, *, since_ms: int | None = None,
+                                   until_ms: int | None = None) -> list[dict]:
+        """Scores en [since_ms, until_ms], orden ascendente. Cada uno como dict."""
+        clauses, params = [], []
+        if since_ms is not None:
+            clauses.append("ts >= ?"); params.append(since_ms)
+        if until_ms is not None:
+            clauses.append("ts <= ?"); params.append(until_ms)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        cur = await self._db.execute(
+            "SELECT news_id, ts, score, confidence, high_impact, symbol_scope, rationale"
+            f" FROM sentiment_scores{where} ORDER BY ts ASC", params,
+        )
+        rows = await cur.fetchall()
+        return [
+            {"news_id": r[0], "ts": r[1], "score": r[2], "confidence": r[3],
+             "high_impact": bool(r[4]), "symbol_scope": json.loads(r[5]), "rationale": r[6]}
+            for r in rows
+        ]
 
     # ---------- Parquet: histórico para backtesting ----------
 

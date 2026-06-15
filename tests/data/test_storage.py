@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
-from src.core.models import Candle
+from src.core.models import Candle, NewsItem, SentimentScore
 from src.data.storage import Storage
 
 NOW = datetime(2026, 6, 12, 12, 0, tzinfo=timezone.utc)
@@ -82,6 +82,37 @@ async def test_order_idempotente_por_client_order_id(storage):
         status="FILLED", exchange_order_id="1", decision_reason="t")
     out = await storage.get_orders()
     assert len(out) == 1 and out[0]["status"] == "FILLED"
+
+
+async def test_news_roundtrip_y_rango_temporal(storage):
+    for i in range(3):
+        await storage.save_news(NewsItem(
+            id=f"n{i}", title=f"Bitcoin news {i}", source="cp", url=f"u{i}",
+            published_at=NOW + timedelta(hours=i), summary=""))
+    # rango: solo las dos primeras
+    until = int((NOW + timedelta(hours=1)).timestamp() * 1000)
+    out = await storage.get_news(until_ms=until)
+    assert [n.id for n in out] == ["n0", "n1"]          # orden cronológico
+    assert out[0].published_at.tzinfo is not None
+
+
+async def test_news_idempotente_por_hash(storage):
+    item = NewsItem(id="x", title="t", source="cp", url="u", published_at=NOW, summary="")
+    await storage.save_news(item)
+    await storage.save_news(item)  # misma noticia desde otro feed
+    assert len(await storage.get_news()) == 1
+
+
+async def test_sentiment_scores_roundtrip(storage):
+    sc = SentimentScore(news_id="n1", symbol_scope=["BTC", "ETH"], score=-0.8,
+                        confidence=0.9, high_impact=True, rationale="hack",
+                        analyzed_at=NOW)
+    ts = int(NOW.timestamp() * 1000)
+    await storage.save_sentiment_score(sc, ts_ms=ts)
+    out = await storage.get_sentiment_scores()
+    assert len(out) == 1
+    assert out[0]["score"] == -0.8 and out[0]["symbol_scope"] == ["BTC", "ETH"]
+    assert out[0]["high_impact"] is True and out[0]["ts"] == ts
 
 
 def test_parquet_roundtrip(tmp_path):

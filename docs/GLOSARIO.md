@@ -489,3 +489,28 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   wallet de inicio de día y el latch del kill switch, para que sobrevivan a un
   reinicio. Si no, tras una caída el drawdown se mediría desde cero y el kill
   switch podría no saltar ante una pérdida ocurrida a través del corte.
+
+## Sprint C (fundación de datos de sentimiento histórico)
+
+- **El muro de datos del sentimiento**: para backtestear si el sentimiento da
+  edge hace falta una serie HISTÓRICA de sentimiento, pero el RSS solo entrega
+  los últimos titulares y no persistíamos nada. Sin corpus histórico, la
+  hipótesis no se puede medir — de ahí esta fundación de datos.
+- **CryptoPanic**: agregador de noticias cripto con API paginada (free tier) que
+  sí permite recuperar histórico, a diferencia del RSS. Se mapea al mismo
+  `NewsItem` con el MISMO hash de URL, así una noticia que llega por RSS y por
+  CryptoPanic se deduplica igual.
+- **Corpus acumulativo**: el free tier limita la profundidad de histórico, así
+  que la estrategia es ejecutar la ingesta periódicamente y ACUMULAR en SQLite
+  (idempotente por hash de URL), construyendo el dataset con el tiempo.
+- **Alineación por `published_at` (anti look-ahead)**: cada SentimentScore se
+  indexa por el instante en que la noticia se PUBLICÓ (cuándo la información
+  estuvo disponible), no por cuándo la analizamos. Usar `analyzed_at` metería en
+  el backtest información del futuro — el error #1 del backtesting.
+- **Confianza local = |score local|**: a un ítem que no merece el análisis de
+  Claude se le asigna una confianza igual a la magnitud de su score local (baja
+  por construcción, < umbral de escalación). El Risk Manager le da así menos peso
+  al sizing — coherente con que es una señal barata y menos fiable.
+- **Paginación por cursor `next`**: CryptoPanic devuelve en cada página una URL
+  `next` a la siguiente; se sigue ese cursor hasta agotarlo o el tope de páginas.
+  Ante un 429 (rate limit del free tier) se reintenta con backoff exponencial.
