@@ -59,27 +59,35 @@ class TestMeanReversion:
 
 class TestBreakout:
     def _df_breakout(self, volume_spike: float):
-        closes = [100.0] * 30 + [110.0] + [111.0] * 5
-        n = len(closes)
-        volumes = [100.0] * 30 + [volume_spike] + [100.0] * 5
-        return make_ohlcv(closes, volumes=volumes), n
+        # 40 velas planas (warmup del filtro de ATR: atr(14)+media(20)) y ruptura.
+        closes = [100.0] * 40 + [110.0] + [111.0] * 5
+        volumes = [100.0] * 40 + [volume_spike] + [100.0] * 5
+        return make_ohlcv(closes, volumes=volumes)
 
-    def test_entra_long_al_romper_con_volumen(self):
+    def test_entra_long_al_romper_con_volumen_y_volatilidad(self):
         cfg = load_settings()
-        df, _ = self._df_breakout(volume_spike=500.0)
+        df = self._df_breakout(volume_spike=500.0)
         decider = make_breakout_decider(df, cfg, allow_short=True)
         res = BacktestEngine(cfg).run(df, "TEST", "1h", decider=decider)
         assert res.metrics.n_trades >= 1
         assert res.trades[0].side == "LONG"
-        # el stop (lado opuesto del canal) queda por debajo de la entrada
-        assert res.trades[0].entry_price > 100.0
+        assert res.trades[0].entry_price > 100.0  # entra en la ruptura, no en el plano
 
     def test_ruptura_sin_volumen_no_entra(self):
         cfg = load_settings()
-        df, _ = self._df_breakout(volume_spike=100.0)  # sin spike → filtro veta
+        df = self._df_breakout(volume_spike=100.0)  # sin spike → filtro de volumen veta
         decider = make_breakout_decider(df, cfg, allow_short=True)
         res = BacktestEngine(cfg).run(df, "TEST", "1h", decider=decider)
         assert res.metrics.n_trades == 0
+
+    def test_salida_trailing_por_canal_opuesto(self):
+        cfg = load_settings()
+        # sube de 100 a 130 (31 velas) y luego cae por debajo del canal de salida.
+        closes = [100.0 + i for i in range(31)] + [115.0]
+        df = make_ohlcv(closes)
+        decide = make_breakout_decider(df, cfg, allow_short=True)
+        out = decide(len(closes) - 1, "LONG", 0.0, df["open_time"].iloc[-1])
+        assert out == ("exit",)  # 115 rompe a la baja el mínimo del canal corto previo
 
 
 class TestDispatch:

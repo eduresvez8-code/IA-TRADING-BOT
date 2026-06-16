@@ -180,11 +180,26 @@ class MeanReversionConfig(BaseModel):
 
 
 class BreakoutConfig(BaseModel):
-    # Arquetipo 3. Periodos ge=2; volume_multiplier ge=0 (0 = sin filtro de
-    # volumen, cualquier ruptura vale).
+    # Arquetipo 3. Periodos ge=2; multiplicadores ge=0 (0 = sin filtro: cualquier
+    # ruptura/volatilidad vale). exit_donchian_period es el canal de salida
+    # trailing (Turtle); debe ser ≤ donchian_period (salir con un canal MÁS ancho
+    # que el de entrada no tendría sentido).
     donchian_period: int = Field(ge=2, le=500)
+    exit_donchian_period: int = Field(ge=2, le=500)
     volume_ma_period: int = Field(ge=2, le=500)
     volume_multiplier: float = Field(ge=0.0)
+    atr_filter_period: int = Field(ge=2, le=500)
+    atr_expansion_mult: float = Field(ge=0.0)
+
+    @field_validator("exit_donchian_period")
+    @classmethod
+    def salida_no_mas_ancha_que_entrada(cls, v: int, info) -> int:
+        entry = info.data.get("donchian_period")
+        if entry is not None and v > entry:
+            raise ValueError(
+                f"exit_donchian_period ({v}) no debe superar donchian_period ({entry})"
+            )
+        return v
 
 
 class ExecutionConfig(BaseModel):

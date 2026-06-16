@@ -93,9 +93,12 @@ mean_reversion:
 
 breakout:
   # Arquetipo 3 (ruptura de volatilidad): Donchian + filtro de volumen.
-  donchian_period: 20           # nº de periodos del canal (máx/mín previos)
+  donchian_period: 20           # canal de ENTRADA: máx/mín de los N previos
+  exit_donchian_period: 10      # canal de SALIDA trailing (Turtle): más corto que el de entrada
   volume_ma_period: 20          # media de volumen para el filtro de confirmación
   volume_multiplier: 1.0        # volumen de ruptura > este × media → válida
+  atr_filter_period: 20         # ventana de la media de ATR del filtro de volatilidad
+  atr_expansion_mult: 1.0       # solo entrar si ATR > este × media(ATR): régimen expansivo
 
 execution:
   # Reconciliación: discrepancia RELATIVA de cantidad por encima de la cual el

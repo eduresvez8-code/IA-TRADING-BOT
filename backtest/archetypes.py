@@ -76,41 +76,67 @@ def make_mean_reversion_decider(df: pd.DataFrame, settings: Settings, *, allow_s
 
 
 def make_breakout_decider(df: pd.DataFrame, settings: Settings, *, allow_short: bool):
-    """Arq. 3. Rompe el canal de Donchian PREVIO con volumen; stop al lado opuesto.
+    """Arq. 3 (refinado, estilo Turtle). Ruptura con volumen y régimen volátil;
+    stop duro al lado opuesto del canal de entrada, salida TRAILING por canal corto.
 
-    LONG  : cierre > máximo del canal previo  y  volumen > mult × media(volumen).
-            Stop = mínimo del canal previo (lado opuesto); TP = RR × distancia.
-    SHORT : espejo.
-    Anti look-ahead: el canal y la media de volumen se desplazan una vela
-    (`.shift(1)`), así la vela t rompe niveles conocidos ANTES de t. Salida solo
-    por stop/TP (bracket): se deja correr el impulso.
+    Entrada LONG : cierre > máximo del canal de entrada previo (Donchian N)
+                   Y volumen > mult × media(volumen)            (impulso real)
+                   Y ATR > expansión × media(ATR)               (volatilidad expansiva).
+                   Stop duro = mínimo del canal de entrada (lado opuesto). SIN TP.
+    Salida LONG  : el cierre rompe a la baja el canal de SALIDA previo (Donchian
+                   M<N) → trailing al estilo Turtle: deja correr al ganador y lo
+                   suelta cuando la estructura de corto plazo se rompe.
+    SHORT: espejo.
+
+    Anti look-ahead: canales, media de volumen y media de ATR se desplazan una
+    vela (`.shift(1)`); la vela t solo usa niveles conocidos ANTES de t.
+    Por qué los cambios vs. la v1 (TP por RR): un TP fijo sobre un stop de canal
+    ancho cortaba a los ganadores — lo contrario de lo que busca un breakout. El
+    trailing y el filtro de volatilidad atacan ese modo de fallo directamente.
     """
     bo = settings.breakout
-    don_up, don_lo = donchian_channel(df["high"], df["low"], bo.donchian_period)
+    high, low, close, volume = df["high"], df["low"], df["close"], df["volume"]
+    don_up, don_lo = donchian_channel(high, low, bo.donchian_period)
     don_up_prev = don_up.shift(1).to_numpy()
     don_lo_prev = don_lo.shift(1).to_numpy()
-    vol_ma_prev = sma(df["volume"], bo.volume_ma_period).shift(1).to_numpy()
+    exit_up, exit_lo = donchian_channel(high, low, bo.exit_donchian_period)
+    exit_up_prev = exit_up.shift(1).to_numpy()
+    exit_lo_prev = exit_lo.shift(1).to_numpy()
+    vol_ma_prev = sma(volume, bo.volume_ma_period).shift(1).to_numpy()
+    atr_s = atr(df, settings.risk.atr_period)
+    atr_avg = sma(atr_s, bo.atr_filter_period)
+    a, a_avg = atr_s.to_numpy(), atr_avg.to_numpy()
 
-    c = df["close"].to_numpy()
-    v = df["volume"].to_numpy()
-    rr = settings.backtest.take_profit_rr
+    c = close.to_numpy()
+    v = volume.to_numpy()
     mult = bo.volume_multiplier
+    expand = bo.atr_expansion_mult
 
     def decide(i, position_side, score, ts):
-        if position_side is not None:
-            return None  # salida por bracket (stop/TP)
-        if pd.isna(don_up_prev[i]) or pd.isna(vol_ma_prev[i]):
+        # Salida TRAILING: ruptura del canal de salida (corto) en contra.
+        if position_side == "LONG":
+            if not pd.isna(exit_lo_prev[i]) and c[i] < exit_lo_prev[i]:
+                return ("exit",)
+            return None
+        if position_side == "SHORT":
+            if not pd.isna(exit_up_prev[i]) and c[i] > exit_up_prev[i]:
+                return ("exit",)
+            return None
+        # Entrada: ruptura + volumen + régimen de volatilidad expansiva.
+        if (pd.isna(don_up_prev[i]) or pd.isna(vol_ma_prev[i]) or pd.isna(a_avg[i])):
             return None
         if v[i] <= mult * vol_ma_prev[i]:
             return None  # ruptura sin volumen: no confirmada
+        if a[i] <= expand * a_avg[i]:
+            return None  # volatilidad en compresión: ruptura poco fiable
         if c[i] > don_up_prev[i]:
             stop = don_lo_prev[i]
             if stop < c[i]:
-                return ("enter", "LONG", 1.0, stop, c[i] + rr * (c[i] - stop))
+                return ("enter", "LONG", 1.0, stop, None)   # sin TP: deja correr
         if allow_short and c[i] < don_lo_prev[i]:
             stop = don_up_prev[i]
             if stop > c[i]:
-                return ("enter", "SHORT", 1.0, stop, c[i] - rr * (stop - c[i]))
+                return ("enter", "SHORT", 1.0, stop, None)
         return None
 
     return decide

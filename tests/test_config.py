@@ -281,14 +281,28 @@ def test_mean_reversion_bandas_degeneradas_es_rechazado():
                             rsi_oversold=30.0, rsi_overbought=70.0)
 
 
+def _valid_breakout_kwargs(**overrides):
+    base = dict(donchian_period=20, exit_donchian_period=10, volume_ma_period=20,
+                volume_multiplier=1.0, atr_filter_period=20, atr_expansion_mult=1.0)
+    base.update(overrides)
+    return base
+
+
 def test_breakout_config_valido():
-    bo = BreakoutConfig(donchian_period=20, volume_ma_period=20, volume_multiplier=1.0)
-    assert bo.donchian_period == 20 and bo.volume_multiplier == 1.0
+    bo = BreakoutConfig(**_valid_breakout_kwargs())
+    assert bo.donchian_period == 20 and bo.exit_donchian_period == 10
+    assert bo.atr_expansion_mult == 1.0
 
 
 def test_breakout_periodo_demasiado_corto_es_rechazado():
     with pytest.raises(ValidationError):
-        BreakoutConfig(donchian_period=1, volume_ma_period=20, volume_multiplier=1.0)
+        BreakoutConfig(**_valid_breakout_kwargs(donchian_period=1))
+
+
+def test_breakout_salida_mas_ancha_que_entrada_es_rechazada():
+    # Un canal de salida más ancho que el de entrada no tiene sentido (Turtle: M<N).
+    with pytest.raises(ValidationError):
+        BreakoutConfig(**_valid_breakout_kwargs(donchian_period=20, exit_donchian_period=30))
 
 
 def test_settings_yaml_laboratorio_estrategia():
