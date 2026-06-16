@@ -54,6 +54,71 @@ def check() -> int:
     return 0
 
 
+async def preflight() -> int:
+    """Validación de testnet SIN operar: claves, cuenta, hedge mode, filtros.
+
+    El paso seguro antes de `--live`: confirma que las credenciales conectan, que
+    hay saldo (testnet), fija el modo cobertura y lee los metadatos de cada
+    símbolo. No envía ninguna orden. Si esto pasa, `--live` arrancará en limpio.
+    """
+    from binance.exceptions import BinanceAPIException
+
+    from src.core.config import load_secrets, load_settings
+    from src.execution.binance_futures import BinanceFuturesExchange
+
+    settings, secrets = load_settings(), load_secrets()
+    if not (secrets.binance_api_key and secrets.binance_api_secret):
+        print("⚠ faltan BINANCE_API_KEY/SECRET en .env — crea claves en la testnet "
+              "de Futuros (https://testnet.binancefuture.com) y añádelas a .env.")
+        return 1
+    if not secrets.binance_testnet:
+        print("⚠ BINANCE_TESTNET=false en .env — el paper trading debe ir contra "
+              "testnet. Pon BINANCE_TESTNET=true antes de continuar.")
+        return 1
+
+    exchange = await BinanceFuturesExchange.connect(
+        secrets.binance_api_key, secrets.binance_api_secret,
+        testnet=secrets.binance_testnet)
+    try:
+        acct = await exchange.get_account()
+        print(f"✓ conectado a Futuros (testnet={secrets.binance_testnet})")
+        print(f"✓ saldo wallet: {acct.wallet_balance:,.2f} USDT | "
+              f"disponible: {acct.available_balance:,.2f} USDT")
+        if acct.wallet_balance <= 0:
+            print("  ⚠ saldo 0 — pide fondos ficticios en el faucet de la testnet.")
+        if acct.positions:
+            for p in acct.positions:
+                print(f"  • posición abierta: {p.symbol} {p.position_side.value} "
+                      f"qty={p.qty} entry={p.entry_price}")
+        else:
+            print("✓ sin posiciones abiertas (cuenta limpia)")
+
+        dual = await exchange.get_position_mode()
+        if not dual:
+            await exchange.set_position_mode(True)
+            print("✓ hedge mode (dual side) activado")
+        else:
+            print("✓ hedge mode ya activo")
+
+        for symbol in settings.market.symbols:
+            f = await exchange.get_symbol_filters(symbol)
+            print(f"✓ {symbol}: tick={f.tick_size} step={f.step_size} "
+                  f"minNotional={f.min_notional}")
+        print("\n▶ Preflight OK. Ya puedes lanzar:  uv run python -m src.main --live")
+        return 0
+    except BinanceAPIException as e:
+        print(f"⚠ Binance rechazó la llamada (code {e.code}): {e.message}")
+        if e.code == -2015:
+            print("  → clave inválida, sin permiso de Futuros, o IP no autorizada.\n"
+                  "    Verifica que la clave es de testnet.binancefuture.com (NO la de\n"
+                  "    mainnet) y que BINANCE_TESTNET=true en .env.")
+        elif e.code == -2014:
+            print("  → formato de API-key inválido (revisa que no haya espacios/comillas).")
+        return 1
+    finally:
+        await exchange.close()
+
+
 async def live() -> int:
     """Lazo en vivo: datos de SPOT mainnet (públicos) + órdenes a FUTUROS testnet.
 
@@ -97,17 +162,22 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Bot de trading híbrido")
     parser.add_argument("--check", action="store_true",
                         help="validar configuración e imports, sin operar")
+    parser.add_argument("--preflight", action="store_true",
+                        help="validar conexión/cuenta/hedge mode en testnet, sin operar")
     parser.add_argument("--live", action="store_true",
                         help="lazo en vivo contra la testnet de Futuros (requiere claves)")
     args = parser.parse_args()
 
     if args.check:
         return check()
+    if args.preflight:
+        import asyncio
+        return asyncio.run(preflight())
     if args.live:
         import asyncio
         return asyncio.run(live())
 
-    print("Usa --check para validar la configuración o --live para operar en testnet.")
+    print("Usa --check (config), --preflight (conexión testnet) o --live (operar en testnet).")
     return 0
 
 

@@ -117,6 +117,14 @@ orchestrator:
   # del WebSocket: una aparición transitoria no detiene el bot, una sostenida sí.
   reconcile_grace_cycles: 3
 
+# --- Señales no-precio (funding rate / basis de futuros) ---
+# Edge test de funding/basis. NO afecta al trading: mide si predicen el precio.
+funding_edge:
+  premium_interval: "1h"                  # granularidad del basis/premium a capturar
+  forward_horizons_hours: [8, 24, 72, 168]  # retorno futuro (h): 1 funding, 1d, 3d, 7d
+  n_quantiles: 5                          # cubos para la monotonicidad señal→retorno
+
 storage:
   db_path: "data/trading.db"
   candles_dir: "data/candles"
+  funding_dir: "data/funding"

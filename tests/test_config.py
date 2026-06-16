@@ -8,6 +8,7 @@ from src.core.config import (
     BreakoutConfig,
     EdgeConfig,
     ExecutionConfig,
+    FundingEdgeConfig,
     MeanReversionConfig,
     RiskConfig,
     ScanConfig,
@@ -312,6 +313,31 @@ def test_settings_yaml_laboratorio_estrategia():
     assert s.scan.edge_profit_factor_min > 1.0
     assert s.mean_reversion.rsi_overbought > s.mean_reversion.rsi_oversold
     assert s.breakout.donchian_period >= 2
+
+
+def test_funding_edge_config_valido():
+    fe = FundingEdgeConfig(premium_interval="1h",
+                           forward_horizons_hours=[8, 24, 72, 168], n_quantiles=5)
+    assert fe.premium_interval == "1h"
+    assert fe.forward_horizons_hours == [8, 24, 72, 168]
+
+
+def test_funding_edge_horizontes_vacios_es_rechazado():
+    with pytest.raises(ValidationError):
+        FundingEdgeConfig(premium_interval="1h", forward_horizons_hours=[], n_quantiles=5)
+
+
+def test_funding_edge_horizonte_cero_es_rechazado():
+    with pytest.raises(ValidationError):
+        FundingEdgeConfig(premium_interval="1h", forward_horizons_hours=[0, 8], n_quantiles=5)
+
+
+def test_settings_yaml_funding_edge_y_storage():
+    s = load_settings()
+    assert s.storage.funding_dir  # ruta de almacenamiento de funding/basis
+    assert s.funding_edge.premium_interval in ("1h", "5m", "15m", "4h")
+    assert len(s.funding_edge.forward_horizons_hours) >= 1
+    assert all(h >= 1 for h in s.funding_edge.forward_horizons_hours)
 
 
 def test_settings_yaml_orchestrator():

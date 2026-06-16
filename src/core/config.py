@@ -221,9 +221,28 @@ class OrchestratorConfig(BaseModel):
     reconcile_grace_cycles: int = Field(ge=1, le=20)
 
 
+class FundingEdgeConfig(BaseModel):
+    # Edge test de señales no-precio. premium_interval: granularidad del basis.
+    # forward_horizons_hours: horizontes de retorno futuro en HORAS (la señal de
+    # funding es de 8h, así que los horizontes son múltiplos naturales, no velas).
+    premium_interval: str
+    forward_horizons_hours: list[int]
+    n_quantiles: int = Field(ge=2, le=20)
+
+    @field_validator("forward_horizons_hours")
+    @classmethod
+    def horizons_validos(cls, v: list[int]) -> list[int]:
+        if not v:
+            raise ValueError("forward_horizons_hours no puede estar vacío")
+        if any(h < 1 for h in v):
+            raise ValueError("cada horizonte (horas) debe ser ≥ 1")
+        return v
+
+
 class StorageConfig(BaseModel):
     db_path: str
     candles_dir: str
+    funding_dir: str
 
 
 class Settings(BaseModel):
@@ -237,6 +256,7 @@ class Settings(BaseModel):
     scan: ScanConfig
     mean_reversion: MeanReversionConfig
     breakout: BreakoutConfig
+    funding_edge: FundingEdgeConfig
     execution: ExecutionConfig
     orchestrator: OrchestratorConfig
     storage: StorageConfig

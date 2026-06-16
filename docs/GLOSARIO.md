@@ -612,3 +612,28 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
 - **Ancla Cuántica**: el combo [activo × arquetipo] que demuestra edge real
   (expectancy>0, PF>umbral) de forma consistente en el walk-forward. Sería la base
   sobre la que reacoplar el Sentiment Engine — solo si existe.
+
+## Señales no-precio (funding rate / basis)
+
+- **Funding rate**: pago periódico (cada 8h en Binance) entre longs y shorts de un
+  perpetuo para anclar su precio al spot. Positivo = los longs pagan a los shorts
+  (demanda alcista apalancada). Hipótesis: funding extremo = posicionamiento
+  saturado → posible reversión (lectura contraria).
+- **Basis / premium index**: prima del perpetuo sobre el índice spot,
+  (mark − index)/index. Alto = apetito de apalancamiento largo (contango); negativo
+  = backwardation. Es la fuente de la que se deriva el funding.
+- **Mark price vs index price**: el *index* es la media de precios spot en varios
+  exchanges (referencia "justa"); el *mark* es el precio de marca del perpetuo que
+  usa el exchange para PnL y liquidaciones. Su diferencia es el basis.
+- **Regla de Oro (cost hurdle)**: antes de programar una estrategia sobre una señal
+  nueva, su poder predictivo debe superar el costo. En concreto: el spread de
+  retorno futuro entre los cuantiles extremos de la señal debe exceder el costo
+  ida-vuelta (comisión+slippage ×2 ≈ 0.12%), con t significativo y signo
+  consistente. Si no, no se escribe ni una línea de estrategia. Evita construir
+  sobre ruido.
+- **Muestra efectiva en señales lentas**: una señal de baja frecuencia (funding
+  cada 8h) medida contra retornos a horizontes largos (p.ej. 168h) genera mucho
+  solape → la muestra efectiva (n/solape) cae a unas pocas decenas/centenas, y la
+  potencia estadística se desploma. Un spread grande puede no ser significativo:
+  con pocas observaciones independientes y alta volatilidad, su intervalo de
+  confianza incluye el cero.
