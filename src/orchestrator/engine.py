@@ -147,7 +147,10 @@ class Orchestrator:
         candles = await self._backfill_fn(sym, self.cfg.orchestrator.warmup_candles)
         self.buffers[sym] = list(candles)
         if candles:
-            self.last_candle_time[sym] = candles[-1].open_time
+            # El feed está FRESCO justo tras el backfill (acabamos de traer datos):
+            # marcamos la hora de llegada, no el open_time de la última vela (que ya
+            # es ~1 intervalo viejo y dispararía un stale_feed falso al arrancar).
+            self.last_candle_time[sym] = datetime.now(timezone.utc)
         self._needs_rewarm.discard(sym)
         return True
 
@@ -323,10 +326,22 @@ class Orchestrator:
 
     # ------------------------- circuit breaker (a): feed -------------------------
 
+    def _stale_threshold_seconds(self) -> float:
+        """Umbral de obsolescencia del feed, escalado al timeframe.
+
+        Con velas cerradas, entre vela y vela pasa ~1 intervalo; declarar el feed
+        muerto a los stale_feed_seconds (30) en un timeframe de 5m daría un HALT
+        falso en cada hueco normal. Tomamos el mayor entre el absoluto y
+        stale_feed_intervals × intervalo.
+        """
+        r = self.cfg.risk
+        return max(r.stale_feed_seconds,
+                   r.stale_feed_intervals * self._interval.total_seconds())
+
     def check_feed_health(self, *, now: datetime | None = None) -> bool:
-        """Si algún símbolo lleva sin velas más de stale_feed_seconds → halt."""
+        """Si algún símbolo lleva sin velas más del umbral (timeframe-aware) → halt."""
         now = now or datetime.now(timezone.utc)
-        stale = self.cfg.risk.stale_feed_seconds
+        stale = self._stale_threshold_seconds()
         for sym, last in self.last_candle_time.items():
             if (now - last).total_seconds() > stale:
                 if not self.halted:

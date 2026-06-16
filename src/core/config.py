@@ -55,6 +55,11 @@ class RiskConfig(BaseModel):
     low_confidence_threshold: float = Field(gt=0.0, lt=1.0)
     low_confidence_size_factor: float = Field(gt=0.0, le=1.0)
     stale_feed_seconds: float = Field(gt=0)
+    # El feed se considera obsoleto si no llega vela por más de este múltiplo del
+    # intervalo de la vela (o de stale_feed_seconds, lo que sea mayor). Con velas
+    # cerradas de 5m, 30s declararía el feed muerto entre vela y vela: la
+    # obsolescencia debe escalar con el timeframe. 2.0 = dos velas sin llegar.
+    stale_feed_intervals: float = Field(gt=0)
     # Futuros USD-M. max_leverage: entero ≥1; le=10 ataja un apalancamiento de
     # casino (un 20x sería un typo en este bot). max_portfolio_margin_pct: % del
     # wallet comprometible como margen inicial; >100 no tiene sentido → le=100.
@@ -209,6 +214,11 @@ class ExecutionConfig(BaseModel):
     # disparo de Binance Futuros.
     reconcile_position_tolerance: float = Field(gt=0.0, lt=1.0)
     stop_working_type: Literal["MARK_PRICE", "CONTRACT_PRICE"]
+    # Una entrada MARKET puede responder NEW y llenarse microsegundos después
+    # (Binance real/testnet). Antes de colocar SL/TP confirmamos el fill mirando
+    # la posición real, reintentando hasta este nº de veces con esta espera.
+    fill_confirm_retries: int = Field(ge=1, le=20)
+    fill_confirm_delay_seconds: float = Field(gt=0.0, le=5.0)
 
 
 class OrchestratorConfig(BaseModel):

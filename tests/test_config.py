@@ -107,6 +107,7 @@ def _valid_risk_kwargs(**overrides):
         atr_stop_multiplier=1.5, atr_period=14,
         take_profit_rr=2.0, low_confidence_threshold=0.4,
         low_confidence_size_factor=0.5, stale_feed_seconds=30,
+        stale_feed_intervals=2.0,
         max_leverage=3, max_portfolio_margin_pct=85.0,
     )
     base.update(overrides)
@@ -169,6 +170,7 @@ def test_settings_yaml_risk_futuros():
     assert 0.0 < s.risk.low_confidence_threshold < 1.0
     assert 0.0 < s.risk.low_confidence_size_factor <= 1.0
     assert s.risk.stale_feed_seconds > 0
+    assert s.risk.stale_feed_intervals > 0
     # Futuros: apalancamiento auto-limitado, margen agregado acotado, cortos ON.
     assert 1 <= s.risk.max_leverage <= 10
     assert 0.0 < s.risk.max_portfolio_margin_pct <= 100.0
@@ -176,7 +178,8 @@ def test_settings_yaml_risk_futuros():
 
 
 def _valid_execution_kwargs(**overrides):
-    base = dict(reconcile_position_tolerance=0.001, stop_working_type="MARK_PRICE")
+    base = dict(reconcile_position_tolerance=0.001, stop_working_type="MARK_PRICE",
+                fill_confirm_retries=5, fill_confirm_delay_seconds=0.3)
     base.update(overrides)
     return base
 
@@ -203,6 +206,13 @@ def test_settings_yaml_execution():
     s = load_settings()
     assert 0.0 < s.execution.reconcile_position_tolerance < 1.0
     assert s.execution.stop_working_type in ("MARK_PRICE", "CONTRACT_PRICE")
+    assert s.execution.fill_confirm_retries >= 1
+    assert s.execution.fill_confirm_delay_seconds > 0
+
+
+def test_fill_confirm_retries_cero_es_rechazado():
+    with pytest.raises(ValidationError):
+        ExecutionConfig(**_valid_execution_kwargs(fill_confirm_retries=0))
 
 
 def test_edge_config_valido():

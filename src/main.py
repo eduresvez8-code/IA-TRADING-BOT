@@ -95,10 +95,13 @@ async def preflight() -> int:
 
         dual = await exchange.get_position_mode()
         if not dual:
-            await exchange.set_position_mode(True)
-            print("✓ hedge mode (dual side) activado")
+            await exchange.set_position_mode(True)  # intenta; el testnet puede vetarlo
+            dual = await exchange.get_position_mode()
+        if dual:
+            print("✓ hedge mode (dual side) activo")
         else:
-            print("✓ hedge mode ya activo")
+            print("✓ modo ONE-WAY (el testnet no permite hedge) — el adaptador "
+                  "traduce a positionSide=BOTH; el bot opera 1 pierna por símbolo")
 
         for symbol in settings.market.symbols:
             f = await exchange.get_symbol_filters(symbol)

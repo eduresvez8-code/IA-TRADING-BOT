@@ -325,7 +325,17 @@ async def test_kill_switch_dispara_alerta_y_no_abre():
 async def test_check_feed_health_detecta_feed_obsoleto():
     ex, orch, rec, sig = await build()
     await feed(orch, [0])
-    stale = CFG.risk.stale_feed_seconds
+    # El umbral escala con el timeframe (stale_feed_intervals × intervalo de 5m).
+    stale = orch._stale_threshold_seconds()
+    # Dentro del umbral (≈1 intervalo) el feed está sano; pasado el umbral, HALT.
+    assert orch.check_feed_health(now=_t(0) + timedelta(seconds=stale - 5)) is True
     healthy = orch.check_feed_health(now=_t(0) + timedelta(seconds=stale + 5))
     assert healthy is False and orch.halted is True
     assert "stale_feed" in rec.events()
+
+
+def test_stale_threshold_escala_con_timeframe():
+    ex, execu, orch, rec, sig = make_env()
+    # 5m × stale_feed_intervals (2.0) = 600s, mayor que el absoluto de 30s.
+    assert orch._stale_threshold_seconds() == max(
+        CFG.risk.stale_feed_seconds, CFG.risk.stale_feed_intervals * 300)

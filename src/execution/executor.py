@@ -19,6 +19,7 @@ memoria; en producción, el adaptador real de python-binance.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable
@@ -129,14 +130,36 @@ class Executor:
         entry_req, protective_reqs = reqs[0], reqs[1:]
 
         entry_res = await self._send(entry_req, order.decision_reason, now)
-        if entry_res.status != "FILLED":
-            # Si la entrada no llenó, NO colocamos protectoras: no hay pierna que
-            # proteger, y un SL/TP huérfano podría cerrar otra cosa más tarde.
-            return ExecutionReport(order, entry_res, [], ok=False,
-                                   detail=f"entrada no llenó (status={entry_res.status})")
+        # Una entrada MARKET puede responder NEW/PARTIALLY_FILLED y llenarse un
+        # instante después (Binance real/testnet). No nos fiamos del status de la
+        # respuesta: confirmamos contra la POSICIÓN real antes de proteger.
+        if entry_res.status not in ("FILLED", "PARTIALLY_FILLED"):
+            if not await self._confirm_fill(order.symbol, order.position_side):
+                # Sin pierna confirmada: no colocamos protectoras (un SL/TP
+                # huérfano podría cerrar otra cosa más tarde).
+                return ExecutionReport(order, entry_res, [], ok=False,
+                                       detail=f"entrada no llenó (status={entry_res.status})")
 
         protective = [await self._send(r, order.decision_reason, now) for r in protective_reqs]
         return ExecutionReport(order, entry_res, protective, ok=True, detail="abierta")
+
+    async def _confirm_fill(self, symbol: str, position_side: PositionSide) -> bool:
+        """Confirma que la pierna existe en el exchange (entrada MARKET ya llenada).
+
+        Reintenta `fill_confirm_retries` veces con `fill_confirm_delay_seconds`:
+        absorbe el desfase entre el ACK de la orden y la aparición de la posición.
+        """
+        ex = self.cfg.execution
+        for attempt in range(ex.fill_confirm_retries):
+            acct = await self.exchange.get_account()
+            leg = next((p for p in acct.positions
+                        if p.symbol == symbol and p.position_side == position_side
+                        and p.qty > 0), None)
+            if leg is not None:
+                return True
+            if attempt < ex.fill_confirm_retries - 1:
+                await asyncio.sleep(ex.fill_confirm_delay_seconds)
+        return False
 
     # ---------------------------- cierre ----------------------------
 

@@ -22,6 +22,9 @@ risk:
   low_confidence_size_factor: 0.5   # multiplicador cuando la confianza es baja
   # Circuit breaker (a): precio más viejo que esto (s) → no abrir nuevas entradas.
   stale_feed_seconds: 30
+  # Feed obsoleto = sin vela por más de stale_feed_intervals × intervalo (o
+  # stale_feed_seconds, el mayor). Escala con el timeframe: en 5m son 10 min.
+  stale_feed_intervals: 2.0
   # --- Futuros USD-M: apalancamiento y margen ---
   # Auto-límite de apalancamiento. Aunque el exchange permita 20x+, el bot jamás
   # usa más de esto. Nada de apalancamiento de casino.
@@ -107,6 +110,10 @@ execution:
   # Disparo de stops sobre el precio de MARCA, no el último negociado: un wick de
   # manipulación en un libro fino no activa el stop. Alternativa: CONTRACT_PRICE.
   stop_working_type: "MARK_PRICE"
+  # Confirmación del fill de la entrada MARKET antes de colocar SL/TP (una orden
+  # de mercado puede responder NEW y llenarse un instante después).
+  fill_confirm_retries: 5
+  fill_confirm_delay_seconds: 0.3
 
 orchestrator:
   # Velas mínimas en el buffer antes de operar: los indicadores (ema_slow + rsi)

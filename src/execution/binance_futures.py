@@ -12,8 +12,11 @@ con `AsyncClient.create(..., testnet=True)`.
 
 from __future__ import annotations
 
+import logging
+
 from binance import AsyncClient
 from binance.exceptions import BinanceAPIException
+from pydantic import ValidationError
 
 from src.core.models import OrderType, PositionSide, Side, SymbolFilters
 from src.data.binance_client import retry_with_backoff
@@ -24,22 +27,39 @@ from src.execution.exchange import (
     OrderResult,
 )
 
+logger = logging.getLogger(__name__)
+
 # Código de Binance: "No need to change position side." al fijar un modo ya activo.
 _NO_NEED_TO_CHANGE = -4059
+# Código de Binance: "Method is not allowed currently." El testnet de Futuros tiene
+# deshabilitado CAMBIAR el modo de posición → no se puede activar hedge; se opera
+# en one-way (el adaptador traduce positionSide en la frontera, ver abajo).
+_MODE_CHANGE_DISABLED = -4084
 
 
 class BinanceFuturesExchange:
-    """Implementa FuturesExchange contra la API de Futuros USD-M."""
+    """Implementa FuturesExchange contra la API de Futuros USD-M.
+
+    Internamente el bot razona en piernas LONG/SHORT (hedge mode). Si la cuenta
+    está en ONE-WAY (p.ej. el testnet, que no permite activar hedge), este
+    adaptador traduce en la frontera: las órdenes se envían con positionSide=BOTH
+    y las posiciones del exchange (positionSide=BOTH, positionAmt con signo) se
+    presentan al bot como piernas LONG/SHORT según el signo. El resto del sistema
+    (executor, reconciliación, política) no se entera.
+    """
 
     def __init__(self, client: AsyncClient):
         self.client = client
         self._filters_cache: dict[str, SymbolFilters] = {}
+        self._dual: bool = True  # se fija en connect() con el modo real de la cuenta
 
     @classmethod
     async def connect(cls, api_key: str, api_secret: str,
                       testnet: bool = True) -> "BinanceFuturesExchange":
         client = await AsyncClient.create(api_key, api_secret, testnet=testnet)
-        return cls(client)
+        self = cls(client)
+        await self.get_position_mode()  # cachea self._dual con el modo real
+        return self
 
     async def close(self) -> None:
         await self.client.close_connection()
@@ -48,14 +68,23 @@ class BinanceFuturesExchange:
 
     async def get_position_mode(self) -> bool:
         res = await retry_with_backoff(self.client.futures_get_position_mode)
-        return bool(res["dualSidePosition"])
+        self._dual = bool(res["dualSidePosition"])
+        return self._dual
 
     async def set_position_mode(self, dual: bool) -> None:
         try:
             await retry_with_backoff(lambda: self.client.futures_change_position_mode(
                 dualSidePosition="true" if dual else "false"))
+            self._dual = dual
         except BinanceAPIException as e:
-            if e.code != _NO_NEED_TO_CHANGE:  # ya estaba en el modo pedido → ok
+            if e.code == _NO_NEED_TO_CHANGE:       # ya estaba en el modo pedido → ok
+                self._dual = dual
+            elif e.code == _MODE_CHANGE_DISABLED:  # testnet no permite cambiar el modo
+                logger.warning(
+                    "no se pudo cambiar el modo de posición (code -4084); se opera en "
+                    "el modo actual: %s. El adaptador traducirá positionSide.",
+                    "hedge" if self._dual else "one-way")
+            else:
                 raise
 
     # ---------- metadatos del símbolo ----------
@@ -64,7 +93,13 @@ class BinanceFuturesExchange:
         if not self._filters_cache:
             info = await retry_with_backoff(self.client.futures_exchange_info)
             for s in info["symbols"]:
-                self._filters_cache[s["symbol"]] = _parse_filters(s)
+                # Algunos símbolos del testnet traen filtros degenerados
+                # (p.ej. tickSize='0' en pares delistados) que no validan. Se
+                # ignoran: solo nos importan los símbolos que vamos a operar.
+                try:
+                    self._filters_cache[s["symbol"]] = _parse_filters(s)
+                except ValidationError:
+                    continue
         return self._filters_cache[symbol]
 
     async def set_leverage(self, symbol: str, leverage: int) -> None:
@@ -80,9 +115,17 @@ class BinanceFuturesExchange:
             amt = float(p["positionAmt"])
             if amt == 0.0:
                 continue  # solo piernas con tamaño
+            raw_side = p["positionSide"]
+            # One-way: el exchange reporta BOTH con positionAmt CON SIGNO. Lo
+            # presentamos al bot como pierna LONG/SHORT según el signo. En hedge
+            # el positionSide ya viene LONG/SHORT y el amt es positivo.
+            if raw_side == "BOTH":
+                side = PositionSide.LONG if amt > 0 else PositionSide.SHORT
+            else:
+                side = PositionSide(raw_side)
             positions.append(ExchangePosition(
                 symbol=p["symbol"],
-                position_side=PositionSide(p["positionSide"]),
+                position_side=side,
                 qty=abs(amt),
                 entry_price=float(p["entryPrice"]),
                 initial_margin=float(p.get("positionInitialMargin", p.get("initialMargin", 0.0))),
@@ -97,10 +140,13 @@ class BinanceFuturesExchange:
     # ---------- órdenes ----------
 
     async def place_order(self, req: OrderRequest) -> OrderResult:
+        # En one-way el exchange exige positionSide=BOTH; el `side` ya codifica la
+        # dirección (BUY abre/cierra reduciendo el neto). En hedge va LONG/SHORT.
+        position_side = "BOTH" if not self._dual else req.position_side.value
         params: dict = {
             "symbol": req.symbol,
             "side": req.side.value,
-            "positionSide": req.position_side.value,
+            "positionSide": position_side,
             "type": req.type.value,
         }
         if req.client_order_id:
@@ -114,16 +160,22 @@ class BinanceFuturesExchange:
             params["workingType"] = req.working_type
 
         resp = await retry_with_backoff(lambda: self.client.futures_create_order(**params))
+        # Binance enruta las órdenes condicionales con closePosition como órdenes
+        # ALGO: el esquema de respuesta cambia (algoId/algoStatus en vez de
+        # orderId/status). Parseamos defensivamente ambos esquemas.
         return OrderResult(
-            order_id=str(resp["orderId"]),
+            order_id=str(resp.get("orderId") or resp.get("algoId", "")),
             symbol=resp["symbol"],
-            status=resp["status"],
+            status=resp.get("status") or resp.get("algoStatus", "NEW"),
             side=Side(resp["side"]),
-            position_side=PositionSide(resp.get("positionSide", req.position_side.value)),
+            # El bot razona en su pierna pretendida (LONG/SHORT), aunque en one-way
+            # el exchange devuelva BOTH. Reflejamos la intención del Order.
+            position_side=req.position_side,
             type=req.type,
-            executed_qty=float(resp.get("executedQty", 0.0)),
-            avg_price=float(resp.get("avgPrice", 0.0)),
-            client_order_id=resp.get("clientOrderId", req.client_order_id),
+            executed_qty=float(resp.get("executedQty", 0.0) or 0.0),
+            avg_price=float(resp.get("avgPrice", 0.0) or 0.0),
+            client_order_id=(resp.get("clientOrderId") or resp.get("clientAlgoId")
+                             or req.client_order_id),
         )
 
     async def get_open_orders(self, symbol: str) -> list[OrderResult]:
