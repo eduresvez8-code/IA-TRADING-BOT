@@ -249,10 +249,32 @@ class FundingEdgeConfig(BaseModel):
         return v
 
 
+class CrossSectionalConfig(BaseModel):
+    # Edge test del factor de momentum relativo. forward_days/rebalance_days en
+    # días; momentum_skip_days≥0 (puede ser 0). vol_lookback_days≥2 para tener
+    # varianza. min_assets≥2 (una cross-section de 1 no rankea nada).
+    history_days: int = Field(ge=1)
+    min_history_days: int = Field(ge=1)
+    momentum_lookback_days: int = Field(ge=1)
+    momentum_skip_days: int = Field(ge=0)
+    vol_adjust: bool
+    vol_lookback_days: int = Field(ge=2)
+    forward_days: int = Field(ge=1)
+    rebalance_days: int = Field(ge=1)
+    n_quantiles: int = Field(ge=2, le=20)
+    min_assets: int = Field(ge=2)
+    # Portafolio long-short: liquidity_drop_pct en [0,1) (0 = sin filtro);
+    # winsorize_quantile en [0,0.5) (0 = sin recorte); max_weight en (0,1].
+    liquidity_drop_pct: float = Field(ge=0.0, lt=1.0)
+    winsorize_quantile: float = Field(ge=0.0, lt=0.5)
+    max_weight: float = Field(gt=0.0, le=1.0)
+
+
 class StorageConfig(BaseModel):
     db_path: str
     candles_dir: str
     funding_dir: str
+    universe_dir: str
 
 
 class Settings(BaseModel):
@@ -267,6 +289,7 @@ class Settings(BaseModel):
     mean_reversion: MeanReversionConfig
     breakout: BreakoutConfig
     funding_edge: FundingEdgeConfig
+    cross_sectional: CrossSectionalConfig
     execution: ExecutionConfig
     orchestrator: OrchestratorConfig
     storage: StorageConfig

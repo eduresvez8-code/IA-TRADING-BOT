@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from src.core.config import (
     BacktestConfig,
     BreakoutConfig,
+    CrossSectionalConfig,
     EdgeConfig,
     ExecutionConfig,
     FundingEdgeConfig,
@@ -340,6 +341,58 @@ def test_funding_edge_horizontes_vacios_es_rechazado():
 def test_funding_edge_horizonte_cero_es_rechazado():
     with pytest.raises(ValidationError):
         FundingEdgeConfig(premium_interval="1h", forward_horizons_hours=[0, 8], n_quantiles=5)
+
+
+def _valid_xs_kwargs(**overrides):
+    base = dict(history_days=1100, min_history_days=60, momentum_lookback_days=30,
+                momentum_skip_days=0, vol_adjust=False, vol_lookback_days=30,
+                forward_days=7, rebalance_days=7, n_quantiles=5, min_assets=10,
+                liquidity_drop_pct=0.25, winsorize_quantile=0.02, max_weight=0.10)
+    base.update(overrides)
+    return base
+
+
+def test_cross_sectional_config_valido():
+    x = CrossSectionalConfig(**_valid_xs_kwargs())
+    assert x.momentum_lookback_days == 30 and x.forward_days == 7
+
+
+def test_cross_sectional_min_assets_uno_es_rechazado():
+    # Una cross-section de 1 activo no rankea nada (ge=2).
+    with pytest.raises(ValidationError):
+        CrossSectionalConfig(**_valid_xs_kwargs(min_assets=1))
+
+
+def test_cross_sectional_lookback_cero_es_rechazado():
+    with pytest.raises(ValidationError):
+        CrossSectionalConfig(**_valid_xs_kwargs(momentum_lookback_days=0))
+
+
+def test_cross_sectional_max_weight_invalido_es_rechazado():
+    # Un peso máximo > 1 (más del 100% en un activo) no tiene sentido.
+    with pytest.raises(ValidationError):
+        CrossSectionalConfig(**_valid_xs_kwargs(max_weight=1.5))
+
+
+def test_cross_sectional_winsorize_fuera_de_rango_es_rechazado():
+    # winsorize_quantile ≥ 0.5 recortaría todo contra la mediana.
+    with pytest.raises(ValidationError):
+        CrossSectionalConfig(**_valid_xs_kwargs(winsorize_quantile=0.5))
+
+
+def test_settings_yaml_portfolio_robustez():
+    s = load_settings()
+    assert 0.0 <= s.cross_sectional.liquidity_drop_pct < 1.0
+    assert 0.0 <= s.cross_sectional.winsorize_quantile < 0.5
+    assert 0.0 < s.cross_sectional.max_weight <= 1.0
+
+
+def test_settings_yaml_cross_sectional():
+    s = load_settings()
+    assert s.cross_sectional.momentum_lookback_days >= 1
+    assert s.cross_sectional.forward_days >= 1
+    assert s.cross_sectional.min_assets >= 2
+    assert s.storage.universe_dir
 
 
 def test_settings_yaml_funding_edge_y_storage():

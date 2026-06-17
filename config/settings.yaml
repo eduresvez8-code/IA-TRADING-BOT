@@ -131,7 +131,27 @@ funding_edge:
   forward_horizons_hours: [8, 24, 72, 168]  # retorno futuro (h): 1 funding, 1d, 3d, 7d
   n_quantiles: 5                          # cubos para la monotonicidad señal→retorno
 
+# --- Momentum cross-sectional (relative strength entre muchos activos) ---
+# Factor: retorno de los últimos N días; se rankea el universo y se mide el IC
+# del ranking contra el retorno futuro. NO opera: es el edge test del factor.
+cross_sectional:
+  history_days: 1100            # ~3 años de velas diarias a descargar
+  min_history_days: 60          # un activo entra al universo si tiene al menos esto
+  momentum_lookback_days: 30    # ventana del momentum (retorno de los últimos N días)
+  momentum_skip_days: 0         # saltar los últimos M días (evita reversión de corto plazo)
+  vol_adjust: false             # true = momentum dividido por su volatilidad realizada
+  vol_lookback_days: 30         # ventana de volatilidad si vol_adjust
+  forward_days: 7               # horizonte del retorno futuro a predecir
+  rebalance_days: 7             # cada cuántos días se recalcula el ranking (semanal)
+  n_quantiles: 5                # quintiles para el spread top-bottom
+  min_assets: 10                # cross-section mínima para calcular el IC de una fecha
+  # --- Construcción del portafolio long-short de reversión ---
+  liquidity_drop_pct: 0.25      # descarta el 25% de menor volumen (microcaps de la cola)
+  winsorize_quantile: 0.02      # recorta retornos al percentil 2/98 (ningún activo domina)
+  max_weight: 0.10              # tope de peso por activo (10%)
+
 storage:
   db_path: "data/trading.db"
   candles_dir: "data/candles"
   funding_dir: "data/funding"
+  universe_dir: "data/universe"
