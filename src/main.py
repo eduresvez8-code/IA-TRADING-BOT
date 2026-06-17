@@ -122,6 +122,49 @@ async def preflight() -> int:
         await exchange.close()
 
 
+async def status() -> int:
+    """Foto del estado: saldo, posiciones abiertas y últimas órdenes enviadas.
+
+    El comando para responder "¿qué ha hecho el bot?" sin mirar la terminal del
+    lazo ni la UI de Binance. Solo lee; no opera.
+    """
+    from binance.exceptions import BinanceAPIException
+
+    from src.core.config import load_secrets, load_settings
+    from src.data.storage import Storage
+    from src.execution.binance_futures import BinanceFuturesExchange
+
+    settings, secrets = load_settings(), load_secrets()
+    storage = await Storage(settings.storage.db_path, settings.storage.candles_dir).init()
+    try:
+        orders = await storage.get_orders(limit=10)
+        print(f"Órdenes enviadas (total recientes): {len(orders)}")
+        for o in orders:
+            print(f"  {o['symbol']} {o['side']}/{o['position_side']} {o['type']} "
+                  f"status={o['status']} · {o['decision_reason']}")
+        if not orders:
+            print("  (ninguna todavía — el bot aún no ha cruzado el umbral de señal)")
+    finally:
+        await storage.close()
+
+    if not (secrets.binance_api_key and secrets.binance_api_secret):
+        return 0
+    exchange = await BinanceFuturesExchange.connect(
+        secrets.binance_api_key, secrets.binance_api_secret, testnet=secrets.binance_testnet)
+    try:
+        acct = await exchange.get_account()
+        print(f"\nSaldo testnet: {acct.wallet_balance:,.2f} USDT | "
+              f"posiciones abiertas: {len(acct.positions)}")
+        for p in acct.positions:
+            print(f"  {p.symbol} {p.position_side.value} qty={p.qty} "
+                  f"entry={p.entry_price} uPnL={p.unrealized_pnl:+.2f}")
+    except BinanceAPIException as e:
+        print(f"\n⚠ no se pudo leer la cuenta (code {e.code}): {e.message}")
+    finally:
+        await exchange.close()
+    return 0
+
+
 async def live() -> int:
     """Lazo en vivo: datos de SPOT mainnet (públicos) + órdenes a FUTUROS testnet.
 
@@ -167,6 +210,8 @@ def main() -> int:
                         help="validar configuración e imports, sin operar")
     parser.add_argument("--preflight", action="store_true",
                         help="validar conexión/cuenta/hedge mode en testnet, sin operar")
+    parser.add_argument("--status", action="store_true",
+                        help="ver saldo, posiciones y últimas órdenes (qué ha hecho el bot)")
     parser.add_argument("--live", action="store_true",
                         help="lazo en vivo contra la testnet de Futuros (requiere claves)")
     args = parser.parse_args()
@@ -176,11 +221,15 @@ def main() -> int:
     if args.preflight:
         import asyncio
         return asyncio.run(preflight())
+    if args.status:
+        import asyncio
+        return asyncio.run(status())
     if args.live:
         import asyncio
         return asyncio.run(live())
 
-    print("Usa --check (config), --preflight (conexión testnet) o --live (operar en testnet).")
+    print("Usa --check (config), --preflight (conexión), --status (qué hizo) "
+          "o --live (operar en testnet).")
     return 0
 
 
