@@ -150,6 +150,19 @@ cross_sectional:
   winsorize_quantile: 0.02      # recorta retornos al percentil 2/98 (ningún activo domina)
   max_weight: 0.10              # tope de peso por activo (10%)
 
+# --- Regímenes de mercado por sentimiento (Fear & Greed como ancla) ---
+# Edge test de 3 métodos cuantitativos de sentimiento. NO opera: mide si el F&G
+# predice/condiciona retornos. Frecuencia diaria (estabilidad: nada de scalping).
+sentiment_regime:
+  ext_fear_below: 25        # F&G < 25 = miedo extremo
+  fear_below: 45            # [25,45) = miedo
+  greed_above: 55           # [55,75) = codicia
+  ext_greed_above: 75       # F&G >= 75 = codicia extrema
+  forward_days: 7           # horizonte de retorno futuro
+  mr_lookback_days: 5       # ventana del dip para la reversión (Método B)
+  extreme_abs_threshold: 25 # |F&G-50| >= esto → régimen "extremo" para el gating (B)
+  vol_scale_min: 0.3        # exposición mínima en euforia (Método C, vol-scaling)
+
 storage:
   db_path: "data/trading.db"
   candles_dir: "data/candles"

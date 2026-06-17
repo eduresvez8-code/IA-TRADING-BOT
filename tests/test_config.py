@@ -387,6 +387,29 @@ def test_settings_yaml_portfolio_robustez():
     assert 0.0 < s.cross_sectional.max_weight <= 1.0
 
 
+def test_sentiment_regime_config_valido():
+    from src.core.config import SentimentRegimeConfig
+    sr = SentimentRegimeConfig(ext_fear_below=25, fear_below=45, greed_above=55,
+                               ext_greed_above=75, forward_days=7, mr_lookback_days=5,
+                               extreme_abs_threshold=25, vol_scale_min=0.3)
+    assert sr.greed_above == 55
+
+
+def test_sentiment_regime_umbrales_desordenados_es_rechazado():
+    from src.core.config import SentimentRegimeConfig
+    with pytest.raises(ValidationError):
+        SentimentRegimeConfig(ext_fear_below=50, fear_below=45, greed_above=55,
+                              ext_greed_above=75, forward_days=7, mr_lookback_days=5,
+                              extreme_abs_threshold=25, vol_scale_min=0.3)
+
+
+def test_settings_yaml_sentiment_regime():
+    s = load_settings()
+    sr = s.sentiment_regime
+    assert sr.ext_fear_below < sr.fear_below < sr.greed_above < sr.ext_greed_above
+    assert sr.forward_days >= 1 and 0 < sr.vol_scale_min <= 1.0
+
+
 def test_settings_yaml_cross_sectional():
     s = load_settings()
     assert s.cross_sectional.momentum_lookback_days >= 1

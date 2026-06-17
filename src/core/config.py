@@ -270,6 +270,28 @@ class CrossSectionalConfig(BaseModel):
     max_weight: float = Field(gt=0.0, le=1.0)
 
 
+class SentimentRegimeConfig(BaseModel):
+    # Umbrales del F&G (0-100) ordenados: ext_fear < fear < greed < ext_greed.
+    ext_fear_below: int = Field(ge=0, le=100)
+    fear_below: int = Field(ge=0, le=100)
+    greed_above: int = Field(ge=0, le=100)
+    ext_greed_above: int = Field(ge=0, le=100)
+    forward_days: int = Field(ge=1)
+    mr_lookback_days: int = Field(ge=1)
+    extreme_abs_threshold: float = Field(gt=0.0, lt=50.0)
+    vol_scale_min: float = Field(gt=0.0, le=1.0)
+
+    @field_validator("fear_below", "greed_above", "ext_greed_above")
+    @classmethod
+    def umbrales_ordenados(cls, v: int, info) -> int:
+        order = ["ext_fear_below", "fear_below", "greed_above", "ext_greed_above"]
+        idx = order.index(info.field_name)
+        prev = info.data.get(order[idx - 1])
+        if prev is not None and v <= prev:
+            raise ValueError(f"{info.field_name} ({v}) debe ser > {order[idx - 1]} ({prev})")
+        return v
+
+
 class StorageConfig(BaseModel):
     db_path: str
     candles_dir: str
@@ -290,6 +312,7 @@ class Settings(BaseModel):
     breakout: BreakoutConfig
     funding_edge: FundingEdgeConfig
     cross_sectional: CrossSectionalConfig
+    sentiment_regime: SentimentRegimeConfig
     execution: ExecutionConfig
     orchestrator: OrchestratorConfig
     storage: StorageConfig
