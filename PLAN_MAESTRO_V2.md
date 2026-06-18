@@ -144,7 +144,7 @@ directamente") es la columna vertebral del diseño.
 Objetivo: arreglar los **bugs estructurales** sin apostar todavía al edge de
 noticias. Todo validable en backtest existente + testnet.
 
-**1.1 TTL de sentimiento (resuelve crítica #4). [EN CURSO]**
+**1.1 TTL de sentimiento (resuelve crítica #4). [HECHO]**
 - Nuevo `ConfluenceConfig.sentiment_ttl_seconds: int = Field(ge=1, le=86400)`.
 - `decide()` gana `as_of: datetime | None` → **determinismo** (fija
   `Decision.timestamp`). **El TTL NO va dentro de la matriz pura**: el backtest
@@ -154,8 +154,15 @@ noticias. Todo validable en backtest existente + testnet.
   purga la clave del store. Aplica por igual a `decide()` y a la `confidence`
   que recibe el Risk Manager.
 
-**1.2 Split de `high_impact` (resuelve crítica #2).** El veto-total inverso se
-reemplaza por dos clases de evento (en [filter.py:111](src/sentiment/filter.py:111)):
+**1.2 Split de `high_impact` (resuelve crítica #2). [HECHO]** El veto-total
+inverso se reemplaza por dos clases de evento (en [filter.py](src/sentiment/filter.py)).
+*Entregado:* `event_kind` en `FilterResult` y `SentimentScore` (Literal,
+default "none"); `SCHEDULED_MACRO_TERMS`/`IDIOSYNCRATIC_SHOCK_TERMS` (su unión =
+el `HIGH_IMPACT_TERMS` del v1 → escalación a Claude intacta); `scoring` propaga
+la etiqueta (determinista, también sobre la rama de Claude); confluencia bloquea
+solo `scheduled` (`scheduled_macro_block`), `shock` cae a la matriz. *Diferido a
+Fase 2:* ventana temporal del bloqueo macro + ampliar scheduled a fed/rate-hike
+(decisión de config con EventConfig). Detalle de diseño original abajo:
 - `SCHEDULED_MACRO_TERMS` {fomc, cpi, fed, rate hike/cut…} → programado, incierto.
 - `IDIOSYNCRATIC_SHOCK_TERMS` {hack, exploit, depeg, etf approval, bankruptcy…}
   → direccional, operable.
@@ -254,9 +261,9 @@ arriesgar capital, no seguir añadiendo épées.
 
 ## 5. Secuencia de ejecución (una sesión = un módulo)
 
-1. **F1.1** TTL (`sentiment_ttl_seconds`) + `as_of` en confluence + `_fresh_sentiment` en engine. *(en curso)*
-2. **F1.2** split `high_impact` (toca `models.py` → tests de modelos en el mismo commit).
-3. **F1.3** LIMIT-IOC + `slippage_cap_bps` + fix de `expected` en fills parciales.
+1. **F1.1** TTL (`sentiment_ttl_seconds`) + `as_of` en confluence + `_fresh_sentiment` en engine. ✅ *(409 tests)*
+2. **F1.2** split `high_impact` → `event_kind` (scheduled/shock/none); confluencia bloquea solo scheduled. ✅ *(409 tests)*
+3. **F1.3** LIMIT-IOC + `slippage_cap_bps` + fix de `expected` en fills parciales. *(siguiente)*
 4. **F2.1–2.2** `EventConfig` + `decide_event` puro.
 5. **F2.3** cola + `on_event` en el engine (dentro del lock).
 6. **F2.4** sizing de evento + vol-regime en Risk Manager.

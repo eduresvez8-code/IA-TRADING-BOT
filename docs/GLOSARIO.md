@@ -667,3 +667,17 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   competimos en latencia (RSS llega minutos tarde), así que el Fast Path solo
   vive si el movimiento "tiene cola" medible desde nuestra entrada real (≈t+3min),
   no desde t+0.
+- **Clase de evento (`event_kind`): scheduled vs shock**: dos semánticas de
+  trading para los eventos de alto impacto, NO dos niveles de gravedad. *scheduled*
+  = macro de hora conocida pero resultado INCIERTO (FOMC, CPI): el peligro es
+  quedar posicionado HACIA un volado → la confluencia BLOQUEA entradas
+  (`scheduled_macro_block`). *shock* = catalizador DIRECCIONAL ya público (hack→
+  bajista, ETF→alcista, depeg, crash, halving): tiene signo, así que NO bloquea —
+  cae a la matriz normal y, en Fase 2, podrá ORIGINAR en el Fast Path. *none* = ni
+  macro ni shock (el default; p.ej. Fear&Greed). Corrige la lógica invertida del
+  v1, que mandaba a HOLD justo los eventos más operables.
+- **Etiqueta determinista vs juicio del modelo**: `event_kind` lo fija el FILTRO
+  por coincidencia de términos (gratis, auditable, reproducible), no Claude. En la
+  rama escalada, `scoring` sobre-escribe la etiqueta sobre el `SentimentScore` que
+  devuelve Claude (vía `model_copy`): el LLM juzga score/confianza/impacto; la
+  CLASE de evento es un hecho léxico, no una opinión.
