@@ -6,6 +6,8 @@ side equivocado, cerraría la pierna que no toca. Un test por celda de la matriz
 
 from datetime import datetime, timezone
 
+import pytest
+
 from src.core.models import Order, OrderType, PositionSide, Side
 from src.execution.translate import build_close_request, build_open_requests, opposite
 
@@ -88,3 +90,42 @@ def test_cierre_short_es_buy():
     req = build_close_request("BTCUSDT", PositionSide.SHORT, 2.0, id_factory=_tagged)
     assert req.side == Side.BUY and req.position_side == PositionSide.SHORT
     assert req.quantity == 2.0
+
+
+# ---------------------------------------------------------------------------
+# Entradas LIMIT-IOC (Fase 1.3)
+# ---------------------------------------------------------------------------
+
+
+def test_sin_limit_price_entry_es_market():
+    # Comportamiento previo (backward-compat): sin limit_price → MARKET.
+    order = make_order(Side.BUY, PositionSide.LONG, tp=1150.0)
+    entry = build_open_requests(order, working_type="MARK_PRICE", id_factory=_tagged)[0]
+    assert entry.type == OrderType.MARKET
+    assert entry.price is None and entry.time_in_force is None
+
+
+def test_limit_ioc_buy_genera_entry_con_precio_y_tif():
+    # Con limit_price=1010 y tif="IOC", la entrada es LIMIT+IOC.
+    order = make_order(Side.BUY, PositionSide.LONG, tp=1150.0)
+    reqs = build_open_requests(order, working_type="MARK_PRICE", id_factory=_tagged,
+                               limit_price=1010.0, time_in_force="IOC")
+    assert len(reqs) == 3          # entrada + SL + TP (estructura intacta)
+    entry, sl, tp = reqs
+    assert entry.type == OrderType.LIMIT
+    assert entry.price == pytest.approx(1010.0)
+    assert entry.time_in_force == "IOC"
+    assert entry.quantity == order.quantity
+    # Las protectoras siguen siendo STOP_MARKET / TAKE_PROFIT_MARKET (sin cambio).
+    assert sl.type == OrderType.STOP_MARKET and sl.close_position is True
+    assert tp.type == OrderType.TAKE_PROFIT_MARKET and tp.close_position is True
+
+
+def test_limit_ioc_sell_genera_entry_con_precio_correcto():
+    order = make_order(Side.SELL, PositionSide.SHORT, tp=850.0)
+    entry = build_open_requests(order, working_type="MARK_PRICE", id_factory=_tagged,
+                                limit_price=990.0, time_in_force="IOC")[0]
+    assert entry.type == OrderType.LIMIT
+    assert entry.side == Side.SELL and entry.position_side == PositionSide.SHORT
+    assert entry.price == pytest.approx(990.0)
+    assert entry.time_in_force == "IOC"

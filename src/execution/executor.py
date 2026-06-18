@@ -25,8 +25,10 @@ from datetime import datetime, timezone
 from typing import Callable
 from uuid import uuid4
 
+from decimal import Decimal, ROUND_HALF_EVEN
+
 from src.core.config import Settings, load_settings
-from src.core.models import Order, PositionSide
+from src.core.models import Order, OrderType, PositionSide, Side
 from src.data.binance_client import retry_with_backoff
 from src.data.storage import Storage
 from src.execution.exchange import FuturesExchange, OrderRequest, OrderResult
@@ -47,6 +49,9 @@ class ExecutionReport:
     protective: list[OrderResult] = field(default_factory=list)
     ok: bool = False
     detail: str = ""
+    # Cantidad REALMENTE llenada (puede ser < order.quantity con IOC parcial).
+    # El engine la usa para registrar expected[key] y evitar halts espurios.
+    confirmed_qty: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -121,33 +126,70 @@ class Executor:
 
     # ---------------------------- apertura ----------------------------
 
-    async def open_position(self, order: Order, *, now: datetime | None = None) -> ExecutionReport:
-        """Abre una pierna: entrada MARKET y, si llena, sus SL/TP protectores."""
+    async def open_position(self, order: Order, *, now: datetime | None = None,
+                            mark_price: float | None = None) -> ExecutionReport:
+        """Abre una pierna: entrada MARKET (o LIMIT-IOC si mark_price) + SL/TP.
+
+        Si `mark_price` está presente y `aggressive_entry_tif == "IOC"`, calcula
+        un precio límite marketable (mark ± slippage_cap_bps) y envía una orden
+        LIMIT-IOC. Si el mercado está fuera de la banda → EXPIRED → ok=False.
+        Sin mark_price: comportamiento original (MARKET sin límite de precio).
+        """
+        limit_price: float | None = None
+        tif: str | None = None
+        if mark_price is not None:
+            tif = self.cfg.execution.aggressive_entry_tif
+            if tif == "IOC":
+                cap = self.cfg.execution.slippage_cap_bps / 10_000
+                raw = (mark_price * (1 + cap) if order.side == Side.BUY
+                       else mark_price * (1 - cap))
+                # Cuantiza al tick_size del par (igual que los stops del Risk Manager).
+                sym_f = self.filters.get(order.symbol)
+                if sym_f is not None:
+                    limit_price = float(
+                        Decimal(str(raw)).quantize(sym_f.tick_size, rounding=ROUND_HALF_EVEN)
+                    )
+                else:
+                    limit_price = round(raw, 8)
+
         reqs = build_open_requests(
             order, working_type=self.cfg.execution.stop_working_type,
             id_factory=self._id_factory,
+            limit_price=limit_price, time_in_force=tif,
         )
         entry_req, protective_reqs = reqs[0], reqs[1:]
 
         entry_res = await self._send(entry_req, order.decision_reason, now)
-        # Una entrada MARKET puede responder NEW/PARTIALLY_FILLED y llenarse un
-        # instante después (Binance real/testnet). No nos fiamos del status de la
-        # respuesta: confirmamos contra la POSICIÓN real antes de proteger.
-        if entry_res.status not in ("FILLED", "PARTIALLY_FILLED"):
-            if not await self._confirm_fill(order.symbol, order.position_side):
-                # Sin pierna confirmada: no colocamos protectoras (un SL/TP
-                # huérfano podría cerrar otra cosa más tarde).
+
+        # --- determinar la cantidad confirmada ---
+        confirmed_qty = 0.0
+        if entry_res.status in ("FILLED", "PARTIALLY_FILLED") and entry_res.executed_qty > 0:
+            # El exchange ya informa la cantidad llenada (MARKET o LIMIT-IOC parcial).
+            confirmed_qty = entry_res.executed_qty
+        elif entry_res.status == "EXPIRED":
+            # IOC cancelado sin llenar nada: el mercado estaba fuera de la banda.
+            # No colocamos protectoras (no hay pierna que proteger).
+            return ExecutionReport(order, entry_res, [], ok=False,
+                                   detail="IOC expirado: mercado fuera de la banda de slippage")
+        else:
+            # MARKET que volvió NEW/PARTIALLY_FILLED con executed_qty=0 (latencia de
+            # testnet): confirmar la existencia y cantidad contra la posición real.
+            ok, confirmed_qty = await self._confirm_fill(order.symbol, order.position_side)
+            if not ok:
                 return ExecutionReport(order, entry_res, [], ok=False,
                                        detail=f"entrada no llenó (status={entry_res.status})")
 
         protective = [await self._send(r, order.decision_reason, now) for r in protective_reqs]
-        return ExecutionReport(order, entry_res, protective, ok=True, detail="abierta")
+        return ExecutionReport(order, entry_res, protective, ok=True, detail="abierta",
+                               confirmed_qty=confirmed_qty)
 
-    async def _confirm_fill(self, symbol: str, position_side: PositionSide) -> bool:
-        """Confirma que la pierna existe en el exchange (entrada MARKET ya llenada).
+    async def _confirm_fill(self, symbol: str,
+                            position_side: PositionSide) -> tuple[bool, float]:
+        """Confirma que la pierna existe y retorna su cantidad real.
 
         Reintenta `fill_confirm_retries` veces con `fill_confirm_delay_seconds`:
         absorbe el desfase entre el ACK de la orden y la aparición de la posición.
+        Retorna (True, qty_real) si la pierna existe, (False, 0.0) si no llena.
         """
         ex = self.cfg.execution
         for attempt in range(ex.fill_confirm_retries):
@@ -156,10 +198,10 @@ class Executor:
                         if p.symbol == symbol and p.position_side == position_side
                         and p.qty > 0), None)
             if leg is not None:
-                return True
+                return True, leg.qty
             if attempt < ex.fill_confirm_retries - 1:
                 await asyncio.sleep(ex.fill_confirm_delay_seconds)
-        return False
+        return False, 0.0
 
     # ---------------------------- cierre ----------------------------
 

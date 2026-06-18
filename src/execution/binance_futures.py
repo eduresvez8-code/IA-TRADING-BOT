@@ -153,6 +153,12 @@ class BinanceFuturesExchange:
             params["newClientOrderId"] = req.client_order_id
         if req.type == OrderType.MARKET:
             params["quantity"] = req.quantity
+        elif req.type == OrderType.LIMIT:
+            # LIMIT-IOC marketable: cantidad + precio límite + timeInForce.
+            params["quantity"] = req.quantity
+            params["price"] = req.price
+            if req.time_in_force:
+                params["timeInForce"] = req.time_in_force
         else:
             # STOP_MARKET / TAKE_PROFIT_MARKET protectoras: disparo + cierre total.
             params["stopPrice"] = req.stop_price

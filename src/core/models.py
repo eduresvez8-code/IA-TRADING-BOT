@@ -46,11 +46,13 @@ class PositionSide(str, Enum):
 class OrderType(str, Enum):
     """Tipos de orden que el executor envía a Binance Futuros.
 
-    MARKET para entradas/cierres; STOP_MARKET y TAKE_PROFIT_MARKET (con
-    closePosition) para las protectoras que vigilan la posición.
+    MARKET para entradas/cierres; LIMIT+IOC para entradas con tope de slippage
+    (Fase 1.3); STOP_MARKET y TAKE_PROFIT_MARKET (con closePosition) para las
+    protectoras que vigilan la posición.
     """
 
     MARKET = "MARKET"
+    LIMIT = "LIMIT"
     STOP_MARKET = "STOP_MARKET"
     TAKE_PROFIT_MARKET = "TAKE_PROFIT_MARKET"
 

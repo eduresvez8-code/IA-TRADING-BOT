@@ -104,10 +104,26 @@ class FakeFuturesExchange:
         lev = self.leverage.get(req.symbol, 1)
         key = (req.symbol, req.position_side)
 
-        if req.type == OrderType.MARKET:
+        if req.type in (OrderType.MARKET, OrderType.LIMIT):
             # En hedge mode, el side determina abrir vs reducir esa pierna:
             # LONG se abre con BUY (cierra con SELL); SHORT se abre con SELL.
             opening_side = Side.SELL if req.position_side == PositionSide.SHORT else Side.BUY
+
+            # Para LIMIT-IOC: verificar si el límite cubre el precio actual.
+            # BUY: queremos pagar ≤ limit → fill si limit ≥ price (mercado).
+            # SELL: queremos recibir ≥ limit → fill si limit ≤ price (mercado).
+            if req.type == OrderType.LIMIT and req.time_in_force == "IOC":
+                workable = (
+                    (req.side == Side.BUY and req.price is not None and req.price >= price) or
+                    (req.side == Side.SELL and req.price is not None and req.price <= price)
+                )
+                if not workable:
+                    return OrderResult(
+                        order_id=self._next_oid(), symbol=req.symbol, status="EXPIRED",
+                        side=req.side, position_side=req.position_side, type=req.type,
+                        executed_qty=0.0, avg_price=0.0, client_order_id=req.client_order_id,
+                    )
+
             if req.side == opening_side:
                 return self._open_or_add(req, price, lev, key)
             return self._reduce_leg(req, price, key)

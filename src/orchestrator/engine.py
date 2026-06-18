@@ -292,7 +292,7 @@ class Orchestrator:
                      if s == sym), None)
         action = decide_position_action(held, want)
         if action == PositionAction.OPEN:
-            await self._open(assessment.order, now)
+            await self._open(assessment.order, now, mark_price=candle.close)
         elif action == PositionAction.FLIP:
             # FLIP desacoplado: solo cerramos; la apertura inversa ocurre en el
             # ciclo siguiente, con snapshot fresco y sin colisión de margen.
@@ -304,14 +304,18 @@ class Orchestrator:
 
         await self._persist_session(now)
 
-    async def _open(self, order, now: datetime) -> None:
+    async def _open(self, order, now: datetime, *, mark_price: float) -> None:
         key = (order.symbol, order.position_side)
-        report = await self.executor.open_position(order, now=now)
+        report = await self.executor.open_position(order, now=now, mark_price=mark_price)
         if report.ok:
-            self.expected[key] = order.quantity
+            # Con IOC parcial, confirmed_qty puede ser < order.quantity. Registrar
+            # la cantidad REAL para que la reconciliación no detecte una divergencia
+            # espuria y dispare un HALT (el bug que esta línea corrige).
+            qty = report.confirmed_qty if report.confirmed_qty > 0 else order.quantity
+            self.expected[key] = qty
             self._in_flight[key] = 0   # pendiente de que el exchange la confirme
             self.alerts.alert(AlertLevel.INFO, "open",
-                              f"{order.symbol} {order.position_side.value} qty={order.quantity}")
+                              f"{order.symbol} {order.position_side.value} qty={qty:.6f}")
         else:
             self.alerts.alert(AlertLevel.WARNING, "open_failed",
                               f"{order.symbol}: {report.detail}")

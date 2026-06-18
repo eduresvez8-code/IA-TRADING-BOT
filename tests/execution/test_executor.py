@@ -200,6 +200,52 @@ async def test_snapshot_lleva_pico_y_arranque_de_dia():
     assert s.peak_wallet_balance == 11_000.0  # el pico NO se reinicia
 
 
+# ------------------------------ LIMIT-IOC (Fase 1.3) ------------------------------
+
+
+async def test_open_position_market_legacy_sin_mark_price():
+    # Sin mark_price → MARKET clásico; backward-compat de todas las paths existentes.
+    ex = make_fake()
+    execu = Executor(ex, CFG, id_factory=counter_ids())
+    await execu.startup()
+    report = await execu.open_position(long_order(qty=1.0))
+    assert report.ok is True
+    assert report.entry.status == "FILLED"
+    sent = ex.sent[0]
+    from src.core.models import OrderType
+    assert sent.type == OrderType.MARKET
+    assert sent.price is None
+
+
+async def test_open_position_limit_ioc_llena_dentro_de_banda():
+    # mark=1000, cap=10bps → BUY limit = 1000 × 1.001 = 1001.0 (fake price=1000 < 1001).
+    # El IOC llena; confirmed_qty refleja la cantidad real (1.0 para fill completo).
+    ex = make_fake()  # prices BTCUSDT = 1000.0
+    execu = Executor(ex, CFG, id_factory=counter_ids())
+    await execu.startup()
+    report = await execu.open_position(long_order(qty=1.0), mark_price=1000.0)
+    assert report.ok is True
+    assert report.confirmed_qty == pytest.approx(1.0)
+    from src.core.models import OrderType
+    entry_req = next(r for r in ex.sent if r.type == OrderType.LIMIT)
+    assert entry_req.time_in_force == "IOC"
+    assert entry_req.price > 1000.0  # BUY limit debe estar POR ENCIMA del mark
+
+
+async def test_open_position_ioc_expirado_fuera_de_banda():
+    # mark=1000, cap=10bps → BUY limit = 1001.0; pero el exchange tiene price=1005
+    # (fuera de la banda de 0.1%): la orden expira sin fill → ok=False.
+    ex = FakeFuturesExchange(wallet_balance=10_000.0, filters=FILTERS,
+                             prices={"BTCUSDT": 1005.0, "ETHUSDT": 2000.0})
+    execu = Executor(ex, CFG, id_factory=counter_ids())
+    await execu.startup()
+    report = await execu.open_position(long_order(qty=1.0), mark_price=1000.0)
+    assert report.ok is False
+    assert "IOC" in report.detail
+    assert report.confirmed_qty == 0.0
+    assert ("BTCUSDT", PositionSide.LONG) not in ex.positions  # sin pierna abierta
+
+
 # ------------------------------ log auditado ------------------------------
 
 async def test_log_auditado_persiste_las_ordenes(tmp_path):

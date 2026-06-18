@@ -28,6 +28,8 @@ class OrderRequest:
     type: OrderType
     quantity: float | None = None       # None cuando close_position=True
     stop_price: float | None = None     # disparo de STOP_MARKET / TAKE_PROFIT_MARKET
+    price: float | None = None          # precio límite de LIMIT (None para MARKET)
+    time_in_force: str | None = None    # "IOC" / "GTC" para LIMIT; None para MARKET
     close_position: bool = False         # cierra la pierna entera (protectoras)
     working_type: str = "MARK_PRICE"     # precio de disparo del stop
     client_order_id: str | None = None   # idempotencia ante reintentos

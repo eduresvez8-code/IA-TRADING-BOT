@@ -120,6 +120,13 @@ execution:
   # de mercado puede responder NEW y llenarse un instante después).
   fill_confirm_retries: 5
   fill_confirm_delay_seconds: 0.3
+  # Tope de slippage de entrada (Fase 1.3): máximo deslizamiento adverso aceptado
+  # en basis points (1 bps = 0.01%). Con 10 bps: BUY limit = mark × 1.001, SELL
+  # limit = mark × 0.999. Si el mercado está fuera de esa banda al enviar la
+  # orden, el IOC expira sin fill. El Slow Path usa MARKET si mark_price es None.
+  slippage_cap_bps: 10
+  # "IOC" = Immediate-Or-Cancel (producción); "GTC" = resting limit (laboratorio).
+  aggressive_entry_tif: "IOC"
 
 orchestrator:
   # Velas mínimas en el buffer antes de operar: los indicadores (ema_slow + rsi)

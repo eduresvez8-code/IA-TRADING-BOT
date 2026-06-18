@@ -261,9 +261,9 @@ arriesgar capital, no seguir añadiendo épées.
 
 ## 5. Secuencia de ejecución (una sesión = un módulo)
 
-1. **F1.1** TTL (`sentiment_ttl_seconds`) + `as_of` en confluence + `_fresh_sentiment` en engine. ✅ *(409 tests)*
+1. **F1.1** TTL (`sentiment_ttl_seconds`) + `as_of` en confluence + `_fresh_sentiment` en engine. ✅ *(394 tests)*
 2. **F1.2** split `high_impact` → `event_kind` (scheduled/shock/none); confluencia bloquea solo scheduled. ✅ *(409 tests)*
-3. **F1.3** LIMIT-IOC + `slippage_cap_bps` + fix de `expected` en fills parciales. *(siguiente)*
+3. **F1.3** LIMIT-IOC + `slippage_cap_bps` + fix de `expected` en fills parciales. ✅ *(418 tests)*
 4. **F2.1–2.2** `EventConfig` + `decide_event` puro.
 5. **F2.3** cola + `on_event` en el engine (dentro del lock).
 6. **F2.4** sizing de evento + vol-regime en Risk Manager.

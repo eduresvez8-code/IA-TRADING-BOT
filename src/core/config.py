@@ -226,6 +226,13 @@ class ExecutionConfig(BaseModel):
     # la posición real, reintentando hasta este nº de veces con esta espera.
     fill_confirm_retries: int = Field(ge=1, le=20)
     fill_confirm_delay_seconds: float = Field(gt=0.0, le=5.0)
+    # Tope de slippage para entradas LIMIT-IOC marketable (Fase 1.3). 1 bps = 0.01%.
+    # limit_price = mark ± cap_bps/10000. gt=0 (0 sería MARKET sin límite); le=100
+    # ataja un typo (100 bps = 1%, que ya es más que la comisión taker de Binance).
+    slippage_cap_bps: float = Field(gt=0, le=100)
+    # Modo de la entrada de apertura: "IOC" = Immediate-Or-Cancel (llena dentro del
+    # tope o cancela); "GTC" = queda resting en el libro (solo para laboratorio).
+    aggressive_entry_tif: Literal["IOC", "GTC"]
 
 
 class OrchestratorConfig(BaseModel):

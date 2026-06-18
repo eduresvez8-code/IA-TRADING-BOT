@@ -215,7 +215,8 @@ def test_settings_yaml_risk_futuros():
 
 def _valid_execution_kwargs(**overrides):
     base = dict(reconcile_position_tolerance=0.001, stop_working_type="MARK_PRICE",
-                fill_confirm_retries=5, fill_confirm_delay_seconds=0.3)
+                fill_confirm_retries=5, fill_confirm_delay_seconds=0.3,
+                slippage_cap_bps=10, aggressive_entry_tif="IOC")
     base.update(overrides)
     return base
 
@@ -224,6 +225,8 @@ def test_execution_config_valido():
     e = ExecutionConfig(**_valid_execution_kwargs())
     assert e.reconcile_position_tolerance == 0.001
     assert e.stop_working_type == "MARK_PRICE"
+    assert e.slippage_cap_bps == 10
+    assert e.aggressive_entry_tif == "IOC"
 
 
 def test_working_type_invalido_es_rechazado():
@@ -244,11 +247,33 @@ def test_settings_yaml_execution():
     assert s.execution.stop_working_type in ("MARK_PRICE", "CONTRACT_PRICE")
     assert s.execution.fill_confirm_retries >= 1
     assert s.execution.fill_confirm_delay_seconds > 0
+    # Fase 1.3: tope de slippage y modo de entrada
+    assert 0.0 < s.execution.slippage_cap_bps <= 100
+    assert s.execution.aggressive_entry_tif in ("IOC", "GTC")
 
 
 def test_fill_confirm_retries_cero_es_rechazado():
     with pytest.raises(ValidationError):
         ExecutionConfig(**_valid_execution_kwargs(fill_confirm_retries=0))
+
+
+def test_slippage_cap_cero_es_rechazado():
+    # 0 bps = sin límite de precio: equivalente a MARKET (gt=0).
+    with pytest.raises(ValidationError):
+        ExecutionConfig(**_valid_execution_kwargs(slippage_cap_bps=0))
+
+
+def test_slippage_cap_absurdo_es_rechazado():
+    # 100 bps = 1% es el máximo; más es un typo que inflaría el precio límite
+    # hasta permitir entradas muy fuera del mercado (le=100).
+    with pytest.raises(ValidationError):
+        ExecutionConfig(**_valid_execution_kwargs(slippage_cap_bps=150))
+
+
+def test_aggressive_tif_invalido_es_rechazado():
+    # Solo "IOC" y "GTC" son válidos; cualquier otro valor es un typo (Literal).
+    with pytest.raises(ValidationError):
+        ExecutionConfig(**_valid_execution_kwargs(aggressive_entry_tif="FOK"))
 
 
 def test_edge_config_valido():

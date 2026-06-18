@@ -35,8 +35,14 @@ def build_open_requests(
     *,
     working_type: str,
     id_factory: Callable[[str], str] = _default_id,
+    limit_price: float | None = None,
+    time_in_force: str | None = None,
 ) -> list[OrderRequest]:
-    """Descompone una apertura en entrada MARKET + SL + TP.
+    """Descompone una apertura en entrada (MARKET o LIMIT+IOC) + SL + TP.
+
+    Si `limit_price` es None → la entrada es MARKET (comportamiento histórico).
+    Si `limit_price` está presente → LIMIT con `time_in_force` (IOC en producción):
+    el exchange la ejecuta inmediatamente dentro del precio límite o la cancela.
 
     Las protectoras usan `close_position=True` (cierran la pierna entera, sin
     arrastrar `qty` que pueda desincronizarse por fills parciales) y disparan
@@ -46,11 +52,13 @@ def build_open_requests(
     uno único por orden (idempotencia ante reintentos).
     """
     opp = opposite(order.side)
+    entry_type = OrderType.LIMIT if limit_price is not None else OrderType.MARKET
     reqs = [
-        # Entrada: abre/aumenta la pierna en su positionSide.
+        # Entrada: MARKET sin límite de precio, o LIMIT+IOC dentro del tope.
         OrderRequest(
             symbol=order.symbol, side=order.side, position_side=order.position_side,
-            type=OrderType.MARKET, quantity=order.quantity,
+            type=entry_type, quantity=order.quantity,
+            price=limit_price, time_in_force=time_in_force,
             client_order_id=id_factory("entry"),
         ),
         # Stop-loss: lado opuesto, mismo positionSide, cierra la pierna.

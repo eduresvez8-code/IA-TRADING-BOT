@@ -681,3 +681,29 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   rama escalada, `scoring` sobre-escribe la etiqueta sobre el `SentimentScore` que
   devuelve Claude (vía `model_copy`): el LLM juzga score/confianza/impacto; la
   CLASE de evento es un hecho léxico, no una opinión.
+
+## Plan V2 — Fase 1.3 (ejecución con tope de slippage)
+
+- **Basis point (bps)**: unidad de medida de precio o rendimiento. 1 bps = 0.01%
+  (= 0.0001). Permite expresar márgenes sin ambigüedad: "10 bps de slippage" es
+  siempre 0.10%, sin confundir "0.10" (¿10%?) con "0.10%". En este bot,
+  `slippage_cap_bps` es el tope de deslizamiento adverso en basis points.
+- **LIMIT-IOC (Immediate-Or-Cancel)**: tipo de orden que combina un precio límite
+  (nunca pagues más / recibas menos que X) con ejecución inmediata (si no hay
+  liquidez dentro del límite ahora, la orden cancela al instante). A diferencia de
+  MARKET (sin límite de precio) y LIMIT GTC (queda en el libro esperando), IOC
+  garantiza que o bien entras dentro de tu banda de precio o no entras.
+- **Slippage cap / tope de deslizamiento**: precio máximo de deslizamiento
+  adverso aceptado. Define la banda `[mark, mark×(1+cap)]` (BUY) o
+  `[mark×(1-cap), mark]` (SELL). Si el mercado se mueve fuera de esa banda antes
+  del fill, el bot prefiere no entrar (IOC expira) antes que pagar un precio
+  que destruya el edge.
+- **Marketable limit**: una orden LIMIT cuyo precio está suficientemente cerca del
+  mejor precio del libro para ejecutarse inmediatamente (como MARKET) pero con
+  protección de precio. El "marketable" asegura que no queda resting: se llena o
+  cancela al instante.
+- **`confirmed_qty`**: cantidad REALMENTE llenada en el exchange tras una entrada,
+  distinta de `order.quantity` (lo que se pidió). Con IOC parcial (parte del
+  pedido llenó y el resto fue cancelado), `confirmed_qty < order.quantity`. El
+  engine la usa para `expected[key]`; registrar `order.quantity` cuando solo llenó
+  una fracción provocaría un HALT espurio por reconciliación falsa.
