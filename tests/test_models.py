@@ -15,6 +15,7 @@ from src.core.models import (
     Order,
     OrderType,
     PositionSide,
+    SentimentScore,
     Side,
     Signal,
     SymbolFilters,
@@ -134,3 +135,27 @@ def test_symbol_filters_tick_size_cero_es_invalido():
     with pytest.raises(ValidationError):
         SymbolFilters(symbol="BTCUSDT", tick_size="0", step_size="0.0001",
                       min_qty="0", min_notional="5")
+
+
+def make_sentiment(**overrides):
+    base = dict(news_id="n1", symbol_scope=["BTC"], score=0.5, confidence=0.8,
+                analyzed_at=NOW)
+    base.update(overrides)
+    return SentimentScore(**base)
+
+
+def test_sentiment_event_kind_por_defecto_es_none():
+    # Una noticia sin clasificar (o sentimiento de mercado tipo Fear&Greed) no es
+    # ni macro ni shock: el default no debe bloquear nada en la confluencia.
+    assert make_sentiment().event_kind == "none"
+
+
+def test_sentiment_event_kind_valores_validos():
+    assert make_sentiment(event_kind="scheduled").event_kind == "scheduled"
+    assert make_sentiment(event_kind="shock").event_kind == "shock"
+
+
+def test_sentiment_event_kind_invalido_es_rechazado():
+    # El Literal cierra el dominio: un valor libre (typo) muere en la frontera.
+    with pytest.raises(ValidationError):
+        make_sentiment(event_kind="hack")

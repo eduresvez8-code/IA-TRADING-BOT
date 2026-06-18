@@ -59,7 +59,7 @@ def decide(
     now = as_of or datetime.now(timezone.utc)
     quant = signal.score
     sent = sentiment.score if sentiment is not None else 0.0
-    high_impact = sentiment.high_impact if sentiment is not None else False
+    event_kind = sentiment.event_kind if sentiment is not None else "none"
 
     def _decision(action: Action, size_factor: float, reason: str) -> Decision:
         return Decision(
@@ -72,10 +72,15 @@ def decide(
             timestamp=now,
         )
 
-    # (0) Evento de alto impacto pendiente (FOMC, CPI, hack) → bloqueo total de
-    #     entradas, gane lo que gane la técnica. Tiene prioridad sobre todo.
-    if high_impact:
-        return _decision(Action.HOLD, 0.0, "high_impact_block")
+    # (0) Macro PROGRAMADO de resultado incierto (FOMC, CPI): no abrir HACIA un
+    #     dato que puede ir a cualquier lado. Solo los `scheduled` bloquean; tiene
+    #     prioridad sobre todo. Un `shock` direccional (hack/ETF/depeg) ya NO
+    #     bloquea: cae a la matriz normal (Plan V2 Fase 1.2, crítica #2 — corrige
+    #     la lógica invertida del v1 que tiraba los eventos más operables). El
+    #     refinamiento por ventana temporal (bloquear solo cerca del dato) y la
+    #     ORIGINACIÓN por shock viven en el Fast Path (Fase 2).
+    if event_kind == "scheduled":
+        return _decision(Action.HOLD, 0.0, "scheduled_macro_block")
 
     # (1) Sin señal técnica fuerte no se abre. Esto encarna el circuit breaker
     #     (b): el sentimiento, por extremo que sea, no entra solo al mercado.

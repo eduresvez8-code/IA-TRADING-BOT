@@ -37,7 +37,11 @@ async def score_item(
 
     escalate = fr.is_high_impact or abs(fr.local_score) >= config.escalate_score_threshold
     if escalate:
-        return await analyze_fn(item)
+        score = await analyze_fn(item)
+        # event_kind es una etiqueta determinista por términos (del filtro), no un
+        # juicio de Claude: la fijamos aquí para que el origen sea auditable y
+        # gratuito, sin depender del esquema JSON del modelo.
+        return score.model_copy(update={"event_kind": fr.event_kind})
 
     return SentimentScore(
         news_id=item.id,
@@ -45,6 +49,7 @@ async def score_item(
         score=fr.local_score,
         confidence=abs(fr.local_score),
         high_impact=fr.is_high_impact,
+        event_kind=fr.event_kind,
         rationale="score local (sin escalar a Claude)",
         analyzed_at=datetime.now(timezone.utc),
     )

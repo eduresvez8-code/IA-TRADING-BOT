@@ -20,6 +20,7 @@ Why VADER as complement?
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
@@ -105,20 +106,37 @@ CRYPTO_TERMS: dict[str, float] = {
     "whale": 0.0,
 }
 
-# Any match here → is_high_impact = True (always call Claude).
-# These are events where local scoring is unreliable: "crash" could be a
-# correction, a flash-crash, or a total collapse — only Claude can judge.
-HIGH_IMPACT_TERMS: frozenset[str] = frozenset({
+# --- Clases de evento de alto impacto (Plan V2 Fase 1.2) ---
+# El v1 metía todo en un único HIGH_IMPACT y la confluencia lo trataba como veto
+# total (HOLD), tirando a la basura los eventos MÁS operables. Los separamos por
+# semántica de TRADING, no por gravedad:
+
+# SCHEDULED: macro de resultado INCIERTO con hora conocida (FOMC/CPI). El peligro
+# es quedar posicionado HACIA un dato que puede ir a cualquier lado → la
+# confluencia bloquea entradas. (Ampliar a fed/rate hike/cut es decisión de
+# config en Fase 2; aquí mantenemos exactamente los términos macro que ya eran
+# high-impact, para no alterar la superficie de escalación a Claude.)
+SCHEDULED_MACRO_TERMS: frozenset[str] = frozenset({"fomc", "cpi"})
+
+# SHOCK: catalizador DIRECCIONAL, ya público (hack→bajista, ETF→alcista). No es
+# un volado: tiene signo. NO bloquea — cae a la matriz normal y, en Fase 2, podrá
+# ORIGINAR en el Fast Path. "halving" entra aquí: es scheduled pero de dirección
+# conocida (alcista histórico), no un volado macro.
+IDIOSYNCRATIC_SHOCK_TERMS: frozenset[str] = frozenset({
     "hack", "hacked", "exploit", "exploited",
     "rugpull", "rug pull",
     "depeg", "depegged",
     "etf approval", "etf approved",
-    "fomc", "cpi",
     "halving",
     "sec lawsuit", "sec charges",
     "crash",
     "bankruptcy", "bankrupt",
 })
+
+# Cualquier término de alto impacto → is_high_impact = True (siempre llama a
+# Claude: el scoring local es poco fiable aquí). La UNIÓN es idéntica al
+# HIGH_IMPACT_TERMS del v1, así que la escalación no cambia; solo etiquetamos.
+HIGH_IMPACT_TERMS: frozenset[str] = SCHEDULED_MACRO_TERMS | IDIOSYNCRATIC_SHOCK_TERMS
 
 # Minimum signal that the item is crypto-related at all.
 RELEVANCE_TERMS: frozenset[str] = frozenset({
@@ -139,6 +157,7 @@ class FilterResult:
     is_relevant: bool
     is_high_impact: bool
     local_score: float          # combined score in [-1, 1]
+    event_kind: Literal["none", "scheduled", "shock"] = "none"
     matched_terms: list[str] = field(default_factory=list)
 
 
@@ -179,12 +198,22 @@ def filter_news(item: NewsItem, *, heuristic_weight: float) -> FilterResult:
     local_score = heuristic_weight * heuristic_score + vader_weight * vader_compound
     local_score = max(-1.0, min(1.0, local_score))
 
-    # 5. High-impact detection
-    is_high_impact = any(term in text for term in HIGH_IMPACT_TERMS)
+    # 5. Clase de evento: scheduled (macro incierto) > shock (direccional) > none.
+    #    Precedencia a scheduled: ante una mezcla rara (p.ej. "Fed" + "hack"),
+    #    prima la cautela del macro. is_high_impact = (scheduled o shock), idéntico
+    #    a "cualquier término de HIGH_IMPACT_TERMS" del v1 (escalación intacta).
+    if any(term in text for term in SCHEDULED_MACRO_TERMS):
+        event_kind: Literal["none", "scheduled", "shock"] = "scheduled"
+    elif any(term in text for term in IDIOSYNCRATIC_SHOCK_TERMS):
+        event_kind = "shock"
+    else:
+        event_kind = "none"
+    is_high_impact = event_kind != "none"
 
     return FilterResult(
         is_relevant=True,
         is_high_impact=is_high_impact,
         local_score=local_score,
+        event_kind=event_kind,
         matched_terms=[t for t, _ in matched],
     )

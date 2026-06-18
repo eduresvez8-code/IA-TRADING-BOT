@@ -27,20 +27,40 @@ def make_signal(score: float, symbol: str = "BTCUSDT") -> Signal:
 
 
 def make_sentiment(score: float, *, high_impact: bool = False,
-                   confidence: float = 0.8) -> SentimentScore:
+                   event_kind: str = "none", confidence: float = 0.8) -> SentimentScore:
     return SentimentScore(
         news_id="n1", symbol_scope=["BTCUSDT"], score=score,
-        confidence=confidence, high_impact=high_impact, analyzed_at=NOW,
+        confidence=confidence, high_impact=high_impact, event_kind=event_kind,
+        analyzed_at=NOW,
     )
 
 
-# ---- Fila 0: high-impact bloquea TODA entrada ----
+# ---- Fila 0: macro PROGRAMADO bloquea; SHOCK direccional NO (Plan V2 Fase 1.2) ----
 
-def test_high_impact_bloquea_aunque_quant_y_sentimiento_confirmen():
-    d = decide(make_signal(0.9), make_sentiment(0.8, high_impact=True), CFG)
+def test_scheduled_macro_bloquea_aunque_quant_y_sentimiento_confirmen():
+    # FOMC/CPI: resultado incierto → no abrir hacia el dato, gane lo que gane la
+    # técnica. El bloqueo tiene prioridad sobre todo.
+    d = decide(make_signal(0.9), make_sentiment(0.8, event_kind="scheduled"), CFG)
     assert d.action == Action.HOLD
     assert d.size_factor == 0.0
-    assert d.reason == "high_impact_block"
+    assert d.reason == "scheduled_macro_block"
+
+
+def test_shock_no_bloquea_y_confirma_la_direccion():
+    # Corrige el veto invertido del v1: un shock direccional (hack/ETF) que CONFIRMA
+    # la dirección quant ya NO se tira a HOLD — cae a la matriz normal → LONG pleno.
+    d = decide(make_signal(0.8), make_sentiment(0.6, event_kind="shock"), CFG)
+    assert d.action == Action.LONG
+    assert d.size_factor == 1.0
+    assert d.reason == "sentiment_confirms"
+
+
+def test_shock_opuesto_cae_a_conflicto_no_a_bloqueo():
+    # Shock bajista contra quant alcista: no es bloqueo macro, es la regla de
+    # conflicto normal (la noticia puede invalidar el patrón técnico).
+    d = decide(make_signal(0.8), make_sentiment(-0.6, event_kind="shock"), CFG)
+    assert d.action == Action.HOLD
+    assert d.reason == "sentiment_conflict"
 
 
 # ---- Fila 1: quant débil → HOLD (circuit breaker b incluido) ----

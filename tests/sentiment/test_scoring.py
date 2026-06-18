@@ -57,3 +57,23 @@ async def test_score_local_fuerte_escala_a_claude():
     await score_item(make_news("Bitcoin bullish breakout rally accelerates"),
                      CFG, analyze_fn=make_analyze(calls))
     assert len(calls) == 1
+
+
+async def test_event_kind_shock_se_propaga_en_escalada():
+    # La etiqueta event_kind la pone el FILTRO (determinista por términos), no
+    # Claude: aunque el analyze_fn no la fije, el score escalado sale "shock".
+    out = await score_item(make_news("Major exchange hacked, funds stolen"),
+                           CFG, analyze_fn=make_analyze([]))
+    assert out.event_kind == "shock"
+
+
+async def test_event_kind_scheduled_se_propaga_en_escalada():
+    out = await score_item(make_news("FOMC decision shakes Bitcoin market"),
+                           CFG, analyze_fn=make_analyze([]))
+    assert out.event_kind == "scheduled"
+
+
+async def test_event_kind_none_en_score_local():
+    out = await score_item(make_news("Bitcoin trading volume steady today"),
+                           CFG, analyze_fn=make_analyze([]))
+    assert out.event_kind == "none"

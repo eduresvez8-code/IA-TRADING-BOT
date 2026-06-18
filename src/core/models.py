@@ -12,6 +12,7 @@ en el mismo cambio.
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -110,7 +111,14 @@ class SentimentScore(BaseModel):
     symbol_scope: list[str]  # símbolos afectados; ["*"] = todo el mercado
     score: float = Field(ge=-1.0, le=1.0)
     confidence: float = Field(ge=0.0, le=1.0)  # baja confianza → sizing reducido
-    high_impact: bool = False  # FOMC/CPI/hack: puede bloquear entradas
+    high_impact: bool = False  # FOMC/CPI/hack: dispara la escalación a Claude
+    # Clase de evento (etiqueta determinista por términos, del filtro — NO juicio
+    # de Claude). Decide el comportamiento en la confluencia:
+    #   "scheduled" → macro de resultado INCIERTO (FOMC/CPI): bloquea entradas.
+    #   "shock"     → catalizador DIRECCIONAL (hack/ETF/depeg): NO bloquea; cae a
+    #                 la matriz normal y, en Fase 2, podrá ORIGINAR (Fast Path).
+    #   "none"      → ni macro ni shock (el caso por defecto, p.ej. Fear&Greed).
+    event_kind: Literal["none", "scheduled", "shock"] = "none"
     rationale: str = ""  # explicación de Claude, para auditoría
     analyzed_at: datetime
 

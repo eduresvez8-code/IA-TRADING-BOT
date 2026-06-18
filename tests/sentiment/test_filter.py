@@ -129,6 +129,62 @@ def test_neutral_mining_news_is_not_high_impact():
 
 
 # ---------------------------------------------------------------------------
+# Clase de evento (Plan V2 Fase 1.2): scheduled vs shock vs none
+# ---------------------------------------------------------------------------
+
+
+def test_fomc_es_scheduled():
+    # Macro de resultado incierto → scheduled (la confluencia bloqueará).
+    item = make_news("FOMC meeting outcome impacts Bitcoin market")
+    result = filter_news(item, heuristic_weight=HW)
+    assert result.event_kind == "scheduled"
+    assert result.is_high_impact  # sigue escalando a Claude
+
+
+def test_hack_es_shock():
+    # Catalizador direccional ya público → shock (NO bloquea, es operable).
+    item = make_news("Crypto exchange hacked, $100M stolen")
+    result = filter_news(item, heuristic_weight=HW)
+    assert result.event_kind == "shock"
+    assert result.is_high_impact
+
+
+def test_etf_approval_es_shock():
+    item = make_news("Bitcoin ETF approval from SEC expected this week")
+    result = filter_news(item, heuristic_weight=HW)
+    assert result.event_kind == "shock"
+
+
+def test_halving_es_shock_no_scheduled():
+    # Halving: programado pero de dirección conocida → shock, no macro-volado.
+    item = make_news("Bitcoin halving event scheduled next month")
+    result = filter_news(item, heuristic_weight=HW)
+    assert result.event_kind == "shock"
+
+
+def test_noticia_relevante_sin_evento_es_none():
+    item = make_news("Bitcoin trading volume steady this week")
+    result = filter_news(item, heuristic_weight=HW)
+    assert result.is_relevant
+    assert result.event_kind == "none"
+    assert not result.is_high_impact
+
+
+def test_no_relevante_event_kind_none():
+    item = make_news("Stock market sees gains in the tech sector today")
+    result = filter_news(item, heuristic_weight=HW)
+    assert not result.is_relevant
+    assert result.event_kind == "none"
+
+
+def test_scheduled_tiene_precedencia_sobre_shock():
+    # Mezcla rara (macro + shock en un mismo titular): prima la cautela del macro.
+    item = make_news("FOMC day: exchange hacked amid Bitcoin volatility")
+    result = filter_news(item, heuristic_weight=HW)
+    assert result.event_kind == "scheduled"
+
+
+# ---------------------------------------------------------------------------
 # Bounds and consistency
 # ---------------------------------------------------------------------------
 
