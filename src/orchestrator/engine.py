@@ -198,6 +198,26 @@ class Orchestrator:
         if len(buf) > maxlen:
             del buf[: len(buf) - maxlen]
 
+    def _fresh_sentiment(self, sym: str, now: datetime) -> SentimentScore | None:
+        """El sentimiento del store SOLO si no ha caducado (TTL en vivo).
+
+        El `_sentiment_loop` hace `store.update(...)` cada poll y solo pisa las
+        claves que el fetch devuelve; un símbolo sin noticia fresca conservaría su
+        último score para siempre, y `_cycle` lo reusaría en cada vela. Aquí lo
+        caducamos contra `analyzed_at`: pasado `sentiment_ttl_seconds`, es como no
+        tener noticia (None) y se purga la clave (el poller la reescribe si llega
+        una fresca). Seguro sin lock extra: corre dentro de la sección crítica y
+        no hay `await` entre el get y el pop, así que es atómico frente al poller.
+        """
+        sent = self.sentiment_store.get(sym)
+        if sent is None:
+            return None
+        age = (now - sent.analyzed_at).total_seconds()
+        if age > self.cfg.confluence.sentiment_ttl_seconds:
+            self.sentiment_store.pop(sym, None)  # purga: no volver a evaluarla
+            return None
+        return sent
+
     async def _cycle(self, sym: str, candle: Candle, now: datetime) -> None:
         acct = await self.executor.exchange.get_account()
         actual = {(p.symbol, p.position_side): p.qty for p in acct.positions}
@@ -252,9 +272,9 @@ class Orchestrator:
         if atr is None:
             return
 
-        # --- 3. Confluencia con el sentimiento más reciente ---
-        sentiment = self.sentiment_store.get(sym)
-        decision = decide(signal, sentiment, self.cfg)
+        # --- 3. Confluencia con el sentimiento más reciente Y FRESCO (TTL) ---
+        sentiment = self._fresh_sentiment(sym, now)
+        decision = decide(signal, sentiment, self.cfg, as_of=now)
 
         # --- 4. Veredicto del Risk Manager ---
         state = await self.executor.snapshot_portfolio(now=now)

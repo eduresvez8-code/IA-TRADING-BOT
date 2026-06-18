@@ -74,6 +74,13 @@ class ConfluenceConfig(BaseModel):
     # Spot no permite ABRIR cortos; en vivo va en false. El backtest usa su
     # propia ruta y puede reactivarlos como investigación.
     allow_short: bool
+    # TTL del sentimiento EN VIVO (segundos). El store del orquestador retiene la
+    # última lectura de cada símbolo hasta que el poller la pisa; sin TTL, una
+    # noticia de hace 30 min seguiría confirmando trades. Caduca contra
+    # `analyzed_at`. ge=1 (un 0 caducaría el sentimiento al instante, nunca se
+    # usaría); le=86400 ataja un typo (más de un día no es "noticia fresca"). NO
+    # afecta al backtest, que caduca a escala de horas vía max_news_age_hours.
+    sentiment_ttl_seconds: int = Field(ge=1, le=86400)
 
 
 class SentimentConfig(BaseModel):

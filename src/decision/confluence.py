@@ -31,20 +31,32 @@ def decide(
     signal: Signal,
     sentiment: SentimentScore | None = None,
     settings: Settings | None = None,
+    *,
+    as_of: datetime | None = None,
 ) -> Decision:
     """Combina señal técnica y sentimiento en una Decision auditable.
 
     Args:
         signal:    salida del Quant Engine (score técnico en [-1, +1]).
         sentiment: salida del Sentiment Engine, o None si no hay noticia
-                   relevante para este símbolo en la ventana actual.
+                   relevante para este símbolo en la ventana actual. La
+                   CADUCIDAD (TTL) del sentimiento la aplica quien posee el reloj
+                   y el store (el orquestador, vía `_fresh_sentiment`): aquí el
+                   sentimiento que llega ya se asume vigente. Así esta matriz
+                   sigue siendo agnóstica al tiempo y el backtest (que caduca a
+                   escala de horas con max_news_age_hours) no se ve afectado.
         settings:  inyectable en tests; por defecto carga settings.yaml.
+        as_of:     instante de evaluación. Fija `Decision.timestamp` de forma
+                   determinista (misma entrada → misma salida). Por defecto, el
+                   reloj actual. Inyectarlo hace la función realmente pura y
+                   prepara el camino de eventos (Plan V2 Fase 2).
 
     Returns:
         Decision con action (LONG/SHORT/HOLD), size_factor en [0,1] y la regla
         de la matriz que disparó (campo `reason`, para auditoría).
     """
     cfg = (settings or load_settings()).confluence
+    now = as_of or datetime.now(timezone.utc)
     quant = signal.score
     sent = sentiment.score if sentiment is not None else 0.0
     high_impact = sentiment.high_impact if sentiment is not None else False
@@ -57,7 +69,7 @@ def decide(
             sentiment_score=sent,
             size_factor=size_factor,
             reason=reason,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=now,
         )
 
     # (0) Evento de alto impacto pendiente (FOMC, CPI, hack) → bloqueo total de

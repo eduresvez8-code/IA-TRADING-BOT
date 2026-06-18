@@ -5,7 +5,7 @@ Venue en vivo = Futuros USD-M (allow_short=true): los cortos fluyen simétricos.
 El gate de cortos (config) se verifica con una copia que lo desactiva.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from src.core.config import load_settings
 from src.core.models import Action, SentimentScore, Signal
@@ -133,3 +133,15 @@ def test_decision_registra_scores_para_auditoria():
     assert d.quant_score == 0.7
     assert d.sentiment_score == 0.4
     assert d.symbol == "BTCUSDT"
+
+
+def test_as_of_fija_el_timestamp_de_forma_determinista():
+    # Inyectar as_of hace la matriz pura: misma entrada → mismo timestamp. Sin él,
+    # la decisión usaría el reloj actual (no reproducible). El TTL NO vive aquí
+    # (lo aplica el orquestador): pasar un sentimiento "viejo" no lo invalida.
+    old = make_sentiment(0.5)  # analyzed_at = NOW
+    later = NOW + timedelta(hours=5)
+    d = decide(make_signal(0.8), old, CFG, as_of=later)
+    assert d.timestamp == later
+    assert d.action == Action.LONG  # la matriz ignora la edad: el sentimiento confirma
+    assert d.reason == "sentiment_confirms"

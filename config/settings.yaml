@@ -41,6 +41,12 @@ confluence:
   # opera de forma simétrica (LONG y SHORT). El gate sigue siendo config: poner
   # false lo volvería long-only sin tocar código.
   allow_short: true
+  # TTL del sentimiento EN VIVO (segundos). Pasado esto desde analyzed_at, el
+  # score caduca y se trata como "sin noticia". 300s = un score fresco informa la
+  # vela inmediata de 5m (poll cada 120s) pero no se reusa 10 min después. El
+  # Fast Path (Plan V2 Fase 2) es quien explota noticias sub-vela; este TTL solo
+  # corta el bug de "reusar el último score para siempre" del Slow Path.
+  sentiment_ttl_seconds: 300
 
 sentiment:
   rss_feeds:

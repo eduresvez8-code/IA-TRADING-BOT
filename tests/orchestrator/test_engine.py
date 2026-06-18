@@ -28,6 +28,10 @@ from src.orchestrator.engine import Orchestrator
 
 CFG = load_settings().model_copy(deep=True)
 CFG.orchestrator.warmup_candles = 2  # tests cortos
+# TTL holgado: los tests del lazo reusan un sentimiento fijo (analyzed_at=T0) a
+# lo largo de varias velas; no deben verse afectados por la caducidad. Los tests
+# dedicados al TTL usan un CFG propio con un TTL realista (ver _cfg_ttl).
+CFG.confluence.sentiment_ttl_seconds = 10_000
 GRACE = CFG.orchestrator.reconcile_grace_cycles  # 3
 
 T0 = datetime(2026, 6, 14, 0, 0, tzinfo=timezone.utc)
@@ -67,13 +71,13 @@ def _leg(qty: float = 1.0) -> ExchangePosition:
                             entry_price=1000.0, initial_margin=333.0)
 
 
-def make_env(*, dual_mode=False, storage=None, backfill_fn=None):
+def make_env(*, dual_mode=False, storage=None, backfill_fn=None, cfg=CFG):
     ex = FakeFuturesExchange(wallet_balance=10_000.0, filters=FILTERS,
                              prices={"BTCUSDT": 1000.0, "ETHUSDT": 2000.0}, dual_mode=dual_mode)
-    execu = Executor(ex, CFG, storage=storage)
+    execu = Executor(ex, cfg, storage=storage)
     rec = RecordingAlertSink()
     sig = StubSignal()
-    orch = Orchestrator(execu, CFG, alerts=rec, sentiment_store={}, signal_fn=sig,
+    orch = Orchestrator(execu, cfg, alerts=rec, sentiment_store={}, signal_fn=sig,
                         backfill_fn=backfill_fn)
     return ex, execu, orch, rec, sig
 
@@ -339,3 +343,52 @@ def test_stale_threshold_escala_con_timeframe():
     # 5m × stale_feed_intervals (2.0) = 600s, mayor que el absoluto de 30s.
     assert orch._stale_threshold_seconds() == max(
         CFG.risk.stale_feed_seconds, CFG.risk.stale_feed_intervals * 300)
+
+
+# ------------------------------ TTL de sentimiento ------------------------------
+
+def _cfg_ttl(ttl_seconds: int):
+    """Copia del CFG con un TTL de sentimiento realista (los tests del lazo usan
+    uno holgado; estos miden la caducidad explícitamente)."""
+    c = CFG.model_copy(deep=True)
+    c.confluence.sentiment_ttl_seconds = ttl_seconds
+    return c
+
+
+def test_fresh_sentiment_caduca_por_ttl():
+    # Frontera exacta + purga del store. _sent tiene analyzed_at=T0; con TTL=300s,
+    # a 299s sigue vigente (no se purga); a 301s caduca → None y se purga.
+    ex, execu, orch, rec, sig = make_env(cfg=_cfg_ttl(300))
+    fresh = _sent(0.6)
+    orch.sentiment_store[SYMBOL] = fresh
+    assert orch._fresh_sentiment(SYMBOL, T0 + timedelta(seconds=299)) is fresh
+    assert SYMBOL in orch.sentiment_store
+    assert orch._fresh_sentiment(SYMBOL, T0 + timedelta(seconds=301)) is None
+    assert SYMBOL not in orch.sentiment_store
+
+
+async def test_sentimiento_opuesto_caducado_no_bloquea_el_trade():
+    # Quant fuerte LONG + sentimiento bajista pero CADUCADO (analyzed_at de hace
+    # 30 min, TTL 300s) → se trata como "sin noticia": no hay conflicto y el LONG
+    # se abre (con tamaño reducido). Es el bug que el TTL corrige: sin él, ese
+    # score viejo seguiría vetando el trade por sentiment_conflict.
+    ex, orch, rec, sig = await build(cfg=_cfg_ttl(300))
+    sig.score = 0.8
+    orch.sentiment_store[SYMBOL] = SentimentScore(
+        news_id="old", symbol_scope=[SYMBOL], score=-0.7, confidence=0.8,
+        high_impact=False, analyzed_at=T0 - timedelta(minutes=30))
+    await feed(orch, [0, 1])
+    assert (SYMBOL, LONG) in ex.positions
+    assert SYMBOL not in orch.sentiment_store  # el score caduco fue purgado
+
+
+async def test_sentimiento_opuesto_fresco_si_bloquea():
+    # Contraste del anterior: el MISMO sentimiento bajista, pero FRESCO en la vela
+    # i=1, sí dispara sentiment_conflict → HOLD → no se abre el LONG.
+    ex, orch, rec, sig = await build(cfg=_cfg_ttl(300))
+    sig.score = 0.8
+    orch.sentiment_store[SYMBOL] = SentimentScore(
+        news_id="new", symbol_scope=[SYMBOL], score=-0.7, confidence=0.8,
+        high_impact=False, analyzed_at=_t(1))
+    await feed(orch, [0, 1])
+    assert (SYMBOL, LONG) not in ex.positions

@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from src.core.config import (
     BacktestConfig,
     BreakoutConfig,
+    ConfluenceConfig,
     CrossSectionalConfig,
     EdgeConfig,
     ExecutionConfig,
@@ -64,6 +65,40 @@ def test_sentiment_escalate_threshold_en_cero_es_rechazado():
 def test_sentiment_max_news_age_cero_es_rechazado():
     with pytest.raises(ValidationError):
         SentimentConfig(**_valid_sentiment_kwargs(max_news_age_hours=0))
+
+
+def _valid_confluence_kwargs(**overrides):
+    base = dict(
+        quant_strong_threshold=0.5, sentiment_confirm_threshold=0.3,
+        reduced_size_factor=0.5, allow_short=True, sentiment_ttl_seconds=300,
+    )
+    base.update(overrides)
+    return base
+
+
+def test_confluence_config_valido():
+    c = ConfluenceConfig(**_valid_confluence_kwargs())
+    assert c.sentiment_ttl_seconds == 300
+    assert c.allow_short is True
+
+
+def test_confluence_ttl_cero_es_rechazado():
+    # Un TTL de 0 caducaría el sentimiento al instante: nunca se usaría (ge=1).
+    with pytest.raises(ValidationError):
+        ConfluenceConfig(**_valid_confluence_kwargs(sentiment_ttl_seconds=0))
+
+
+def test_confluence_ttl_absurdo_es_rechazado():
+    # Más de un día no es "noticia fresca": un valor enorme es un typo (le=86400).
+    with pytest.raises(ValidationError):
+        ConfluenceConfig(**_valid_confluence_kwargs(sentiment_ttl_seconds=200_000))
+
+
+def test_settings_yaml_confluence():
+    s = load_settings()
+    assert 0.0 < s.confluence.quant_strong_threshold < 1.0
+    assert s.confluence.allow_short is True
+    assert 1 <= s.confluence.sentiment_ttl_seconds <= 86400
 
 
 def _valid_backtest_kwargs(**overrides):

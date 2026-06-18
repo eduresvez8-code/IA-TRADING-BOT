@@ -77,7 +77,7 @@ def make_confluence_decider(symbol, sentiments, settings, *, allow_short):
         sig = Signal(symbol=symbol, score=float(score),
                      strategy="ema_cross_rsi", timestamp=timestamp)
         sent = sentiments[i]
-        d = confluence_decide(sig, sent, settings)
+        d = confluence_decide(sig, sent, settings, as_of=timestamp)
 
         size_factor = d.size_factor
         if sent is not None and sent.confidence < rk.low_confidence_threshold:

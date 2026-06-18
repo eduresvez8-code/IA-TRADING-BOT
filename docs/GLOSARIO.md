@@ -637,3 +637,33 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   potencia estadística se desploma. Un spread grande puede no ser significativo:
   con pocas observaciones independientes y alta volatilidad, su intervalo de
   confianza incluye el cero.
+
+## Plan V2 — Fase 1 (arquitectura Event-Driven)
+
+- **TTL (Time-To-Live) del sentimiento**: tiempo máximo que un score de
+  sentimiento se considera vigente desde que se calculó (`analyzed_at`). Pasado
+  el TTL, caduca y se trata como "sin noticia". Resuelve el bug del store en
+  vivo: el orquestador retiene la última lectura de cada símbolo hasta que el
+  poller la pisa, así que sin TTL una noticia de hace 30 min seguiría
+  confirmando trades para siempre. Vive en el orquestador (`_fresh_sentiment`),
+  no en la matriz pura: el backtest ya caduca a escala de HORAS con
+  `max_news_age_hours` (Fear&Greed es diario), y un TTL en segundos dentro de
+  `decide()` mataría su brazo de sentimiento. Dos compuertas de frescura por
+  diseño: segundos (live) vs horas (backtest).
+- **`as_of` / función pura determinista**: inyectar el instante de evaluación en
+  `decide()` en vez de leer el reloj por dentro. "Pura" = misma entrada → misma
+  salida; al usar `datetime.now()` internamente, la decisión no era reproducible
+  ni testeable en el tiempo. Con `as_of` el `Decision.timestamp` queda fijado por
+  el llamador (la hora de la vela en backtest, `now` en vivo), preparando además
+  el camino de eventos (Fase 2).
+- **Fast Path / Slow Path (Dual-Core)**: dos pipelines con cadencias distintas.
+  El *Slow Path* decide en cada vela cerrada (5m): quant de contexto + overlays.
+  El *Fast Path* (Fase 2) se dispara por la LLEGADA de un evento de noticia
+  (sub-vela) y puede ORIGINAR trades. Ambos convergen en el mismo Risk Manager
+  (único veto) y el mismo lock del orquestador. Motivación: la cadencia atada a
+  la vela hace imposible operar eventos; ver `PLAN_MAESTRO_V2.md`.
+- **Drift post-evento**: continuación del movimiento de precio DESPUÉS de que una
+  noticia ya es pública. Es el único edge de noticias accesible a $0/mes: no
+  competimos en latencia (RSS llega minutos tarde), así que el Fast Path solo
+  vive si el movimiento "tiene cola" medible desde nuestra entrada real (≈t+3min),
+  no desde t+0.
