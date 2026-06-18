@@ -137,6 +137,26 @@ orchestrator:
   # del WebSocket: una aparición transitoria no detiene el bot, una sostenida sí.
   reconcile_grace_cycles: 3
 
+# --- Fast Path: originación de trades por evento (Plan V2 Fase 2) ---
+# Gobierna CUÁNDO un shock (hack/ETF/depeg…) cuaja en una orden. La lógica
+# (decide_event) llega en Fase 2.2; el consumidor (cola + on_event) en 2.3.
+event:
+  # Gate maestro. FALSE hasta que el Fast Path esté cableado (2.3) y validado en
+  # testnet (kill criteria §B/§C). Nada debe correr el Fast Path antes.
+  enabled: false
+  # Poll de eventos: más rápido que el Slow Path (sentiment.poll = 120s). No
+  # competimos en latencia con RSS gratis; 15s es el balance fresco/no-baneo.
+  poll_interval_seconds: 15
+  min_impact_score: 0.6        # |score| del shock para originar (no abrir con ruido)
+  min_confidence: 0.7          # confianza mínima de Claude para fiarse del titular
+  ttl_seconds: 180             # un intent de evento más viejo que esto no se opera
+  cooldown_seconds: 900        # 15 min por símbolo: evita reentrar con titulares del mismo suceso
+  confirm_impulse_bps: 8       # el precio debe moverse >= 8 bps en la dirección (circuit breaker b)
+  confirm_window_seconds: 60   # ventana para medir ese impulso de precio
+  size_factor: 0.5             # trades de evento al 50% (más arriesgados → más pequeños)
+  macro_block_minutes_before: 30  # bloqueo desde 30 min antes de un macro programado
+  macro_block_minutes_after: 5    # … hasta 5 min después (el dato ya es público)
+
 # --- Señales no-precio (funding rate / basis de futuros) ---
 # Edge test de funding/basis. NO afecta al trading: mide si predicen el precio.
 funding_edge:

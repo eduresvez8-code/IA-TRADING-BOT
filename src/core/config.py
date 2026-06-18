@@ -245,6 +245,54 @@ class OrchestratorConfig(BaseModel):
     reconcile_grace_cycles: int = Field(ge=1, le=20)
 
 
+class EventConfig(BaseModel):
+    """Fast Path: originación de trades por evento (Plan V2 Fase 2).
+
+    El Slow Path decide en cada vela cerrada (5m) con el quant como contexto. El
+    Fast Path se dispara por la LLEGADA de un shock (hack/ETF/depeg…) y puede
+    ORIGINAR un trade sub-vela. Estos parámetros gobiernan CUÁNDO un shock cuaja
+    en una orden; la lógica (decide_event) llega en Fase 2.2.
+
+    `enabled` arranca en false: el consumidor de eventos (Fase 2.3) aún no existe;
+    nada debe intentar correr el Fast Path hasta que esté cableado y validado en
+    testnet (kill criteria §B/§C del plan).
+    """
+
+    enabled: bool
+    # Cadencia del poller de eventos. Debe ser MÁS rápida que el poll del Slow
+    # Path (sentiment.poll_interval_seconds = 120). ge=5: por debajo martillaría
+    # el RSS gratis y arriesga un baneo de IP; le=60: por encima ya no compite con
+    # la cadencia de la vela de 5m y deja de ser "fast".
+    poll_interval_seconds: int = Field(ge=5, le=60)
+    # |score| mínimo del shock para originar. gt=0 (un 0 originaría con cualquier
+    # ruido); lt=1 (exactamente 1 exigiría el score máximo perfecto: nunca dispara).
+    min_impact_score: float = Field(gt=0.0, lt=1.0)
+    # Confianza mínima de Claude para fiarse del titular antes de originar.
+    min_confidence: float = Field(gt=0.0, lt=1.0)
+    # TTL del intent de evento (segundos). Mismo razonamiento que
+    # confluence.sentiment_ttl_seconds: un evento viejo no se opera. ge=1, le=86400.
+    ttl_seconds: int = Field(ge=1, le=86400)
+    # Enfriamiento por símbolo tras un trade de evento (segundos): evita reentrar en
+    # cadena con titulares correlacionados del mismo suceso. ge=0 (0 = sin
+    # cooldown); le=86400 ataja un typo (un día es el máximo razonable).
+    cooldown_seconds: int = Field(ge=0, le=86400)
+    # Confirmación de impulso (núcleo legítimo del circuit breaker (b) del v1): el
+    # precio debe haberse movido >= esto en la dirección del score dentro de
+    # confirm_window_seconds. ge=0 → 0 DESACTIVA el gate (necesario para la
+    # ablación A/B de los kill criteria §B); le=1000 (1000 bps = 10% es un typo).
+    confirm_impulse_bps: float = Field(ge=0.0, le=1000.0)
+    # Ventana en la que se mide el impulso de precio. ge=1, le=3600 (1h máximo).
+    confirm_window_seconds: int = Field(ge=1, le=3600)
+    # Multiplicador de tamaño de los trades de evento (más arriesgados → más
+    # pequeños). gt=0 (un 0 no abriría nada); le=1 (>1 AMPLIFICARÍA, al revés).
+    size_factor: float = Field(gt=0.0, le=1.0)
+    # Ventana de bloqueo alrededor de un macro PROGRAMADO (refina el `scheduled` de
+    # Fase 1.2: bloquear solo CERCA del dato, no para siempre). Minutos antes y
+    # después. ge=0 (0 = sin bloqueo por ese lado); le=1440 (un día) ataja un typo.
+    macro_block_minutes_before: int = Field(ge=0, le=1440)
+    macro_block_minutes_after: int = Field(ge=0, le=1440)
+
+
 class FundingEdgeConfig(BaseModel):
     # Edge test de señales no-precio. premium_interval: granularidad del basis.
     # forward_horizons_hours: horizontes de retorno futuro en HORAS (la señal de
@@ -329,6 +377,7 @@ class Settings(BaseModel):
     sentiment_regime: SentimentRegimeConfig
     execution: ExecutionConfig
     orchestrator: OrchestratorConfig
+    event: EventConfig
     storage: StorageConfig
 
 

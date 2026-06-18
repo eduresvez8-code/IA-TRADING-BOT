@@ -707,3 +707,25 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   pedido llenó y el resto fue cancelado), `confirmed_qty < order.quantity`. El
   engine la usa para `expected[key]`; registrar `order.quantity` cuando solo llenó
   una fracción provocaría un HALT espurio por reconciliación falsa.
+
+## Plan V2 — Fase 2.1 (parámetros del Fast Path)
+
+- **Confirmación de impulso (impulse confirmation)**: gate que exige que el PRECIO
+  ya se haya movido `≥ confirm_impulse_bps` en la dirección del score, dentro de
+  `confirm_window_seconds`, antes de originar un trade de evento. Es el núcleo
+  legítimo del circuit breaker (b) del v1: "no operes un titular (posiblemente mal
+  parseado o falso) sin que el mercado lo respalde". Con `confirm_impulse_bps=0`
+  el gate se desactiva — necesario para la ablación A/B que decide si el gate
+  realmente discrimina (kill criteria §B).
+- **Cooldown (enfriamiento)**: tiempo mínimo, por símbolo, entre dos trades de
+  evento. Un mismo suceso (p.ej. un hack) genera muchos titulares correlacionados
+  en minutos; sin cooldown el bot reentraría en cadena sobre la misma información.
+- **Ventana de bloqueo macro (`macro_block_minutes_before/after`)**: refina el veto
+  `scheduled` de Fase 1.2. En vez de bloquear "para siempre" mientras la noticia
+  del FOMC/CPI esté fresca, bloquea solo en `[dato − before, dato + after]`
+  minutos. Requiere noción de calendario (cuándo es el dato), de ahí que sea
+  parámetro de evento y no de la matriz pura.
+- **`size_factor` de evento**: multiplicador del tamaño de los trades originados
+  por el Fast Path (más arriesgados → más pequeños). Es distinto del
+  `reduced_size_factor` de la confluencia (Slow Path sin confirmación). El sizing
+  fino vive en el Risk Manager (Fase 2.4).

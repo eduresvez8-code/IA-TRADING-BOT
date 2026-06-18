@@ -264,10 +264,11 @@ arriesgar capital, no seguir añadiendo épées.
 1. **F1.1** TTL (`sentiment_ttl_seconds`) + `as_of` en confluence + `_fresh_sentiment` en engine. ✅ *(394 tests)*
 2. **F1.2** split `high_impact` → `event_kind` (scheduled/shock/none); confluencia bloquea solo scheduled. ✅ *(409 tests)*
 3. **F1.3** LIMIT-IOC + `slippage_cap_bps` + fix de `expected` en fills parciales. ✅ *(418 tests)*
-4. **F2.1–2.2** `EventConfig` + `decide_event` puro.
-5. **F2.3** cola + `on_event` en el engine (dentro del lock).
-6. **F2.4** sizing de evento + vol-regime en Risk Manager.
-7. **F3** cross-sectional overlay + gating de capital.
+4. **F2.1** `EventConfig` (11 params, Cero Hardcoding). ✅ *(429 tests)*
+5. **F2.2** `decide_event` puro. *(siguiente)*
+6. **F2.3** cola + `on_event` en el engine (dentro del lock).
+7. **F2.4** sizing de evento + vol-regime en Risk Manager.
+8. **F3** cross-sectional overlay + gating de capital.
 
 Cada paso: pytest verde + demo aislada + bloque "📖 Explicación" + glosario,
 antes de integrar en `main.py`. Capital real: revisión de métricas con Eduardo.

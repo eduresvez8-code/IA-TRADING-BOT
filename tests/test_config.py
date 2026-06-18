@@ -9,6 +9,7 @@ from src.core.config import (
     ConfluenceConfig,
     CrossSectionalConfig,
     EdgeConfig,
+    EventConfig,
     ExecutionConfig,
     FundingEdgeConfig,
     MeanReversionConfig,
@@ -504,3 +505,92 @@ def test_gracia_cero_es_rechazada():
     from src.core.config import OrchestratorConfig
     with pytest.raises(ValidationError):
         OrchestratorConfig(warmup_candles=60, reconcile_grace_cycles=0)
+
+
+# ------------------------- EventConfig (Plan V2 Fase 2.1) -------------------------
+
+
+def _valid_event_kwargs(**overrides):
+    base = dict(
+        enabled=False, poll_interval_seconds=15, min_impact_score=0.6,
+        min_confidence=0.7, ttl_seconds=180, cooldown_seconds=900,
+        confirm_impulse_bps=8, confirm_window_seconds=60, size_factor=0.5,
+        macro_block_minutes_before=30, macro_block_minutes_after=5,
+    )
+    base.update(overrides)
+    return base
+
+
+def test_event_config_valido():
+    e = EventConfig(**_valid_event_kwargs())
+    assert e.enabled is False           # arranca apagado (Fast Path no cableado)
+    assert e.poll_interval_seconds == 15
+    assert e.min_impact_score == 0.6
+    assert e.confirm_impulse_bps == 8
+
+
+def test_event_poll_demasiado_rapido_es_rechazado():
+    # <5s martillaría el RSS gratis y arriesga un baneo de IP (ge=5).
+    with pytest.raises(ValidationError):
+        EventConfig(**_valid_event_kwargs(poll_interval_seconds=2))
+
+
+def test_event_poll_demasiado_lento_es_rechazado():
+    # >60s ya no compite con la vela de 5m: deja de ser "fast" (le=60).
+    with pytest.raises(ValidationError):
+        EventConfig(**_valid_event_kwargs(poll_interval_seconds=120))
+
+
+def test_event_min_impact_score_uno_es_rechazado():
+    # Un umbral de exactamente 1 exigiría el score máximo perfecto: nunca dispara.
+    with pytest.raises(ValidationError):
+        EventConfig(**_valid_event_kwargs(min_impact_score=1.0))
+
+
+def test_event_min_impact_score_cero_es_rechazado():
+    # Un 0 originaría con cualquier ruido (gt=0).
+    with pytest.raises(ValidationError):
+        EventConfig(**_valid_event_kwargs(min_impact_score=0.0))
+
+
+def test_event_confirm_impulse_cero_es_valido():
+    # 0 bps DESACTIVA el gate de impulso a propósito (ablación A/B de kill §B): no
+    # es un typo, es una configuración legítima (ge=0, no gt=0).
+    e = EventConfig(**_valid_event_kwargs(confirm_impulse_bps=0.0))
+    assert e.confirm_impulse_bps == 0.0
+
+
+def test_event_confirm_impulse_absurdo_es_rechazado():
+    # 1000 bps = 10% de impulso exigido es un typo (le=1000).
+    with pytest.raises(ValidationError):
+        EventConfig(**_valid_event_kwargs(confirm_impulse_bps=1500))
+
+
+def test_event_size_factor_mayor_que_uno_es_rechazado():
+    # Un factor >1 AMPLIFICARÍA el tamaño en eventos arriesgados — al revés (le=1).
+    with pytest.raises(ValidationError):
+        EventConfig(**_valid_event_kwargs(size_factor=1.5))
+
+
+def test_event_ttl_absurdo_es_rechazado():
+    # Más de un día no es un evento "fresco" (le=86400).
+    with pytest.raises(ValidationError):
+        EventConfig(**_valid_event_kwargs(ttl_seconds=200_000))
+
+
+def test_event_macro_block_negativo_es_rechazado():
+    # Minutos de bloqueo negativos no tienen sentido (ge=0).
+    with pytest.raises(ValidationError):
+        EventConfig(**_valid_event_kwargs(macro_block_minutes_before=-10))
+
+
+def test_settings_yaml_event():
+    s = load_settings()
+    # Por seguridad, el Fast Path arranca APAGADO en el repo (no cableado aún).
+    assert s.event.enabled is False
+    # El poll de eventos debe ser estrictamente más rápido que el del Slow Path.
+    assert s.event.poll_interval_seconds < s.sentiment.poll_interval_seconds
+    assert 0.0 < s.event.min_impact_score < 1.0
+    assert 0.0 < s.event.min_confidence < 1.0
+    assert 0.0 < s.event.size_factor <= 1.0
+    assert s.event.confirm_impulse_bps >= 0.0
