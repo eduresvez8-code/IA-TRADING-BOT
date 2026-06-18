@@ -32,14 +32,22 @@ from typing import Awaitable, Callable
 import pandas as pd
 
 from src.core.config import Settings, load_settings
-from src.core.models import Candle, OrderType, PositionSide, SentimentScore, Signal
+from src.core.models import (
+    Action,
+    Candle,
+    EventIntent,
+    OrderType,
+    PositionSide,
+    SentimentScore,
+    Signal,
+)
 from src.data.binance_client import (
     interval_to_ms,
     rest_kline_to_candle,
     retry_with_backoff,
     stream_candles,
 )
-from src.decision.confluence import decide
+from src.decision.confluence import decide, decide_event
 from src.execution.executor import Executor
 from src.orchestrator.alerts import AlertLevel, AlertSink, LoggingAlertSink
 from src.orchestrator.policy import (
@@ -89,6 +97,14 @@ class Orchestrator:
 
         self._lock = asyncio.Lock()
         self._interval = timedelta(milliseconds=interval_to_ms(self.cfg.market.timeframe))
+
+        # --- Fast Path (Plan V2 §2.3): cola de eventos + cooldown por símbolo ---
+        # El productor (_event_loop) empuja EventIntents; el consumidor
+        # (_event_consumer) los pasa a on_event, que comparte el MISMO self._lock
+        # que el lazo de velas (un solo punto de serialización). _last_event_trade
+        # alimenta el cooldown de decide_event.
+        self._event_queue: asyncio.Queue[EventIntent] = asyncio.Queue()
+        self._last_event_trade: dict[str, datetime] = {}
 
     # ------------------------------ arranque ------------------------------
 
@@ -218,6 +234,38 @@ class Orchestrator:
             return None
         return sent
 
+    def _price_impulse_bps(self, sym: str, window_seconds: int) -> float:
+        """Movimiento del precio (con signo, en bps) en ~window_seconds, del buffer.
+
+        El Fast Path confirma con el PRECIO (no con el quant) que el mercado
+        respalda el shock. A $0/mes solo tenemos velas de 5m, así que el "impulso"
+        se mide sobre las velas cerradas: n = round(window/intervalo) velas (mínimo
+        1), retorno de close[-1-n] a close[-1]. Con ventana de 60s y velas de 5m,
+        n=1: el movimiento de la última vela. Si no hay datos suficientes devuelve
+        0.0 → con el gate activo, decide_event rechaza (no confirmamos a ciegas).
+        """
+        buf = self.buffers.get(sym, [])
+        if len(buf) < 2:
+            return 0.0
+        interval_s = self._interval.total_seconds()
+        n = max(1, round(window_seconds / interval_s)) if interval_s > 0 else 1
+        n = min(n, len(buf) - 1)
+        ref = buf[-1 - n].close
+        if ref <= 0:
+            return 0.0
+        return (buf[-1].close / ref - 1.0) * 10_000.0
+
+    def _resolve_scope(self, scope: list[str]) -> list[str]:
+        """Resuelve el symbol_scope de una noticia a los símbolos que operamos.
+
+        "*" (todo el mercado) → todos los configurados; en otro caso, la
+        intersección con market.symbols (ignoramos símbolos que no seguimos).
+        """
+        syms = self.cfg.market.symbols
+        if "*" in scope:
+            return list(syms)
+        return [s for s in scope if s in syms]
+
     async def _cycle(self, sym: str, candle: Candle, now: datetime) -> None:
         acct = await self.executor.exchange.get_account()
         actual = {(p.symbol, p.position_side): p.qty for p in acct.positions}
@@ -320,6 +368,112 @@ class Orchestrator:
             self.alerts.alert(AlertLevel.WARNING, "open_failed",
                               f"{order.symbol}: {report.detail}")
 
+    # ------------------------- Fast Path: consumo de eventos -------------------------
+
+    async def on_event(self, intent: EventIntent, *, now: datetime | None = None) -> None:
+        """Consume un EventIntent del Fast Path (Plan V2 §2.3).
+
+        Adquiere el MISMO `self._lock` que el lazo de velas: un evento que llega a
+        mitad de un `_cycle` espera su turno, nunca observa un estado a medio
+        aplicar. Gateado por `event.enabled` (gate maestro) y por `halted` (si un
+        circuit breaker disparó, el Fast Path tampoco abre). La apertura va por el
+        MISMO `_open`, así que queda registrada como in-flight y el lazo de velas
+        no la confunde con una pierna desconocida (→ 0 HALTs por el Fast Path).
+        """
+        now = now or datetime.now(timezone.utc)
+        if not self.cfg.event.enabled:
+            return
+        if self.halted:
+            return
+        async with self._lock:
+            await self._handle_event(intent, now)
+
+    async def _handle_event(self, intent: EventIntent, now: datetime) -> None:
+        sym = intent.symbol
+        ev = self.cfg.event
+
+        # (1) Necesitamos buffer caliente: el stop usa ATR y el gate usa el impulso.
+        if len(self.buffers.get(sym, [])) < self.cfg.orchestrator.warmup_candles:
+            self.alerts.alert(AlertLevel.WARNING, "event_not_warm", sym)
+            return
+        signal = self.signal_fn(self._buffer_df(sym), sym)
+        atr = signal.features.get("atr") if signal is not None else None
+        if atr is None:
+            self.alerts.alert(AlertLevel.WARNING, "event_no_atr", sym)
+            return
+
+        # (2) Decisión de originación (puro): impulso del buffer + cooldown del símbolo.
+        impulse = self._price_impulse_bps(sym, ev.confirm_window_seconds)
+        decision = decide_event(
+            intent.sentiment, sym, impulse, self.cfg,
+            as_of=now, last_event_trade_at=self._last_event_trade.get(sym),
+        )
+        if decision.action == Action.HOLD:
+            # Auditoría: por qué un evento NO operó (kill criteria §C los revisa).
+            self.alerts.alert(AlertLevel.INFO, "event_hold", f"{sym}: {decision.reason}")
+            return
+
+        # (3) Veredicto del Risk Manager (mismo evaluador que el Slow Path). El
+        #     sizing fino en "modo event" llega en Fase 2.4; aquí el size_factor de
+        #     evento ya viene en la Decision.
+        price = self.buffers[sym][-1].close
+        state = await self.executor.snapshot_portfolio(now=now)
+        assessment = self.risk.assess(
+            decision, price=price, atr=atr, state=state,
+            filters=self.executor.filters[sym], confidence=intent.sentiment.confidence,
+        )
+        if not assessment.approved:
+            if assessment.reason in _CRITICAL_VETOES:
+                self.alerts.alert(AlertLevel.CRITICAL, assessment.reason, sym)
+            return
+
+        # (4) Misma política de una pierna por símbolo y el MISMO _open.
+        want = assessment.order.position_side
+        held = next((ps for (s, ps) in (set(self.expected) | set(self._in_flight))
+                     if s == sym), None)
+        action = decide_position_action(held, want)
+        if action == PositionAction.OPEN:
+            await self._open(assessment.order, now, mark_price=price)
+            self._last_event_trade[sym] = now      # arma el cooldown del símbolo
+            self.alerts.alert(AlertLevel.INFO, "event_open",
+                              f"{sym} {want.value} por evento ({decision.reason})")
+        elif action == PositionAction.FLIP:
+            # FLIP desacoplado, igual que el Slow Path: solo cerramos aquí.
+            await self.executor.close_position(sym, held, now=now)
+            self.expected.pop((sym, held), None)
+            self._in_flight.pop((sym, held), None)
+            self.alerts.alert(AlertLevel.INFO, "event_flip_close",
+                              f"{sym}: cerrada {held.value} por evento; inversa en el próximo ciclo")
+        await self._persist_session(now)
+
+    # ------------------------- Fast Path: productor + cola -------------------------
+
+    async def _enqueue_event(self, score: SentimentScore) -> None:
+        """Resuelve el scope de un score y encola un EventIntent por símbolo."""
+        for sym in self._resolve_scope(score.symbol_scope):
+            await self._event_queue.put(EventIntent(symbol=sym, sentiment=score))
+
+    async def _event_loop(
+        self, fetch: Callable[[], Awaitable[list[SentimentScore]]]
+    ) -> None:
+        """Productor: sondea shocks más rápido que el Slow Path y los encola.
+
+        ⚠️ Capa operativa (RSS + Claude): se valida en testnet.
+        """
+        while True:
+            for score in await fetch():
+                await self._enqueue_event(score)
+            await asyncio.sleep(self.cfg.event.poll_interval_seconds)
+
+    async def _event_consumer(self) -> None:
+        """Consumidor: drena la cola y entrega cada intent a on_event (serializado)."""
+        while True:
+            intent = await self._event_queue.get()
+            try:
+                await self.on_event(intent)
+            finally:
+                self._event_queue.task_done()
+
     async def _persist_session(self, now: datetime) -> None:
         storage = self.executor.storage
         if storage is None:
@@ -382,8 +536,9 @@ class Orchestrator:
         data_client,
         *,
         sentiment_fetch: Callable[[], Awaitable[dict[str, SentimentScore]]] | None = None,
+        event_fetch: Callable[[], Awaitable[list[SentimentScore]]] | None = None,
     ) -> None:
-        """Lazo en vivo: backfill + streams de velas + poller + watchdog.
+        """Lazo en vivo: backfill + streams de velas + poller + watchdog + Fast Path.
 
         ⚠️ Capa operativa (websockets + RSS + Claude): se valida en testnet.
         """
@@ -405,6 +560,12 @@ class Orchestrator:
         if sentiment_fetch is not None:
             tasks.append(self._supervise(
                 lambda: self._sentiment_loop(sentiment_fetch), name="sentiment"))
+        # Fast Path: solo si está habilitado Y hay fuente de eventos. El gate
+        # maestro evita que un despiste arranque el Fast Path antes de validarlo.
+        if self.cfg.event.enabled and event_fetch is not None:
+            tasks.append(self._supervise(
+                lambda: self._event_loop(event_fetch), name="event_producer"))
+            tasks.append(self._supervise(self._event_consumer, name="event_consumer"))
         await asyncio.gather(*tasks)
 
     def _make_rest_backfill(self, data_client) -> BackfillFn:

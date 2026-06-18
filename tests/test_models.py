@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from src.core.models import (
     Candle,
+    EventIntent,
     Order,
     OrderType,
     PositionSide,
@@ -159,3 +160,23 @@ def test_sentiment_event_kind_invalido_es_rechazado():
     # El Literal cierra el dominio: un valor libre (typo) muere en la frontera.
     with pytest.raises(ValidationError):
         make_sentiment(event_kind="hack")
+
+
+# ------------------------------ EventIntent (Plan V2 §2.3) ------------------------------
+
+
+def test_event_intent_valido():
+    # El intent resuelve el scope a UN símbolo y lleva el SentimentScore íntegro.
+    sent = make_sentiment(symbol_scope=["BTCUSDT", "ETHUSDT"], event_kind="shock")
+    intent = EventIntent(symbol="BTCUSDT", sentiment=sent)
+    assert intent.symbol == "BTCUSDT"
+    assert intent.sentiment.event_kind == "shock"
+    assert intent.sentiment.score == 0.5
+
+
+def test_event_intent_valida_el_sentiment_anidado():
+    # El SentimentScore anidado debe seguir validándose (score fuera de rango).
+    with pytest.raises(ValidationError):
+        EventIntent(symbol="BTCUSDT",
+                    sentiment=dict(news_id="n", symbol_scope=["BTC"], score=2.0,
+                                   confidence=0.8, analyzed_at=NOW))

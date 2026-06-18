@@ -752,3 +752,27 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   ENCENDIÉNDOLO y APAGÁNDOLO con todo lo demás igual. Aquí: `confirm_impulse_bps>0`
   (brazo A, gate de impulso activo) vs `=0` (brazo B, desactivado). Si B opera
   igual de bien que A, el gate es complejidad muerta y se quita (kill criteria §B).
+
+## Plan V2 — Fase 2.3 (Fast Path cableado en el orquestador)
+
+- **Productor/Consumidor (asyncio.Queue)**: patrón de concurrencia donde una tarea
+  PRODUCE ítems (el `_event_loop` sondea shocks y encola `EventIntent`s) y otra los
+  CONSUME (`_event_consumer` los saca y llama `on_event`). La cola desacopla ambos:
+  el productor no espera a que el consumidor termine, y la latencia de un evento no
+  bloquea el sondeo del siguiente.
+- **EventIntent**: contrato (en `models.py`) que viaja por la cola: un shock ya
+  resuelto a UN símbolo + el `SentimentScore` íntegro. El productor resuelve
+  `symbol_scope`→símbolo (vía `_resolve_scope`), el consumidor decide y enruta.
+- **Punto único de serialización (el mismo lock)**: `on_event` y el lazo de velas
+  (`_cycle`) comparten el MISMO `asyncio.Lock`. Un evento que llega a mitad de un
+  ciclo de vela espera su turno; nunca dos caminos tocan el estado de la cuenta a
+  la vez. Es lo que hace seguro tener dos cadencias (5m y ~15s) sobre un solo bot.
+- **Registro como in-flight**: cuando el Fast Path abre, lo hace por el MISMO
+  `_open` que el Slow Path → la pierna queda en `expected` + `_in_flight`. Así la
+  reconciliación del lazo de velas la reconoce como "en vuelo" y no la confunde con
+  una pierna desconocida (lo que dispararía un HALT). Es la garantía estructural
+  "0 HALTs causados por aperturas del Fast Path" (kill criteria §C).
+- **Impulso desde velas de 5m**: a $0/mes no hay ticks intra-vela, así que el
+  "impulso de 60s" se aproxima con el retorno de la última vela cerrada (n =
+  round(ventana/intervalo), mínimo 1). Limitación conocida y aceptada del dato
+  gratuito; el forward study en testnet medirá si basta.

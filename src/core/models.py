@@ -125,6 +125,20 @@ class SentimentScore(BaseModel):
     analyzed_at: datetime
 
 
+class EventIntent(BaseModel):
+    """Candidato del Fast Path: un shock de noticia YA resuelto a un símbolo.
+
+    Contrato entre el productor (`_event_loop` del orquestador, que resuelve
+    `symbol_scope` → símbolo concreto) y el consumidor (`on_event` → `decide_event`).
+    Es el payload de la `asyncio.Queue` del Fast Path (Plan V2 §2.3). Lleva el
+    `SentimentScore` íntegro para auditoría: `decide_event` usa
+    score/confidence/event_kind/analyzed_at; el engine usa el `symbol` resuelto.
+    """
+
+    symbol: str
+    sentiment: SentimentScore
+
+
 class Decision(BaseModel):
     """Salida de la matriz de confluencia: qué hacer y con qué convicción."""
 

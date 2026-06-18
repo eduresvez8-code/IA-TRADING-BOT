@@ -266,8 +266,8 @@ arriesgar capital, no seguir añadiendo épées.
 3. **F1.3** LIMIT-IOC + `slippage_cap_bps` + fix de `expected` en fills parciales. ✅ *(418 tests)*
 4. **F2.1** `EventConfig` (11 params, Cero Hardcoding). ✅ *(429 tests)*
 5. **F2.2** `decide_event` puro (6 puertas + confirmación de impulso). ✅ *(446 tests)*
-6. **F2.3** cola + `on_event` en el engine (dentro del lock). *(siguiente)*
-7. **F2.4** sizing de evento + vol-regime en Risk Manager.
+6. **F2.3** `EventIntent` + cola + `on_event`/productor/consumidor (mismo lock). ✅ *(460 tests)*
+7. **F2.4** sizing de evento + vol-regime en Risk Manager. *(siguiente)*
 8. **F3** cross-sectional overlay + gating de capital.
 
 Cada paso: pytest verde + demo aislada + bloque "📖 Explicación" + glosario,
