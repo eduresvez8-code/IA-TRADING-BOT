@@ -265,8 +265,8 @@ arriesgar capital, no seguir añadiendo épées.
 2. **F1.2** split `high_impact` → `event_kind` (scheduled/shock/none); confluencia bloquea solo scheduled. ✅ *(409 tests)*
 3. **F1.3** LIMIT-IOC + `slippage_cap_bps` + fix de `expected` en fills parciales. ✅ *(418 tests)*
 4. **F2.1** `EventConfig` (11 params, Cero Hardcoding). ✅ *(429 tests)*
-5. **F2.2** `decide_event` puro. *(siguiente)*
-6. **F2.3** cola + `on_event` en el engine (dentro del lock).
+5. **F2.2** `decide_event` puro (6 puertas + confirmación de impulso). ✅ *(446 tests)*
+6. **F2.3** cola + `on_event` en el engine (dentro del lock). *(siguiente)*
 7. **F2.4** sizing de evento + vol-regime en Risk Manager.
 8. **F3** cross-sectional overlay + gating de capital.
 

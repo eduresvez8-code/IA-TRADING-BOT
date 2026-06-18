@@ -729,3 +729,26 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   por el Fast Path (más arriesgados → más pequeños). Es distinto del
   `reduced_size_factor` de la confluencia (Slow Path sin confirmación). El sizing
   fino vive en el Risk Manager (Fase 2.4).
+
+## Plan V2 — Fase 2.2 (decide_event: la noticia origina)
+
+- **Originación (originate)**: que un componente sea la CAUSA de abrir un trade.
+  En el v1 solo el quant originaba (y el sentimiento confirmaba). El Fast Path
+  invierte esto: un shock de noticia ORIGINA, y el quant pasa a contexto. La
+  causalidad correcta — operar la información exógena movedora de precio, no el
+  indicador técnico que anti-predice.
+- **Función pura con estado inyectado**: `decide_event` no consulta reloj, precio
+  ni base de datos; recibe `as_of` (reloj), `price_impulse_bps` (mercado) y
+  `last_event_trade_at` (cooldown) como argumentos. Toda la temporalidad entra por
+  la firma → la función es determinista y cada puerta se testea aislada. El estado
+  (reloj, buffer de precios, último trade) lo posee el orquestador, no el decisor.
+- **Puertas de originación (gates)**: la cadena de condiciones que un shock debe
+  pasar TODAS para originar: (0) es shock, (1) fresco vs TTL de evento, (2) fuera
+  de cooldown, (3) |score|≥min_impact, (4) confianza≥min, (5) cortos permitidos,
+  (6) impulso de precio confirmado. La primera que falla fija la `reason` auditable
+  (`event_not_shock`, `event_stale`, `event_cooldown`, `event_weak_score`,
+  `event_low_confidence`, `short_disabled`, `event_no_impulse`).
+- **Ablación A/B**: experimento que mide si un componente aporta valor
+  ENCENDIÉNDOLO y APAGÁNDOLO con todo lo demás igual. Aquí: `confirm_impulse_bps>0`
+  (brazo A, gate de impulso activo) vs `=0` (brazo B, desactivado). Si B opera
+  igual de bien que A, el gate es complejidad muerta y se quita (kill criteria §B).

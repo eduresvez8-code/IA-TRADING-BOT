@@ -1,13 +1,21 @@
-"""Matriz de confluencia: cruza la señal técnica con el sentimiento → Decision.
+"""Decisores del Dual-Core: dos funciones puras, un mismo contrato `Decision`.
 
-Filosofía (PLAN_MAESTRO §1): el motor cuantitativo manda la DIRECCIÓN; el
-sentimiento solo CONFIRMA (tamaño pleno), guarda silencio (tamaño reducido) o
-VETA (la noticia contradice el patrón técnico). Nunca abrimos por sentimiento
-solo: sin movimiento de precio que lo confirme, un titular extremo puede ser
-falso o estar mal parseado (circuit breaker (b) del plan).
+Conviven dos caminos (Plan V2 §2), ambos convergen en el mismo Risk Manager:
 
-Es una función pura: misma entrada → misma salida, sin estado ni I/O. Así cada
-fila de la matriz se valida aislada con un test de escenario.
+- `decide` (**Slow Path / estratégico**): por vela cerrada (5m). El quant manda
+  la DIRECCIÓN; el sentimiento solo CONFIRMA (tamaño pleno), guarda silencio
+  (tamaño reducido) o VETA. Nunca abre por sentimiento solo: sin movimiento de
+  precio que lo respalde, un titular extremo puede ser falso (circuit breaker (b)).
+
+- `decide_event` (**Fast Path / originación por evento**): por LLEGADA de un
+  shock de noticia. Aquí la NOTICIA origina y el quant ya NO es condición
+  necesaria — corrige la causalidad invertida del v1 (PLAN_MAESTRO_V2 §1). El
+  circuit breaker (b) se preserva como **confirmación de impulso**: el precio
+  debe respaldar el titular antes de operar.
+
+Ambas son funciones puras: misma entrada → misma salida, sin estado ni I/O. El
+reloj (`as_of`) y los estados temporales (TTL del store, cooldown) los inyecta el
+orquestador, que es quien posee el reloj. Así cada regla se valida aislada.
 """
 
 from __future__ import annotations
@@ -109,3 +117,98 @@ def decide(
     # (4) Sentimiento neutro (o ausente) → operamos la técnica con tamaño
     #     reducido: hay señal de precio pero nadie la respalda con noticias.
     return _decision(direction, cfg.reduced_size_factor, "sentiment_neutral")
+
+
+def decide_event(
+    sentiment: SentimentScore,
+    symbol: str,
+    price_impulse_bps: float,
+    settings: Settings | None = None,
+    *,
+    as_of: datetime | None = None,
+    last_event_trade_at: datetime | None = None,
+) -> Decision:
+    """Fast Path: ¿este shock de noticia ORIGINA un trade? (Plan V2 §2.2).
+
+    A diferencia de `decide` (Slow Path), aquí la NOTICIA origina y el quant NO es
+    condición necesaria. Devuelve una `Decision` LONG/SHORT solo si se cumplen
+    TODAS las puertas; si alguna falla, `HOLD` con la razón de la puerta (auditoría).
+
+    Función pura: el orquestador inyecta el reloj (`as_of`), el impulso de precio
+    ya medido sobre el buffer (`price_impulse_bps`, con signo, en bps) y el instante
+    del último trade de evento del símbolo (`last_event_trade_at`) para el cooldown.
+    El gate maestro `event.enabled` lo aplica el engine ANTES de llamar aquí (esto
+    DECIDE, no opera): no se re-chequea.
+
+    Args:
+        sentiment:           score del shock (score, confidence, event_kind, analyzed_at).
+        symbol:              símbolo ya resuelto desde symbol_scope (lo hace el engine, §2.3).
+        price_impulse_bps:   movimiento del precio en confirm_window, con signo (bps).
+        settings:            inyectable; por defecto carga settings.yaml.
+        as_of:               instante de evaluación (TTL + cooldown). Por defecto ahora.
+        last_event_trade_at: último trade de evento de este símbolo, o None.
+
+    Returns:
+        Decision con action LONG/SHORT (origina, size_factor=event.size_factor) o
+        HOLD (size_factor=0) con la `reason` de la puerta que cerró el paso.
+    """
+    s = settings or load_settings()
+    ev = s.event
+    now = as_of or datetime.now(timezone.utc)
+    score = sentiment.score
+
+    def _hold(reason: str) -> Decision:
+        return Decision(
+            symbol=symbol, action=Action.HOLD, quant_score=0.0,
+            sentiment_score=score, size_factor=0.0, reason=reason, timestamp=now,
+        )
+
+    # (0) Solo los SHOCK direccionales originan. `scheduled` (FOMC/CPI) y `none` no
+    #     abren por el Fast Path: el shock tiene signo conocido, el macro no.
+    if sentiment.event_kind != "shock":
+        return _hold("event_not_shock")
+
+    # (1) Frescura: un shock más viejo que el TTL de evento ya está descontado por
+    #     el mercado. TTL propio (≈180s), distinto del TTL del Slow Path (≈300s).
+    if (now - sentiment.analyzed_at).total_seconds() > ev.ttl_seconds:
+        return _hold("event_stale")
+
+    # (2) Cooldown por símbolo: un mismo suceso dispara titulares correlacionados en
+    #     cadena; sin esto reentraríamos varias veces sobre la misma información.
+    if (last_event_trade_at is not None
+            and (now - last_event_trade_at).total_seconds() < ev.cooldown_seconds):
+        return _hold("event_cooldown")
+
+    # (3) Magnitud: el shock debe ser suficientemente fuerte para arriesgar.
+    if abs(score) < ev.min_impact_score:
+        return _hold("event_weak_score")
+
+    # (4) Confianza: no originamos sobre un titular dudoso (parseo/ambigüedad).
+    if sentiment.confidence < ev.min_confidence:
+        return _hold("event_low_confidence")
+
+    direction = Action.LONG if score > 0 else Action.SHORT
+
+    # (5) Gate de cortos (config de venue, no hardcode). Aplica a TODA originación,
+    #     igual que en el Slow Path: ponerlo en false vuelve el bot long-only.
+    if direction == Action.SHORT and not s.confluence.allow_short:
+        return _hold("short_disabled")
+
+    # (6) Confirmación de impulso = núcleo legítimo del circuit breaker (b): el
+    #     precio ya debe haberse movido EN LA DIRECCIÓN del shock y con suficiente
+    #     magnitud. Con confirm_impulse_bps=0 el gate se DESACTIVA a propósito
+    #     (ablación A/B de los kill criteria §B: ¿discrimina el gate o es ruido?).
+    cap = ev.confirm_impulse_bps
+    if cap > 0:
+        aligned = _sign(price_impulse_bps) == _sign(score)
+        strong = abs(price_impulse_bps) >= cap
+        if not (aligned and strong):
+            return _hold("event_no_impulse")
+
+    # Origina: tamaño BASE de evento (más pequeño). El Risk Manager lo afina en modo
+    # event (§2.4) y el contexto estratégico puede reducirlo más (§2.3).
+    return Decision(
+        symbol=symbol, action=direction, quant_score=0.0, sentiment_score=score,
+        size_factor=ev.size_factor, reason=f"event_originate_{direction.value.lower()}",
+        timestamp=now,
+    )
