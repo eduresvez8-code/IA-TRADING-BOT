@@ -146,6 +146,8 @@ def _valid_risk_kwargs(**overrides):
         low_confidence_size_factor=0.5, stale_feed_seconds=30,
         stale_feed_intervals=2.0,
         max_leverage=3, max_portfolio_margin_pct=85.0,
+        event_risk_per_trade_pct=0.5, event_atr_stop_multiplier=2.5,
+        vol_regime_lookback=20, vol_expansion_cap=2.0,
     )
     base.update(overrides)
     return base
@@ -212,6 +214,75 @@ def test_settings_yaml_risk_futuros():
     assert 1 <= s.risk.max_leverage <= 10
     assert 0.0 < s.risk.max_portfolio_margin_pct <= 100.0
     assert s.confluence.allow_short is True
+
+
+# ----- RiskConfig: sizing de evento (Fase 2.4) -----
+
+def test_risk_event_sizing_config_valido():
+    rc = RiskConfig(**_valid_risk_kwargs())
+    assert rc.event_risk_per_trade_pct == 0.5
+    assert rc.event_atr_stop_multiplier == 2.5
+    assert rc.vol_regime_lookback == 20
+    assert rc.vol_expansion_cap == 2.0
+
+
+def test_event_risk_pct_fuera_de_rango_es_rechazado():
+    # gt=0 y le=2.0.
+    with pytest.raises(ValidationError):
+        RiskConfig(**_valid_risk_kwargs(event_risk_per_trade_pct=0.0))
+    with pytest.raises(ValidationError):
+        RiskConfig(**_valid_risk_kwargs(event_risk_per_trade_pct=3.0))
+
+
+def test_event_atr_stop_fuera_de_rango_es_rechazado():
+    # gt=0 y le=10.
+    with pytest.raises(ValidationError):
+        RiskConfig(**_valid_risk_kwargs(event_atr_stop_multiplier=0.0))
+    with pytest.raises(ValidationError):
+        RiskConfig(**_valid_risk_kwargs(event_atr_stop_multiplier=15.0))
+
+
+def test_vol_regime_lookback_fuera_de_rango_es_rechazado():
+    # ge=2 y le=500.
+    with pytest.raises(ValidationError):
+        RiskConfig(**_valid_risk_kwargs(vol_regime_lookback=1))
+    with pytest.raises(ValidationError):
+        RiskConfig(**_valid_risk_kwargs(vol_regime_lookback=600))
+
+
+def test_vol_expansion_cap_uno_es_rechazado():
+    # gt=1.0: un cap de 1.0 recortaría ante cualquier expansión mínima (sin holgura).
+    with pytest.raises(ValidationError):
+        RiskConfig(**_valid_risk_kwargs(vol_expansion_cap=1.0))
+
+
+def test_vol_expansion_cap_absurdo_es_rechazado():
+    # le=10: un cap de 50x no tiene sentido operativo.
+    with pytest.raises(ValidationError):
+        RiskConfig(**_valid_risk_kwargs(vol_expansion_cap=50.0))
+
+
+def test_event_risk_mayor_que_base_es_rechazado():
+    # event_risk_per_trade_pct debe ser ≤ risk_per_trade_pct: el evento no puede
+    # arriesgar más que el Slow Path (sería una ampliación, no reducción).
+    with pytest.raises(ValidationError):
+        RiskConfig(**_valid_risk_kwargs(risk_per_trade_pct=0.5, event_risk_per_trade_pct=1.0))
+
+
+def test_event_stop_menor_que_base_es_rechazado():
+    # event_atr_stop_multiplier debe ser ≥ atr_stop_multiplier: el stop de evento
+    # no puede ser más estrecho que el del Slow Path (se llenaría de ruido post-noticia).
+    with pytest.raises(ValidationError):
+        RiskConfig(**_valid_risk_kwargs(atr_stop_multiplier=3.0, event_atr_stop_multiplier=2.0))
+
+
+def test_settings_yaml_risk_evento():
+    s = load_settings()
+    r = s.risk
+    assert 0.0 < r.event_risk_per_trade_pct <= r.risk_per_trade_pct
+    assert r.event_atr_stop_multiplier >= r.atr_stop_multiplier
+    assert 2 <= r.vol_regime_lookback <= 500
+    assert r.vol_expansion_cap > 1.0
 
 
 def _valid_execution_kwargs(**overrides):

@@ -776,3 +776,40 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   "impulso de 60s" se aproxima con el retorno de la última vela cerrada (n =
   round(ventana/intervalo), mínimo 1). Limitación conocida y aceptada del dato
   gratuito; el forward study en testnet medirá si basta.
+
+## Plan V2 — Fase 2.4 (sizing de evento en el Risk Manager)
+
+- **Multiplicador de ATR de evento (`event_atr_stop_multiplier`)**: múltiplo de
+  ATR para fijar el stop en trades de evento. Mayor que el del Slow Path
+  (`atr_stop_multiplier`) porque el rango intra-vela explota tras una noticia. La
+  propiedad clave: un stop más ancho NO aumenta el riesgo en USD. Como
+  `qty = risk_amount / stop_distance`, si `stop_distance` sube (más distancia al
+  stop), `qty` baja proporcionalmente y el riesgo en dinero queda constante.
+  Se cambia tamaño de posición por "aire para respirar", no por exposición.
+- **Presupuesto de evento (`event_risk_per_trade_pct`)**: porcentaje del wallet
+  comprometido como riesgo base en trades del Fast Path. Menor que
+  `risk_per_trade_pct` para reflejar la mayor incertidumbre: el titular puede
+  estar mal parseado, la latencia de RSS impide llegar "primero", y el hit-rate
+  esperado es inferior al del Slow Path con señales maduras.
+- **Línea base del régimen de volatilidad (`vol_regime_lookback`, mediana ATR)**:
+  nivel "normal" de ATR estimado como la mediana del ATR sobre las últimas N
+  velas. Se usa mediana (no media) porque la media se inflaría con el propio spike
+  que intentamos medir (el shock que acaba de llegar ya estaría en las velas
+  recientes). La línea base es el denominador del `vol_ratio`.
+- **Amortiguador de expansión de volatilidad (`vol_expansion_cap`, `vol_damp`)**:
+  circuito que recorta el tamaño cuando la volatilidad actual es anómala frente a
+  su línea base. Fórmula: `vol_ratio = ATR_now / ATR_baseline`;
+  `vol_damp = min(1.0, vol_expansion_cap / vol_ratio)`. Propiedades importantes:
+  (1) solo recorta, nunca amplifica: `vol_damp ≤ 1.0` siempre; (2) cuando
+  `vol_ratio ≤ cap`, `vol_damp = 1.0` (sin recorte, mercado dentro de los
+  parámetros esperados); (3) la volatilidad efectiva a la que se dimensiona la
+  posición es `min(vol_ratio, cap)` — el cap funciona como un techo al régimen que
+  aceptas para dimensionar. `vol_damp` se apila multiplicativamente con
+  `size_factor` y `low_confidence_size_factor`.
+- **`mode="event"` vs `mode="slow"` (Risk Manager)**: el Risk Manager tiene un
+  único punto de veto (kill switch, daily-loss, halt, margen) compartido por ambas
+  vías, pero dos conjuntos de parámetros de sizing. `mode="slow"` (por defecto)
+  usa `risk_per_trade_pct` y `atr_stop_multiplier`; `mode="event"` usa
+  `event_risk_per_trade_pct`, `event_atr_stop_multiplier` y aplica `vol_damp`. Los
+  circuit breakers no cambian con el modo: el Fast Path no puede saltarse ningún
+  veto de riesgo.

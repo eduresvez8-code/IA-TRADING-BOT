@@ -530,6 +530,47 @@ async def test_enqueue_event_resuelve_scope_y_encola():
     assert encolados == set(CFG.market.symbols)   # un intent por símbolo del wildcard
 
 
+async def test_on_event_sin_baseline_suficiente_abre_sin_recorte():
+    # Con solo 2 velas en el buffer, _compute_atr_baseline devuelve None
+    # (vol_regime_lookback=20 requiere ≥21 velas). El assess usa vol_damp=1.0.
+    # El trade debe abrirse igualmente (la falta de baseline no es un veto).
+    ex, orch, rec, sig = await build(cfg=_cfg_event())
+    orch.buffers[SYMBOL] = [_ev_candle(0, 1000.0), _ev_candle(1, 1010.0)]
+    await orch.on_event(EventIntent(symbol=SYMBOL, sentiment=_shock(0.7)), now=T0)
+    assert (SYMBOL, LONG) in ex.positions
+    assert (SYMBOL, LONG) in orch.expected
+
+
+async def test_on_event_con_baseline_y_expansion_abre_qty_menor():
+    # Cuando el buffer tiene datos suficientes para la baseline, un ATR expandido
+    # reduce el tamaño vía vol_damp. Con StubSignal(ATR=50) y candles de H-L=10,
+    # la baseline real del buffer (~10) produce vol_ratio≈5 >> cap=2.0 → reducción.
+    # Usamos vol_regime_lookback pequeño (2) y atr_period pequeño (2) para que el
+    # buffer de test sea manejable: necesitamos ≥ lookback+1 = 3 candles.
+    cfg = _cfg_event()
+    cfg.risk = cfg.risk.model_copy(update={"vol_regime_lookback": 2})
+    ex, orch, rec, sig = await build(cfg=cfg)
+    sig.atr = 50.0  # ATR del stub >> baseline real de las velas (H-L≈10)
+    # 4 candles: suficientes para atr_period=14? No con period=14, pero usamos ATR
+    # del stub en _handle_event. _compute_atr_baseline necesita 3+ candles para
+    # atr_period=14. Con period=14 y 4 candles, atr_series.dropna() estará vacía
+    # → baseline=None → vol_damp=1.0. Necesitamos atr_period pequeño también.
+    cfg.risk = cfg.risk.model_copy(update={"vol_regime_lookback": 2, "atr_period": 2})
+    # rebuild con config actualizado
+    ex, orch, rec, sig = await build(cfg=cfg)
+    sig.atr = 50.0
+    # 4 candles de H-L=10: ATR real ≈ 10; baseline (mediana de 2 últimos) ≈ 10
+    orch.buffers[SYMBOL] = [_ev_candle(i, 1000.0 + i * 10) for i in range(4)]
+    # Primer evento: abre con vol_damp < 1 (ATR_stub=50 vs baseline≈10, ratio≈5)
+    await orch.on_event(EventIntent(symbol=SYMBOL, sentiment=_shock(0.7)), now=T0)
+    assert (SYMBOL, LONG) in ex.positions
+    qty_reducida = orch.expected[(SYMBOL, LONG)]
+    # Sin vol_damp (baseline=None), qty base = (10000×0.005×0.5)/(2.5×50) = 0.2
+    # Con vol_damp=2.0/5=0.4 → qty = 0.2×0.4 = 0.08 (< 0.2)
+    qty_base = (10_000 * 0.005 * 0.5) / (2.5 * 50)
+    assert qty_reducida < qty_base
+
+
 async def test_event_consumer_entrega_intents_a_on_event():
     # El consumidor solo es plomería: cada intent encolado llega a on_event.
     ex, orch, rec, sig = await build(cfg=_cfg_event())

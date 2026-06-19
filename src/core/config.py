@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -65,6 +65,36 @@ class RiskConfig(BaseModel):
     # wallet comprometible como margen inicial; >100 no tiene sentido → le=100.
     max_leverage: int = Field(ge=1, le=10)
     max_portfolio_margin_pct: float = Field(gt=0, le=100.0)
+    # --- Sizing de evento (Fase 2.4): parámetros del modo "event" del Risk Manager ---
+    # Presupuesto base para trades de evento (más pequeño que el Slow Path por mayor
+    # incertidumbre). Validador cruzado: debe ser ≤ risk_per_trade_pct.
+    event_risk_per_trade_pct: float = Field(gt=0, le=2.0)
+    # Múltiplo de ATR para el stop de evento (más amplio que el Slow Path: el ruido
+    # post-noticia es mayor). Validador cruzado: debe ser ≥ atr_stop_multiplier.
+    # El stop más ancho NO aumenta el riesgo: qty = risk/stop → la qty baja.
+    event_atr_stop_multiplier: float = Field(gt=0, le=10)
+    # Ventana para la línea base de régimen de volatilidad (mediana del ATR sobre las
+    # últimas N velas). ge=2 (mínimo para tener mediana con sentido); le=500 ataja un
+    # typo que vaciaría el techo de margen mirando cientos de velas atrás.
+    vol_regime_lookback: int = Field(ge=2, le=500)
+    # Techo del ratio ATR_now/ATR_baseline antes de aplicar el amortiguador.
+    # vol_damp = min(1.0, cap / ratio). gt=1.0: cap=1.0 recortaría ante cualquier
+    # expansión mínima, demasiado conservador; le=10 ataja un typo absurdo.
+    vol_expansion_cap: float = Field(gt=1.0, le=10)
+
+    @model_validator(mode="after")
+    def event_sizing_coherente(self) -> "RiskConfig":
+        if self.event_risk_per_trade_pct > self.risk_per_trade_pct:
+            raise ValueError(
+                f"event_risk_per_trade_pct ({self.event_risk_per_trade_pct}) "
+                f"debe ser ≤ risk_per_trade_pct ({self.risk_per_trade_pct})"
+            )
+        if self.event_atr_stop_multiplier < self.atr_stop_multiplier:
+            raise ValueError(
+                f"event_atr_stop_multiplier ({self.event_atr_stop_multiplier}) "
+                f"debe ser ≥ atr_stop_multiplier ({self.atr_stop_multiplier})"
+            )
+        return self
 
 
 class ConfluenceConfig(BaseModel):

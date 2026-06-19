@@ -211,6 +211,52 @@ buffer rodante; si no está warm → rechaza. Resolver scope→símbolo.
 expandido X× sobre su media — implementa por fin el sizing diferido del S5). El
 ATR es **volatilidad** (legítima), no la señal EMA/RSI (rota).
 
+**2.5 Plano de datos en tiempo real del Fast Path (resuelve crítica #3 a nivel
+de datos; BLOQUEA el paso a vivo).** El Fast Path ya tiene cerebro
+(`decide_event`, 2.2) y plomería (cola + `on_event` + sizing de evento, 2.3/2.4),
+pero sigue **ciego en tiempo real**: se alimenta de velas cerradas de 5m. Esta
+fase le da los dos sentidos que le faltan.
+
+- **(i) Micro-buffer rodante de `markPrice@1s` (REEMPLAZA la fuente de
+  `_price_impulse_bps`).** Un `collections.deque` por símbolo con pares
+  `(timestamp, markPrice)`, alimentado por un stream WebSocket de Binance Futuros
+  (`<symbol>@markPrice@1s`). `_price_impulse_bps` deja de leer del buffer de velas
+  y pasa a leer este deque de forma **síncrona y atómica dentro de `self._lock`**
+  (sin `await` entre la lectura del primer y el último tick → el productor WS no
+  puede insertar a medias). Mide el retorno sobre los últimos
+  `confirm_window_seconds` de ticks sub-segundo REALES, ya post-noticia.
+  **Fallar-cerrado:** si el buffer está frío (insuficientes ticks dentro de la
+  ventana) o stale (el último tick más viejo que un umbral), reporta "sin
+  confirmación" y `decide_event` rechaza — nunca se confirma a ciegas. Todo umbral
+  nuevo (profundidad mínima de ticks, antigüedad máxima del último tick) por
+  **Vía B** (`settings.yaml` + `config.py` + `test_config.py`).
+- **(ii) `event_fetch` real (RSS rápido → detección de shock).** Hoy
+  `_event_loop(fetch)` recibe un `fetch` **inyectable sin implementar** (solo
+  existe la costura para los tests). Esta fase entrega el productor real: poll
+  rápido de RSS → filtro de shock (`IDIOSYNCRATIC_SHOCK_TERMS`) → escalación a
+  Claude → `SentimentScore(event_kind="shock")`. Capa operativa: se valida en
+  testnet, no en unit-tests.
+
+**Por qué BLOQUEA el paso a vivo — error de VENTANA, no de resolución.** El
+`_price_impulse_bps` actual mide el retorno de la **última vela de 5m CERRADA**,
+cuya ventana **termina ANTES** de que la noticia sea pública (≈ el instante en que
+la detectamos). No es un problema de granularidad (5m vs 1s); es que se mide el
+**intervalo equivocado**: `[t−5min, t]` (pre-noticia) en vez de `[t, t+ventana]`
+(post-noticia). Eso sesga el Forward Study en dos direcciones a la vez:
+1. **Rechaza las continuaciones inmediatas** (los MEJORES trades): un shock en `t`
+   cuyo precio salta justo después de `t`, pero con la vela previa plana, da
+   impulso≈0 → el gate lo tira. Es exactamente el drift post-evento que §0(A)
+   declara como nuestro único edge accesible a $0/mes.
+2. **Admite el momentum pre-noticia** (RUIDO): si la vela previa ya venía movida
+   en la dirección del shock por casualidad o filtración, el gate aprueba algo que
+   no es confirmación post-noticia.
+
+Y por (1)+(2) **invalida la ablación A/B del gate de impulso (§B)**: no se puede
+concluir si la confirmación "ayuda o estorba" cuando la señal que gatea está mal
+temporizada. Por eso `_price_impulse_bps` **no se toca en código todavía** (sigue
+siendo la costura determinista de los unit-tests); solo se documenta que
+**`event.enabled` NO pasa a `true` hasta completar la Fase 2.5**.
+
 ### FASE 3 — Overlay estratégico (el único alpha real) + capital
 
 - **Cablear el cross-sectional reversal** (primer lead real: IC negativo
@@ -236,14 +282,29 @@ la media `t = r̄ / (s/√N)`.
   rodeado de perdedores = overfit → kill.
 
 **B. Forward event study (Fast Path — pre-registrado ANTES de ver datos):**
+
+> **BLOQUEO FORMAL (prerrequisito de datos):** `event.enabled` **NO pasa a
+> `true`** y el Forward Study **NO se inicia en testnet** hasta completar la
+> **Fase 2.5** (micro-buffer `markPrice@1s` + `event_fetch` real). Con el
+> `_price_impulse_bps` actual (retorno de la vela 5m cerrada, ventana
+> pre-noticia) el drift se mediría sobre el intervalo equivocado y la ablación de
+> abajo sería inválida. Ver §3 Fase 2.5.
+
 - **Drift a latencia real:** retorno medio en la dirección del score, medido
   **desde t+entrada_real (≈t+3min)**, con `|t|≥2` y `N≥30` eventos. Si el drift
   solo existe en [t+0, t+3min] → **Fast Path muerto, no va a vivo.**
 - **Net edge:** `PF>1.15` **después** del `slippage_cap` realizado.
 - **La confirmación de impulso debe ayudar:** ablación A/B; si no discrimina, se
-  quita (complejidad muerta).
+  quita (complejidad muerta). **Solo es concluyente con el plano de datos de la
+  Fase 2.5**: medido sobre la vela 5m previa (ventana pre-noticia) la ablación no
+  prueba nada.
 
 **C. Testnet operacional (gate duro, cualquier fallo = no-go):**
+- **Prerrequisito de arranque (BLOQUEO FORMAL):** la operación del Fast Path en
+  testnet **no empieza** hasta que la **Fase 2.5** esté entregada y validada
+  (micro-buffer `markPrice@1s` caliente + `event_fetch` real). Hasta entonces
+  `event.enabled` permanece en `false`; ninguna métrica de abajo se contabiliza
+  con el `_price_impulse_bps` basado en velas.
 - **Slippage:** mediana del slippage de entrada realizado ≤ `slippage_cap_bps`, y
   tasa de no-fill del IOC < 30% (si no, el cap es tan estrecho que nunca operas).
 - **Integridad estructural — tolerancia CERO:** 0 HALTs causados por aperturas
@@ -267,8 +328,11 @@ arriesgar capital, no seguir añadiendo épées.
 4. **F2.1** `EventConfig` (11 params, Cero Hardcoding). ✅ *(429 tests)*
 5. **F2.2** `decide_event` puro (6 puertas + confirmación de impulso). ✅ *(446 tests)*
 6. **F2.3** `EventIntent` + cola + `on_event`/productor/consumidor (mismo lock). ✅ *(460 tests)*
-7. **F2.4** sizing de evento + vol-regime en Risk Manager. *(siguiente)*
-8. **F3** cross-sectional overlay + gating de capital.
+7. **F2.4** sizing de evento + vol-regime en Risk Manager. ✅ *(477 tests)*
+8. **F2.5** plano de datos en tiempo real: micro-buffer `markPrice@1s` (reemplaza
+   la fuente de `_price_impulse_bps`) + `event_fetch` real. **BLOQUEANTE de
+   `event.enabled` y del Forward Study** (§B/§C). *(siguiente)*
+9. **F3** cross-sectional overlay + gating de capital.
 
 Cada paso: pytest verde + demo aislada + bloque "📖 Explicación" + glosario,
 antes de integrar en `main.py`. Capital real: revisión de métricas con Eduardo.

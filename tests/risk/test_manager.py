@@ -271,6 +271,83 @@ def test_kill_switch_drawdown_latcha_hasta_reset():
     assert a3.approved is True
 
 
+# --------------------- Modo event (Fase 2.4): sizing diferenciado ---------------------
+
+def test_event_mode_stop_mas_ancho_da_qty_menor():
+    # Con ATR y riesgo fijos, stop_mult mayor → stop_distance mayor → qty menor.
+    # qty_slow  = (10000 × 0.01 × 1.0) / (1.5 × 50) = 100/75 ≈ 1.333
+    # qty_event = (10000 × 0.005 × 1.0) / (2.5 × 50) = 50/125 = 0.4
+    rm = RiskManager(CFG)
+    slow = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
+                     state=healthy_state(), filters=FINE, mode="slow")
+    event = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
+                      state=healthy_state(), filters=FINE, mode="event")
+    assert slow.approved and event.approved
+    assert event.order.quantity < slow.order.quantity
+    assert event.order.stop_loss == pytest.approx(1000.0 - 2.5 * 50)  # 875
+
+
+def test_event_mode_risk_pct_menor_reduce_tamanio():
+    # Con el mismo stop, el presupuesto base menor de evento (0.5% vs 1%) reduce qty.
+    rm = RiskManager(CFG)
+    a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
+                  state=healthy_state(), filters=FINE, mode="event")
+    # risk_amount = 10000 × 0.005 × 1.0 = 50; stop = 2.5×50=125; qty = 0.4
+    assert a.approved
+    assert a.order.quantity == pytest.approx(50.0 / 125.0)
+
+
+def test_event_mode_vol_expansion_recorta():
+    # vol_ratio = atr/baseline = 100/40 = 2.5 > cap=2.0 → vol_damp = 2.0/2.5 = 0.8
+    # qty = (10000 × 0.005 × 1.0 × 0.8) / (2.5 × 100) = 40/250 = 0.16
+    rm = RiskManager(CFG)
+    a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=100.0,
+                  state=healthy_state(), filters=FINE,
+                  mode="event", atr_baseline=40.0)
+    assert a.approved
+    expected_qty = (10_000 * 0.005 * 1.0 * (2.0 / 2.5)) / (2.5 * 100)
+    assert a.order.quantity == pytest.approx(expected_qty)
+
+
+def test_event_mode_vol_bajo_cap_no_recorta():
+    # vol_ratio = atr/baseline = 50/40 = 1.25 < cap=2.0 → vol_damp = 1.0 (sin recorte)
+    # qty = (10000 × 0.005 × 1.0 × 1.0) / (2.5 × 50) = 50/125 = 0.4
+    rm = RiskManager(CFG)
+    sin_recorte = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
+                            state=healthy_state(), filters=FINE, mode="event")
+    con_baseline_baja = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
+                                  state=healthy_state(), filters=FINE,
+                                  mode="event", atr_baseline=40.0)
+    assert sin_recorte.approved and con_baseline_baja.approved
+    # baseline=40, vol_ratio=1.25<cap → vol_damp=1.0: misma qty que sin baseline
+    assert con_baseline_baja.order.quantity == pytest.approx(sin_recorte.order.quantity)
+
+
+def test_event_mode_atr_baseline_none_sin_recorte():
+    # Sin baseline → vol_damp=1.0: el resultado es idéntico al caso con baseline ≥ atr.
+    rm = RiskManager(CFG)
+    a_none = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
+                       state=healthy_state(), filters=FINE,
+                       mode="event", atr_baseline=None)
+    a_cero = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
+                       state=healthy_state(), filters=FINE,
+                       mode="event", atr_baseline=0.0)
+    assert a_none.approved and a_cero.approved
+    # Ambos deben dar la misma qty (vol_damp=1.0 en los dos casos)
+    assert a_none.order.quantity == pytest.approx(a_cero.order.quantity)
+
+
+def test_slow_mode_inalterado_regresion():
+    # Los 460 tests del Slow Path dependen de que mode="slow" sea equivalente al
+    # comportamiento anterior (sin modificar ninguno de sus parámetros).
+    rm = RiskManager(CFG)
+    a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
+                  state=healthy_state(), filters=FINE)
+    # Misma fórmula: qty = (10000 × 0.01 × 1.0) / (1.5 × 50) = 100/75
+    assert a.order.quantity == pytest.approx(100.0 / 75.0)
+    assert a.order.stop_loss == pytest.approx(925.0)  # 1000 - 1.5×50
+
+
 # --------------------- Cadena completa señal → orden (SHORT) ---------------------
 
 def test_pipeline_confluencia_a_orden_short():

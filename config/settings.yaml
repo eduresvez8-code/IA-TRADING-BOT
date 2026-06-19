@@ -32,6 +32,21 @@ risk:
   # Margen inicial agregado máximo como % del wallet_balance. El (100 - este)% es
   # colchón para fluctuaciones de PnL no realizado y comisiones de liquidación.
   max_portfolio_margin_pct: 85.0
+  # --- Sizing de evento (Fase 2.4): modo event del Risk Manager ---
+  # Presupuesto base menor para trades de evento (más inciertos que el Slow Path).
+  # Debe ser ≤ risk_per_trade_pct (validador cruzado en config.py).
+  event_risk_per_trade_pct: 0.5
+  # Stop más ancho en eventos: la volatilidad intra-noticia supera el ATR(14) de
+  # mercado tranquilo. Debe ser ≥ atr_stop_multiplier (validador cruzado).
+  # El stop ancho NO sube el riesgo: qty = risk/stop → qty baja, no el riesgo.
+  event_atr_stop_multiplier: 2.5
+  # Ventana para la línea base de volatilidad (mediana del ATR, no media: robusta
+  # contra el spike que intentamos medir). ge=2, le=500.
+  vol_regime_lookback: 20
+  # Techo del ratio ATR_now/ATR_baseline antes de aplicar vol_damp.
+  # vol_damp = min(1, cap/ratio) → para ratio ≤ cap no hay recorte.
+  # gt=1.0 garantiza un mínimo de holgura antes de recortar (le=10 ataja un typo).
+  vol_expansion_cap: 2.0
 
 confluence:
   quant_strong_threshold: 0.5      # |señal quant| para considerarla "fuerte"

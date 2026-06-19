@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import statistics
 from datetime import date, datetime, timedelta, timezone
 from typing import Awaitable, Callable
 
@@ -55,6 +56,7 @@ from src.orchestrator.policy import (
     classify_reconciliation,
     decide_position_action,
 )
+from src.quant.indicators import atr as _atr_series
 from src.quant.strategy import compute_signal
 from src.risk.manager import RiskManager
 
@@ -255,6 +257,23 @@ class Orchestrator:
             return 0.0
         return (buf[-1].close / ref - 1.0) * 10_000.0
 
+    def _compute_atr_baseline(self, sym: str) -> float | None:
+        """Mediana del ATR sobre vol_regime_lookback velas (línea base de volatilidad).
+
+        La mediana es robusta contra el propio spike que intentamos medir: la media
+        se inflaría con el outlier que está en curso. Si el buffer es insuficiente,
+        devuelve None → el Risk Manager usa vol_damp=1.0 (sin recorte), no un veto.
+        """
+        buf = self.buffers.get(sym, [])
+        lookback = self.cfg.risk.vol_regime_lookback
+        if len(buf) < lookback + 1:
+            return None
+        atr_vals = _atr_series(self._buffer_df(sym), self.cfg.risk.atr_period)
+        valid = [v for v in atr_vals if not pd.isna(v)]
+        if len(valid) < lookback:
+            return None
+        return statistics.median(valid[-lookback:])
+
     def _resolve_scope(self, scope: list[str]) -> list[str]:
         """Resuelve el symbol_scope de una noticia a los símbolos que operamos.
 
@@ -402,7 +421,11 @@ class Orchestrator:
             self.alerts.alert(AlertLevel.WARNING, "event_no_atr", sym)
             return
 
-        # (2) Decisión de originación (puro): impulso del buffer + cooldown del símbolo.
+        # (2) Línea base de régimen de volatilidad para el vol_damp (Fase 2.4).
+        #     Se computa antes de decide_event (lectura síncrona del buffer, sin await).
+        atr_baseline = self._compute_atr_baseline(sym)
+
+        # (3) Decisión de originación (puro): impulso del buffer + cooldown del símbolo.
         impulse = self._price_impulse_bps(sym, ev.confirm_window_seconds)
         decision = decide_event(
             intent.sentiment, sym, impulse, self.cfg,
@@ -413,14 +436,14 @@ class Orchestrator:
             self.alerts.alert(AlertLevel.INFO, "event_hold", f"{sym}: {decision.reason}")
             return
 
-        # (3) Veredicto del Risk Manager (mismo evaluador que el Slow Path). El
-        #     sizing fino en "modo event" llega en Fase 2.4; aquí el size_factor de
-        #     evento ya viene en la Decision.
+        # (4) Veredicto del Risk Manager en modo evento (Fase 2.4): stop más ancho,
+        #     presupuesto menor, vol_damp activo si hay suficiente historia.
         price = self.buffers[sym][-1].close
         state = await self.executor.snapshot_portfolio(now=now)
         assessment = self.risk.assess(
             decision, price=price, atr=atr, state=state,
             filters=self.executor.filters[sym], confidence=intent.sentiment.confidence,
+            mode="event", atr_baseline=atr_baseline,
         )
         if not assessment.approved:
             if assessment.reason in _CRITICAL_VETOES:

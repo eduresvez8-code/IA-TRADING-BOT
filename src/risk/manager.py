@@ -35,6 +35,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Literal
 
 from src.core.config import Settings, load_settings
 from src.core.models import Action, Decision, Order, PositionSide, Side, SymbolFilters
@@ -85,16 +86,24 @@ class RiskManager:
         state: PortfolioState,
         filters: SymbolFilters,
         confidence: float = 1.0,
+        mode: Literal["slow", "event"] = "slow",
+        atr_baseline: float | None = None,
     ) -> RiskAssessment:
         """Evalúa una Decision contra el estado de la cuenta y la microestructura.
 
         Args:
-            decision:   salida de la matriz de confluencia (LONG/SHORT/HOLD).
-            price:      precio actual (base del sizing y de los stops).
-            atr:        ATR(14) actual; fija la distancia al stop por volatilidad.
-            state:      snapshot de la cuenta de futuros (wallet/available/…).
-            filters:    restricciones del par (tick/step/min) de exchangeInfo.
-            confidence: confianza del sentimiento [0,1]; baja → tamaño reducido.
+            decision:     salida de la confluencia (LONG/SHORT/HOLD).
+            price:        precio actual (base del sizing y de los stops).
+            atr:          ATR(14) actual; fija la distancia al stop.
+            state:        snapshot de la cuenta de futuros.
+            filters:      restricciones del par (tick/step/min) de exchangeInfo.
+            confidence:   confianza del sentimiento [0,1]; baja → tamaño reducido.
+            mode:         "slow" (Slow Path, por defecto) o "event" (Fast Path).
+                          "event" usa parámetros propios (risk_pct y stop_mult más
+                          conservadores) y aplica el amortiguador de expansión de
+                          volatilidad (vol_damp).
+            atr_baseline: mediana del ATR sobre vol_regime_lookback velas (línea
+                          base del régimen). None → vol_damp=1.0 (sin recorte).
 
         Returns:
             RiskAssessment.approved=True con una Order válida, o False con el
@@ -150,9 +159,27 @@ class RiskManager:
         if entry <= 0 or atr <= 0:
             return RiskAssessment(False, "invalid_sizing_inputs")
 
+        # (1b) Selección de parámetros y amortiguador de volatilidad según el modo.
+        #      mode="slow": parámetros del Slow Path, sin amortiguador.
+        #      mode="event": parámetros propios (stop más ancho, riesgo menor) +
+        #        vol_damp = min(1, cap/ratio). El stop ancho no sube el riesgo:
+        #        qty = risk/stop → qty baja, riesgo en USD queda constante.
+        if mode == "event":
+            risk_pct = r.event_risk_per_trade_pct
+            stop_mult = r.event_atr_stop_multiplier
+            if atr_baseline is not None and atr_baseline > 0:
+                vol_ratio = atr / atr_baseline
+                vol_damp = min(1.0, r.vol_expansion_cap / vol_ratio)
+            else:
+                vol_damp = 1.0  # sin línea base: no recortamos (fallar-abierto al alza)
+        else:
+            risk_pct = r.risk_per_trade_pct
+            stop_mult = r.atr_stop_multiplier
+            vol_damp = 1.0
+
         # (2-3) SL/TP crudos por ATR (el stop va en el lado perdedor: bajo la
         #       entrada en LONG, sobre la entrada en SHORT) y ajuste al tickSize.
-        stop_distance_raw = r.atr_stop_multiplier * atr
+        stop_distance_raw = stop_mult * atr
         direction = 1.0 if is_long else -1.0
         stop_loss = float(
             round_to_tick(entry - direction * stop_distance_raw, filters.tick_size)
@@ -173,12 +200,16 @@ class RiskManager:
             return RiskAssessment(False, "stop_rounds_to_entry")
         stop_distance = abs(entry - stop_loss)
 
-        # (5) Cantidad por RIESGO sobre el wallet (1% constante por el stop ATR).
+        # (5) Cantidad por RIESGO sobre el wallet. Los tres amortiguadores se apilan
+        #     multiplicativamente: size_factor (Decision), low_confidence y vol_damp.
+        #     vol_damp solo recorta (≤1.0), nunca amplifica: si el mercado está más
+        #     tranquilo que la línea base, la posición NO se incrementa.
         risk_amount = (
-            state.wallet_balance * (r.risk_per_trade_pct / 100.0) * decision.size_factor
+            state.wallet_balance * (risk_pct / 100.0) * decision.size_factor
         )
         if confidence < r.low_confidence_threshold:
             risk_amount *= r.low_confidence_size_factor
+        risk_amount *= vol_damp
         qty_risk = risk_amount / stop_distance
 
         # (6) Techos de MARGEN, expresados como tope de NOCIONAL (= margen × L).
