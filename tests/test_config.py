@@ -588,7 +588,7 @@ def _valid_event_kwargs(**overrides):
         confirm_impulse_bps=8, confirm_window_seconds=60, size_factor=0.5,
         macro_block_minutes_before=30, macro_block_minutes_after=5,
         markprice_buffer_seconds=180, markprice_stale_seconds=5,
-        markprice_min_ticks=5,
+        markprice_min_ticks=5, max_headline_age_seconds=1800,
     )
     base.update(overrides)
     return base
@@ -694,6 +694,23 @@ def test_event_markprice_buffer_igual_a_ventana_es_valido():
     assert e.markprice_buffer_seconds == 60
 
 
+def test_event_max_headline_age_valido():
+    e = EventConfig(**_valid_event_kwargs())
+    assert e.max_headline_age_seconds == 1800
+
+
+def test_event_max_headline_age_cero_es_rechazado():
+    # 0s descartaría cualquier titular al instante: nunca originaría (ge=1).
+    with pytest.raises(ValidationError):
+        EventConfig(**_valid_event_kwargs(max_headline_age_seconds=0))
+
+
+def test_event_max_headline_age_absurdo_es_rechazado():
+    # Más de un día no es un "shock" fresco (le=86400).
+    with pytest.raises(ValidationError):
+        EventConfig(**_valid_event_kwargs(max_headline_age_seconds=200_000))
+
+
 def test_settings_yaml_event():
     s = load_settings()
     # Por seguridad, el Fast Path arranca APAGADO en el repo (no cableado aún).
@@ -708,3 +725,5 @@ def test_settings_yaml_event():
     assert s.event.markprice_buffer_seconds >= s.event.confirm_window_seconds
     assert s.event.markprice_stale_seconds > 0
     assert s.event.markprice_min_ticks >= 2
+    # Fase 2.5(ii): guardia de frescura del event_fetch.
+    assert s.event.max_headline_age_seconds >= 1

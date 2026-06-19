@@ -231,12 +231,19 @@ fase le da los dos sentidos que le faltan.
   `markprice_buffer_seconds` (≥ `confirm_window_seconds`, validador cruzado),
   `markprice_stale_seconds`, `markprice_min_ticks`. El stream y el consumo se
   cablean en `run()` solo si `event.enabled`.
-- **(ii) `event_fetch` real (RSS rápido → detección de shock).** Hoy
-  `_event_loop(fetch)` recibe un `fetch` **inyectable sin implementar** (solo
-  existe la costura para los tests). Esta fase entrega el productor real: poll
-  rápido de RSS → filtro de shock (`IDIOSYNCRATIC_SHOCK_TERMS`) → escalación a
-  Claude → `SentimentScore(event_kind="shock")`. Capa operativa: se valida en
-  testnet, no en unit-tests.
+- **(ii) `event_fetch` real (RSS rápido → detección de shock). [FUNCIÓN HECHA;
+  wiring operativo pendiente]** `src/sentiment/events.py`: `fetch_events` compone
+  `fetch_feeds` → `filter_news` (queda solo `event_kind=="shock"`) → `analyze`
+  (Claude) → `SentimentScore(event_kind="shock")`. Tres guardias por coste
+  creciente: **dedup por `news_id`** (`seen`, evita re-llamar a Claude cada poll y
+  acota memoria purgando por la ventana de frescura), **frescura por
+  `published_at`** (nuevo `max_headline_age_seconds`, Vía B: §0(A), no perseguir
+  noticias rancias), y solo entonces VADER+Claude. Todo inyectable
+  (`analyze_fn`/`fetch_feeds_fn`) → unit-testeable sin red; `build_event_fetch`
+  arma la versión de producción (Claude real + `seen` persistente). **Pendiente
+  (capa operativa, no unit-testeable):** cablear `event_fetch` en `main.py`
+  `run(event_fetch=…)` y validar en testnet — igual que `sentiment_fetch`, que
+  tampoco está cableado todavía.
 
 **Por qué BLOQUEA el paso a vivo — error de VENTANA, no de resolución.** El
 `_price_impulse_bps` actual mide el retorno de la **última vela de 5m CERRADA**,
@@ -255,10 +262,11 @@ la detectamos). No es un problema de granularidad (5m vs 1s); es que se mide el
 Y por (1)+(2) **invalidaba la ablación A/B del gate de impulso (§B)**: no se puede
 concluir si la confirmación "ayuda o estorba" cuando la señal que gatea está mal
 temporizada. **Resuelto por 2.5(i):** el impulso ya se mide sobre la ventana
-post-noticia correcta con ticks `markPrice@1s` reales. **Pendiente: 2.5(ii)**
-(`event_fetch` real). El **bloqueo formal se mantiene** —`event.enabled` NO pasa a
-`true` y el Forward Study NO arranca— hasta completar **2.5(ii)**: sin fuente real
-de eventos el Fast Path no corre end-to-end.
+post-noticia correcta con ticks `markPrice@1s` reales. **2.5(ii):** la función
+`fetch_events` (productor real) está hecha y testeada; queda su **wiring operativo**
+(en `main.py`) y la **validación en testnet**. El **bloqueo formal se mantiene**
+—`event.enabled` NO pasa a `true` y el Forward Study NO arranca— hasta que
+`event_fetch` esté cableado en `run()` y se cumplan los kill criteria §B/§C.
 
 ### FASE 3 — Overlay estratégico (el único alpha real) + capital
 
@@ -334,8 +342,10 @@ arriesgar capital, no seguir añadiendo épées.
 7. **F2.4** sizing de evento + vol-regime en Risk Manager. ✅ *(477 tests)*
 8. **F2.5(i)** micro-buffer `markPrice@1s` (reemplaza la fuente de
    `_price_impulse_bps`, fallar-cerrado a `None`) + 3 params Vía B. ✅ *(487 tests)*
-9. **F2.5(ii)** `event_fetch` real (RSS→shock→Claude). **BLOQUEANTE de
-   `event.enabled` y del Forward Study** (§B/§C). *(siguiente)*
+9. **F2.5(ii)** `event_fetch` real (`src/sentiment/events.py`: RSS→shock→Claude,
+   dedup por `news_id`, frescura `max_headline_age_seconds`). Función + tests ✅
+   *(496 tests)*. **Pendiente operativo:** wiring en `main.py` + validación testnet
+   (sigue **BLOQUEANTE de `event.enabled`** hasta entonces, §B/§C).
 10. **F3** cross-sectional overlay + gating de capital.
 
 Cada paso: pytest verde + demo aislada + bloque "📖 Explicación" + glosario,

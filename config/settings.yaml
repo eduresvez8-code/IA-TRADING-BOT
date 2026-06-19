@@ -175,6 +175,8 @@ event:
   markprice_buffer_seconds: 180   # retención del deque por símbolo (≥ confirm_window_seconds)
   markprice_stale_seconds: 5      # tick más reciente más viejo que esto → feed muerto → no operar
   markprice_min_ticks: 5          # mínimo de ticks en la ventana para fiarse del impulso
+  # --- event_fetch (Fase 2.5(ii)): guardia de frescura del titular ---
+  max_headline_age_seconds: 1800  # 30 min: titular más viejo que esto no origina (no chasing)
 
 # --- Señales no-precio (funding rate / basis de futuros) ---
 # Edge test de funding/basis. NO afecta al trading: mide si predicen el precio.

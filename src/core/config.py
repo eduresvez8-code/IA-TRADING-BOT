@@ -335,6 +335,12 @@ class EventConfig(BaseModel):
     # fiarnos del impulso. ge=2 (con <2 no hay retorno medible); le=10000 ataja un
     # typo (a 1 tick/s serían casi 3h de exigencia).
     markprice_min_ticks: int = Field(ge=2, le=10000)
+    # --- Plan V2 Fase 2.5(ii): guardia de frescura del event_fetch ---
+    # Antigüedad máxima (por published_at) de un titular para originar. §0(A): el
+    # edge es el drift POST-evento, no perseguir noticias rancias. Más laxo que
+    # ttl_seconds (que mide la edad del INTENT vs analyzed_at) porque el lag de RSS
+    # gratis es de 1-5 min. ge=1; le=86400 ataja un typo (un día no es "shock").
+    max_headline_age_seconds: int = Field(ge=1, le=86400)
 
     @model_validator(mode="after")
     def markprice_buffer_cubre_la_ventana(self) -> "EventConfig":

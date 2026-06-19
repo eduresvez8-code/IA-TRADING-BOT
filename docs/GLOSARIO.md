@@ -847,3 +847,25 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   o la ventana nunca estaría cubierta). `stale_seconds` = antigüedad máxima del
   último tick antes de declarar el feed muerto. `min_ticks` = mínimo de ticks dentro
   de la ventana para fiarse del impulso (evita medir con datos escasos).
+
+## Plan V2 — Fase 2.5(ii) (event_fetch real)
+
+- **`fetch_events` (productor del Fast Path)**: la fuente que el orquestador inyecta
+  en `run(event_fetch=…)`. Compone `fetch_feeds` (RSS) → `filter_news` (queda solo
+  `event_kind=="shock"`) → `analyze` (Claude) → `SentimentScore(event_kind="shock")`.
+  El filtro de shock va ANTES de Claude: `scheduled` (FOMC/CPI) bloquea y `none` es
+  ruido — ninguno debe originar ni gastar tokens. Todo inyectable
+  (`analyze_fn`/`fetch_feeds_fn`) para test sin red; `build_event_fetch` arma la
+  versión de producción.
+- **Deduplicación por `news_id` (`seen`)**: los RSS repiten un titular durante horas;
+  sin dedup se llamaría a Claude sobre lo mismo en cada poll (15s) — inaceptable a
+  $0/mes — y se inundaría la cola. `seen` (news_id → instante de emisión) hace que
+  cada titular se analice/encole UNA vez. Se purga por la ventana de frescura: un id
+  más viejo que `max_headline_age_seconds` ya no pasaría frescura, así que olvidarlo
+  es seguro y acota la memoria del set.
+- **Guardia de frescura (`max_headline_age_seconds`)**: antigüedad máxima por
+  `published_at` para que un titular origine. §0(A): el edge es el drift POST-evento,
+  no perseguir noticias rancias. Es MÁS laxo que `ttl_seconds` (que mide la edad del
+  INTENT vs `analyzed_at`) porque el lag del RSS gratis es de 1-5 min. Ahorra además
+  la llamada a Claude sobre titulares viejos y defiende aun con el gate de impulso
+  ablado (`confirm_impulse_bps=0`).
