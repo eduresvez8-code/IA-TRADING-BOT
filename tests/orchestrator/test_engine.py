@@ -541,34 +541,49 @@ async def test_on_event_sin_baseline_suficiente_abre_sin_recorte():
     assert (SYMBOL, LONG) in orch.expected
 
 
-async def test_on_event_con_baseline_y_expansion_abre_qty_menor():
-    # Cuando el buffer tiene datos suficientes para la baseline, un ATR expandido
-    # reduce el tamaño vía vol_damp. Con StubSignal(ATR=50) y candles de H-L=10,
-    # la baseline real del buffer (~10) produce vol_ratio≈5 >> cap=2.0 → reducción.
-    # Usamos vol_regime_lookback pequeño (2) y atr_period pequeño (2) para que el
-    # buffer de test sea manejable: necesitamos ≥ lookback+1 = 3 candles.
-    cfg = _cfg_event()
-    cfg.risk = cfg.risk.model_copy(update={"vol_regime_lookback": 2})
-    ex, orch, rec, sig = await build(cfg=cfg)
-    sig.atr = 50.0  # ATR del stub >> baseline real de las velas (H-L≈10)
-    # 4 candles: suficientes para atr_period=14? No con period=14, pero usamos ATR
-    # del stub en _handle_event. _compute_atr_baseline necesita 3+ candles para
-    # atr_period=14. Con period=14 y 4 candles, atr_series.dropna() estará vacía
-    # → baseline=None → vol_damp=1.0. Necesitamos atr_period pequeño también.
+def _flat_candle(i: int, half_range: float) -> Candle:
+    """Vela de cierre PLANO (=1000) con rango H-L controlado = 2×half_range.
+
+    Cierre plano ⇒ True Range = 2×half_range en TODAS las velas (sin gaps), así el
+    ATR es determinista y exactamente igual al rango. Permite fijar la línea base
+    de volatilidad del buffer con precisión. Cierre plano ⇒ impulso=0, por eso los
+    tests que la usan desactivan el gate de impulso (confirm_impulse_bps=0).
+    """
+    return Candle(symbol=SYMBOL, timeframe="5m",
+                  open_time=T0 + timedelta(minutes=5 * i),
+                  open=1000.0, high=1000.0 + half_range, low=1000.0 - half_range,
+                  close=1000.0, volume=10.0)
+
+
+async def test_on_event_atr_expandido_abre_qty_menor_que_regimen_normal():
+    # Lo que pide la spec 2.4-D: con ATR ACTUAL idéntico (stub=50) en ambos
+    # escenarios, el de régimen EXPANDIDO abre tamaño menor que el NORMAL. Como el
+    # ATR actual es el mismo, el stop es el mismo: la única diferencia de qty es el
+    # amortiguador vol_damp (se aísla así de cualquier otro efecto).
+    #   - normal:    velas de rango 50 → baseline=50 → vol_ratio=50/50=1   ≤ cap=2 → vol_damp=1.0
+    #   - expandido: velas de rango 10 → baseline=10 → vol_ratio=50/10=5   >  cap=2 → vol_damp=0.4
+    # vol_regime_lookback=2 y atr_period=2 hacen el buffer de test manejable; con
+    # cierre plano el ATR(2) converge exactamente al rango. confirm_impulse_bps=0
+    # desactiva el gate de impulso (las velas planas no producen impulso).
+    cfg = _cfg_event(confirm_impulse_bps=0)
     cfg.risk = cfg.risk.model_copy(update={"vol_regime_lookback": 2, "atr_period": 2})
-    # rebuild con config actualizado
-    ex, orch, rec, sig = await build(cfg=cfg)
-    sig.atr = 50.0
-    # 4 candles de H-L=10: ATR real ≈ 10; baseline (mediana de 2 últimos) ≈ 10
-    orch.buffers[SYMBOL] = [_ev_candle(i, 1000.0 + i * 10) for i in range(4)]
-    # Primer evento: abre con vol_damp < 1 (ATR_stub=50 vs baseline≈10, ratio≈5)
-    await orch.on_event(EventIntent(symbol=SYMBOL, sentiment=_shock(0.7)), now=T0)
-    assert (SYMBOL, LONG) in ex.positions
-    qty_reducida = orch.expected[(SYMBOL, LONG)]
-    # Sin vol_damp (baseline=None), qty base = (10000×0.005×0.5)/(2.5×50) = 0.2
-    # Con vol_damp=2.0/5=0.4 → qty = 0.2×0.4 = 0.08 (< 0.2)
-    qty_base = (10_000 * 0.005 * 0.5) / (2.5 * 50)
-    assert qty_reducida < qty_base
+
+    ex_n, orch_n, rec_n, sig_n = await build(cfg=cfg)
+    sig_n.atr = 50.0
+    orch_n.buffers[SYMBOL] = [_flat_candle(i, 25.0) for i in range(5)]  # rango 50
+    await orch_n.on_event(EventIntent(symbol=SYMBOL, sentiment=_shock(0.7)), now=T0)
+    qty_normal = orch_n.expected[(SYMBOL, LONG)]
+
+    ex_e, orch_e, rec_e, sig_e = await build(cfg=cfg)
+    sig_e.atr = 50.0
+    orch_e.buffers[SYMBOL] = [_flat_candle(i, 5.0) for i in range(5)]   # rango 10
+    await orch_e.on_event(EventIntent(symbol=SYMBOL, sentiment=_shock(0.7)), now=T0)
+    qty_expandido = orch_e.expected[(SYMBOL, LONG)]
+
+    # qty_normal = (10000×0.005×0.5×1.0)/(2.5×50) = 0.2 ; expandido = ×0.4 = 0.08.
+    assert qty_normal == pytest.approx(0.2)
+    assert qty_expandido == pytest.approx(qty_normal * 0.4)  # = 0.08
+    assert qty_expandido < qty_normal
 
 
 async def test_event_consumer_entrega_intents_a_on_event():
