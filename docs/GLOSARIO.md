@@ -813,3 +813,37 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   `event_risk_per_trade_pct`, `event_atr_stop_multiplier` y aplica `vol_damp`. Los
   circuit breakers no cambian con el modo: el Fast Path no puede saltarse ningún
   veto de riesgo.
+
+## Plan V2 — Fase 2.5(i) (plano de datos en tiempo real del Fast Path)
+
+- **Micro-buffer de `markPrice@1s`**: `collections.deque` por símbolo con pares
+  `(timestamp, mark_price)`, alimentado por el stream WebSocket de Binance Futuros
+  `<symbol>@markPrice@1s` (1 tick/seg). Es el "plano de datos" del Fast Path: sobre
+  él se mide el impulso de precio post-noticia. Reemplaza la fuente anterior (vela
+  5m cerrada). El push (`_ingest_mark_price`) es SÍNCRONO (sin `await`) para que la
+  lectura (`_price_impulse_bps`) sea atómica respecto al productor (ambos en el
+  mismo event loop), sin necesidad de un lock adicional.
+- **Error de ventana vs error de resolución**: dos formas distintas de medir mal el
+  impulso de una noticia. *Resolución* = granularidad de los datos (5m vs 1s);
+  *ventana* = el intervalo temporal que se mide. El bug del v1 NO era de resolución
+  sino de ventana: la vela 5m cerrada cubre `[t−5min, t]` (PRE-noticia), cuando lo
+  correcto es `[t, t+ventana]` (POST-noticia). Medir la ventana equivocada rechaza
+  las continuaciones inmediatas (los mejores trades) y admite el momentum
+  pre-noticia (ruido). La Fase 2.5(i) corrige la ventana usando ticks reales.
+- **Fallar-cerrado (fail-closed) del plano de datos**: principio de seguridad por el
+  que, ante datos de precio ausentes o no fiables, el sistema NO opera (en vez de
+  asumir un valor por defecto). `_price_impulse_bps` devuelve `None` si: (1) el
+  deque está vacío; (2) **stale** — el tick más reciente es más viejo que
+  `markprice_stale_seconds` (feed congelado); (3) **ventana no cubierta** — no hay
+  histórico que abarque `confirm_window_seconds`; (4) **frío** — menos de
+  `markprice_min_ticks` ticks en la ventana. El orquestador traduce `None` →
+  "no operar", y esto manda **por encima de la ablación**: aun con
+  `confirm_impulse_bps=0` (gate de magnitud apagado), sin precio en vivo no se abre.
+  Contraste: "gate apagado" significa "no me importa la MAGNITUD del impulso", no
+  "no me importa si hay precio".
+- **`markprice_buffer_seconds` / `markprice_stale_seconds` / `markprice_min_ticks`**:
+  los tres umbrales (Vía B) del micro-buffer. `buffer_seconds` = cuánto histórico
+  retiene el deque (debe ser ≥ `confirm_window_seconds`, validado de forma cruzada,
+  o la ventana nunca estaría cubierta). `stale_seconds` = antigüedad máxima del
+  último tick antes de declarar el feed muerto. `min_ticks` = mínimo de ticks dentro
+  de la ventana para fiarse del impulso (evita medir con datos escasos).

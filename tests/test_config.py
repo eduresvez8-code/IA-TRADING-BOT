@@ -587,6 +587,8 @@ def _valid_event_kwargs(**overrides):
         min_confidence=0.7, ttl_seconds=180, cooldown_seconds=900,
         confirm_impulse_bps=8, confirm_window_seconds=60, size_factor=0.5,
         macro_block_minutes_before=30, macro_block_minutes_after=5,
+        markprice_buffer_seconds=180, markprice_stale_seconds=5,
+        markprice_min_ticks=5,
     )
     base.update(overrides)
     return base
@@ -655,6 +657,43 @@ def test_event_macro_block_negativo_es_rechazado():
         EventConfig(**_valid_event_kwargs(macro_block_minutes_before=-10))
 
 
+# ---------------- Plano de datos markPrice@1s (Fase 2.5(i)) ----------------
+
+
+def test_event_markprice_config_valido():
+    e = EventConfig(**_valid_event_kwargs())
+    assert e.markprice_buffer_seconds == 180
+    assert e.markprice_stale_seconds == 5
+    assert e.markprice_min_ticks == 5
+
+
+def test_event_markprice_stale_cero_es_rechazado():
+    # 0s marcaría stale cualquier tick al instante: nunca operaría (gt=0).
+    with pytest.raises(ValidationError):
+        EventConfig(**_valid_event_kwargs(markprice_stale_seconds=0.0))
+
+
+def test_event_markprice_min_ticks_uno_es_rechazado():
+    # Con <2 ticks no hay retorno medible (ge=2).
+    with pytest.raises(ValidationError):
+        EventConfig(**_valid_event_kwargs(markprice_min_ticks=1))
+
+
+def test_event_markprice_buffer_menor_que_ventana_es_rechazado():
+    # Validador cruzado: si el buffer no retiene la ventana de impulso, la
+    # comprobación "ventana cubierta" nunca pasaría → el Fast Path nunca operaría.
+    with pytest.raises(ValidationError):
+        EventConfig(**_valid_event_kwargs(
+            markprice_buffer_seconds=30, confirm_window_seconds=60))
+
+
+def test_event_markprice_buffer_igual_a_ventana_es_valido():
+    # Frontera: buffer == ventana es legal (≥), aunque el repo deja holgura.
+    e = EventConfig(**_valid_event_kwargs(
+        markprice_buffer_seconds=60, confirm_window_seconds=60))
+    assert e.markprice_buffer_seconds == 60
+
+
 def test_settings_yaml_event():
     s = load_settings()
     # Por seguridad, el Fast Path arranca APAGADO en el repo (no cableado aún).
@@ -665,3 +704,7 @@ def test_settings_yaml_event():
     assert 0.0 < s.event.min_confidence < 1.0
     assert 0.0 < s.event.size_factor <= 1.0
     assert s.event.confirm_impulse_bps >= 0.0
+    # Fase 2.5(i): plano de datos markPrice. El buffer debe cubrir la ventana.
+    assert s.event.markprice_buffer_seconds >= s.event.confirm_window_seconds
+    assert s.event.markprice_stale_seconds > 0
+    assert s.event.markprice_min_ticks >= 2

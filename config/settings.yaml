@@ -171,6 +171,10 @@ event:
   size_factor: 0.5             # trades de evento al 50% (más arriesgados → más pequeños)
   macro_block_minutes_before: 30  # bloqueo desde 30 min antes de un macro programado
   macro_block_minutes_after: 5    # … hasta 5 min después (el dato ya es público)
+  # --- Plano de datos en tiempo real (Fase 2.5(i)): micro-buffer markPrice@1s ---
+  markprice_buffer_seconds: 180   # retención del deque por símbolo (≥ confirm_window_seconds)
+  markprice_stale_seconds: 5      # tick más reciente más viejo que esto → feed muerto → no operar
+  markprice_min_ticks: 5          # mínimo de ticks en la ventana para fiarse del impulso
 
 # --- Señales no-precio (funding rate / basis de futuros) ---
 # Edge test de funding/basis. NO afecta al trading: mide si predicen el precio.

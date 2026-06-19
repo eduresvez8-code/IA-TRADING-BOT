@@ -421,6 +421,19 @@ def _ev_candle(i: int, close: float) -> Candle:
                   open=close, high=close + 5, low=close - 5, close=close, volume=10.0)
 
 
+def _seed_markprice(orch, sym=SYMBOL, *, last=1000.0, ref=1000.0, now=T0, span=70):
+    """Siembra el micro-buffer markPrice@1s (Fase 2.5(i)) vía el push real.
+
+    `span`+1 ticks a 1s terminando en `now`: el más viejo en `now-span` (cubre la
+    ventana si span ≥ window), todos a `ref` salvo el último a `last`. Impulso
+    resultante sobre la ventana = (last/ref - 1)·1e4. Usa el push de producción
+    (_ingest_mark_price) para ejercitar también el desalojo por timestamp.
+    """
+    for k in range(span, 0, -1):
+        orch._ingest_mark_price(sym, now - timedelta(seconds=k), ref)
+    orch._ingest_mark_price(sym, now, last)
+
+
 def _reason(rec, event: str) -> str:
     """El detalle de la primera alerta con ese nombre (para leer el reason)."""
     return next(d for _, e, d in rec.alerts if e == event)
@@ -428,19 +441,45 @@ def _reason(rec, event: str) -> str:
 
 # ---- helpers puros: impulso y resolución de scope ----
 
-def test_price_impulse_bps_mide_el_movimiento_de_la_ultima_vela():
+def test_price_impulse_bps_mide_sobre_ticks_markprice():
+    # Fase 2.5(i): el impulso se mide sobre los ticks markPrice@1s reales en la
+    # ventana [now-60, now], no sobre la vela 5m cerrada. ref=1000 → last=1010 = +100bps.
     ex, execu, orch, rec, sig = make_env()
-    orch.buffers[SYMBOL] = [_ev_candle(0, 1000.0), _ev_candle(1, 1010.0)]
-    # window 60s, intervalo 300s → n=1: retorno de la última vela = +100 bps.
-    assert orch._price_impulse_bps(SYMBOL, 60) == pytest.approx(100.0)
+    _seed_markprice(orch, last=1010.0, ref=1000.0, now=T0)
+    assert orch._price_impulse_bps(SYMBOL, 60, T0) == pytest.approx(100.0)
 
 
-def test_price_impulse_bps_negativo_y_sin_datos():
+def test_price_impulse_bps_negativo_y_vacio():
     ex, execu, orch, rec, sig = make_env()
-    orch.buffers[SYMBOL] = [_ev_candle(0, 1000.0), _ev_candle(1, 990.0)]
-    assert orch._price_impulse_bps(SYMBOL, 60) == pytest.approx(-100.0)
-    orch.buffers[SYMBOL] = [_ev_candle(0, 1000.0)]  # <2 velas → no medible
-    assert orch._price_impulse_bps(SYMBOL, 60) == 0.0
+    _seed_markprice(orch, last=990.0, ref=1000.0, now=T0)
+    assert orch._price_impulse_bps(SYMBOL, 60, T0) == pytest.approx(-100.0)
+    # Sin ticks → None (fallar-cerrado), NO 0.0: el 0.0 pasaría la ablación a ciegas.
+    ex2, execu2, orch2, rec2, sig2 = make_env()
+    assert orch2._price_impulse_bps(SYMBOL, 60, T0) is None
+
+
+def test_price_impulse_bps_stale_devuelve_none():
+    # El tick más reciente es más viejo que markprice_stale_seconds (5s) → feed
+    # congelado → None (no operamos sobre un precio muerto).
+    ex, execu, orch, rec, sig = make_env()
+    _seed_markprice(orch, last=1010.0, ref=1000.0, now=T0 - timedelta(seconds=10))
+    assert orch._price_impulse_bps(SYMBOL, 60, T0) is None
+
+
+def test_price_impulse_bps_ventana_no_cubierta_devuelve_none():
+    # Solo 30s de histórico para una ventana de 60s → None (mediría media ventana).
+    ex, execu, orch, rec, sig = make_env()
+    _seed_markprice(orch, last=1010.0, ref=1000.0, now=T0, span=30)
+    assert orch._price_impulse_bps(SYMBOL, 60, T0) is None
+
+
+def test_price_impulse_bps_frio_pocos_ticks_devuelve_none():
+    # Buffer que cubre la ventana pero con < markprice_min_ticks (5) ticks dentro
+    # de ella → None (no nos fiamos de un impulso con apenas datos).
+    ex, execu, orch, rec, sig = make_env()
+    orch._ingest_mark_price(SYMBOL, T0 - timedelta(seconds=70), 1000.0)  # cubre ventana
+    orch._ingest_mark_price(SYMBOL, T0, 1010.0)                          # solo 1 en ventana
+    assert orch._price_impulse_bps(SYMBOL, 60, T0) is None
 
 
 def test_resolve_scope_wildcard_e_interseccion():
@@ -481,7 +520,8 @@ async def test_on_event_sin_warmup_no_abre():
 async def test_on_event_origina_long_y_registra_in_flight():
     # Camino feliz: shock alcista + impulso alcista (+100 bps ≥ 8) → abre LONG.
     ex, orch, rec, sig = await build(cfg=_cfg_event())
-    orch.buffers[SYMBOL] = [_ev_candle(0, 1000.0), _ev_candle(1, 1010.0)]
+    orch.buffers[SYMBOL] = [_ev_candle(0, 1000.0), _ev_candle(1, 1010.0)]  # warmup
+    _seed_markprice(orch, last=1010.0, now=T0)                              # +100 bps
     await orch.on_event(EventIntent(symbol=SYMBOL, sentiment=_shock(0.7)), now=T0)
     assert (SYMBOL, LONG) in ex.positions
     assert (SYMBOL, LONG) in orch.expected
@@ -492,17 +532,21 @@ async def test_on_event_origina_long_y_registra_in_flight():
 
 async def test_on_event_sin_impulso_no_abre():
     # shock alcista pero precio plano (0 bps < 8): el mercado no respalda → HOLD.
+    # OJO: hay precio en vivo (deque sembrado plano), así que NO es event_no_price;
+    # el impulso es válido pero insuficiente → event_no_impulse.
     ex, orch, rec, sig = await build(cfg=_cfg_event())
-    orch.buffers[SYMBOL] = [_ev_candle(0, 1000.0), _ev_candle(1, 1000.0)]
+    orch.buffers[SYMBOL] = [_ev_candle(0, 1000.0), _ev_candle(1, 1000.0)]  # warmup
+    _seed_markprice(orch, last=1000.0, now=T0)                              # 0 bps (plano)
     await orch.on_event(EventIntent(symbol=SYMBOL, sentiment=_shock(0.7)), now=T0)
     assert orch.expected == {}
     assert _reason(rec, "event_hold").endswith("event_no_impulse")
 
 
 async def test_on_event_no_shock_no_abre():
-    # Aunque llegue a on_event, decide_event rechaza un kind != shock.
+    # Aunque llegue a on_event (con precio en vivo), decide_event rechaza kind != shock.
     ex, orch, rec, sig = await build(cfg=_cfg_event())
-    orch.buffers[SYMBOL] = [_ev_candle(0, 1000.0), _ev_candle(1, 1010.0)]
+    orch.buffers[SYMBOL] = [_ev_candle(0, 1000.0), _ev_candle(1, 1010.0)]  # warmup
+    _seed_markprice(orch, last=1010.0, now=T0)                              # precio en vivo
     sent = SentimentScore(news_id="x", symbol_scope=[SYMBOL], score=0.7,
                           confidence=0.8, event_kind="none", analyzed_at=T0)
     await orch.on_event(EventIntent(symbol=SYMBOL, sentiment=sent), now=T0)
@@ -512,11 +556,35 @@ async def test_on_event_no_shock_no_abre():
 
 async def test_on_event_respeta_cooldown():
     ex, orch, rec, sig = await build(cfg=_cfg_event())
-    orch.buffers[SYMBOL] = [_ev_candle(0, 1000.0), _ev_candle(1, 1010.0)]
+    orch.buffers[SYMBOL] = [_ev_candle(0, 1000.0), _ev_candle(1, 1010.0)]  # warmup
+    _seed_markprice(orch, last=1010.0, now=T0)                              # precio en vivo
     orch._last_event_trade[SYMBOL] = T0 - timedelta(seconds=100)  # cooldown=900s
     await orch.on_event(EventIntent(symbol=SYMBOL, sentiment=_shock(0.7)), now=T0)
     assert orch.expected == {}
     assert _reason(rec, "event_hold").endswith("event_cooldown")
+
+
+async def test_on_event_sin_precio_en_vivo_no_abre_ni_con_ablacion():
+    # Fallar-cerrado (Fase 2.5(i)): sin ticks markPrice NO se abre, AUNQUE el gate
+    # de impulso esté ablado (confirm_impulse_bps=0). Entrar sin precio en vivo
+    # viola el control de riesgo; el None se resuelve en el orquestador (event_no_price).
+    ex, orch, rec, sig = await build(cfg=_cfg_event(confirm_impulse_bps=0))
+    orch.buffers[SYMBOL] = [_ev_candle(0, 1000.0), _ev_candle(1, 1010.0)]  # warmup ok
+    # deque markPrice vacío a propósito (no se siembra)
+    await orch.on_event(EventIntent(symbol=SYMBOL, sentiment=_shock(0.7)), now=T0)
+    assert orch.expected == {} and (SYMBOL, LONG) not in ex.positions
+    assert "event_no_price" in rec.events()
+
+
+async def test_on_event_stale_no_abre():
+    # Variante de fallar-cerrado: hay ticks pero el más reciente es stale (>5s) →
+    # event_no_price, no se abre.
+    ex, orch, rec, sig = await build(cfg=_cfg_event())
+    orch.buffers[SYMBOL] = [_ev_candle(0, 1000.0), _ev_candle(1, 1010.0)]  # warmup ok
+    _seed_markprice(orch, last=1010.0, now=T0 - timedelta(seconds=30))      # último tick viejo
+    await orch.on_event(EventIntent(symbol=SYMBOL, sentiment=_shock(0.7)), now=T0)
+    assert orch.expected == {}
+    assert "event_no_price" in rec.events()
 
 
 # ---- productor / cola / consumidor ----
@@ -535,7 +603,8 @@ async def test_on_event_sin_baseline_suficiente_abre_sin_recorte():
     # (vol_regime_lookback=20 requiere ≥21 velas). El assess usa vol_damp=1.0.
     # El trade debe abrirse igualmente (la falta de baseline no es un veto).
     ex, orch, rec, sig = await build(cfg=_cfg_event())
-    orch.buffers[SYMBOL] = [_ev_candle(0, 1000.0), _ev_candle(1, 1010.0)]
+    orch.buffers[SYMBOL] = [_ev_candle(0, 1000.0), _ev_candle(1, 1010.0)]  # warmup
+    _seed_markprice(orch, last=1010.0, now=T0)                              # +100 bps
     await orch.on_event(EventIntent(symbol=SYMBOL, sentiment=_shock(0.7)), now=T0)
     assert (SYMBOL, LONG) in ex.positions
     assert (SYMBOL, LONG) in orch.expected
@@ -571,12 +640,14 @@ async def test_on_event_atr_expandido_abre_qty_menor_que_regimen_normal():
     ex_n, orch_n, rec_n, sig_n = await build(cfg=cfg)
     sig_n.atr = 50.0
     orch_n.buffers[SYMBOL] = [_flat_candle(i, 25.0) for i in range(5)]  # rango 50
+    _seed_markprice(orch_n, last=1000.0, now=T0)  # precio en vivo (gate de impulso ablado)
     await orch_n.on_event(EventIntent(symbol=SYMBOL, sentiment=_shock(0.7)), now=T0)
     qty_normal = orch_n.expected[(SYMBOL, LONG)]
 
     ex_e, orch_e, rec_e, sig_e = await build(cfg=cfg)
     sig_e.atr = 50.0
     orch_e.buffers[SYMBOL] = [_flat_candle(i, 5.0) for i in range(5)]   # rango 10
+    _seed_markprice(orch_e, last=1000.0, now=T0)  # precio en vivo (gate de impulso ablado)
     await orch_e.on_event(EventIntent(symbol=SYMBOL, sentiment=_shock(0.7)), now=T0)
     qty_expandido = orch_e.expected[(SYMBOL, LONG)]
 

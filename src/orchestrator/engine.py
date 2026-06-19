@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import statistics
+from collections import deque
 from datetime import date, datetime, timedelta, timezone
 from typing import Awaitable, Callable
 
@@ -47,6 +48,7 @@ from src.data.binance_client import (
     rest_kline_to_candle,
     retry_with_backoff,
     stream_candles,
+    stream_mark_price,
 )
 from src.decision.confluence import decide, decide_event
 from src.execution.executor import Executor
@@ -107,6 +109,13 @@ class Orchestrator:
         # alimenta el cooldown de decide_event.
         self._event_queue: asyncio.Queue[EventIntent] = asyncio.Queue()
         self._last_event_trade: dict[str, datetime] = {}
+
+        # --- Fast Path (Plan V2 §2.5(i)): micro-buffer rodante de markPrice@1s ---
+        # Deque por símbolo de (timestamp, mark_price). Lo alimenta el productor WS
+        # (_ingest_mark_price, push SÍNCRONO) y lo lee _price_impulse_bps dentro de
+        # self._lock (sin await entre snapshot y cálculo → atómico). Reemplaza la
+        # fuente del impulso (antes: vela 5m cerrada, ventana pre-noticia).
+        self._markprice: dict[str, deque[tuple[datetime, float]]] = {}
 
     # ------------------------------ arranque ------------------------------
 
@@ -236,26 +245,58 @@ class Orchestrator:
             return None
         return sent
 
-    def _price_impulse_bps(self, sym: str, window_seconds: int) -> float:
-        """Movimiento del precio (con signo, en bps) en ~window_seconds, del buffer.
+    def _ingest_mark_price(self, sym: str, ts: datetime, price: float) -> None:
+        """Push SÍNCRONO de un tick markPrice@1s al deque del símbolo (Fase 2.5(i)).
 
-        El Fast Path confirma con el PRECIO (no con el quant) que el mercado
-        respalda el shock. A $0/mes solo tenemos velas de 5m, así que el "impulso"
-        se mide sobre las velas cerradas: n = round(window/intervalo) velas (mínimo
-        1), retorno de close[-1-n] a close[-1]. Con ventana de 60s y velas de 5m,
-        n=1: el movimiento de la última vela. Si no hay datos suficientes devuelve
-        0.0 → con el gate activo, decide_event rechaza (no confirmamos a ciegas).
+        Sin `await`: corre atómico frente a la lectura de `_price_impulse_bps`
+        (ambos en el mismo event loop). Retiene `markprice_buffer_seconds` usando el
+        event time del PROPIO tick como reloj (consistente, inmune al skew con el
+        wall-clock); desaloja por la izquierda lo que cae fuera de la ventana.
         """
-        buf = self.buffers.get(sym, [])
-        if len(buf) < 2:
-            return 0.0
-        interval_s = self._interval.total_seconds()
-        n = max(1, round(window_seconds / interval_s)) if interval_s > 0 else 1
-        n = min(n, len(buf) - 1)
-        ref = buf[-1 - n].close
-        if ref <= 0:
-            return 0.0
-        return (buf[-1].close / ref - 1.0) * 10_000.0
+        dq = self._markprice.get(sym)
+        if dq is None:
+            dq = self._markprice[sym] = deque()
+        dq.append((ts, price))
+        cutoff = ts - timedelta(seconds=self.cfg.event.markprice_buffer_seconds)
+        while dq and dq[0][0] < cutoff:
+            dq.popleft()
+
+    def _price_impulse_bps(
+        self, sym: str, window_seconds: int, now: datetime
+    ) -> float | None:
+        """Impulso de precio (con signo, en bps) sobre los ticks markPrice@1s reales.
+
+        Mide el retorno POST-noticia sobre la ventana correcta `[now−window, now]`,
+        no la vela 5m cerrada (que terminaba ANTES de la noticia: error de ventana,
+        ver Fase 2.5 del plan). FALLA-CERRADO con `None` en tres casos —el
+        orquestador traduce `None` a "no operar", aun con el gate de impulso ablado
+        (`confirm_impulse_bps=0`): entrar sin precio en vivo viola el control de
+        riesgo. Casos:
+            1. deque vacío → None.
+            2. stale: el tick más reciente es más viejo que `markprice_stale_seconds`
+               (feed congelado) → None.
+            3. ventana no cubierta: el tick más viejo es posterior a `now−window`
+               (no hay histórico para medir la ventana completa) → None.
+            4. frío: menos de `markprice_min_ticks` ticks dentro de la ventana → None.
+        Si pasa todo: ref = primer tick con ts ≥ now−window; retorno (ref→último).
+        """
+        ev = self.cfg.event
+        dq = self._markprice.get(sym)
+        if not dq:
+            return None
+        newest_ts, newest_px = dq[-1]
+        if (now - newest_ts).total_seconds() > ev.markprice_stale_seconds:
+            return None
+        cutoff = now - timedelta(seconds=window_seconds)
+        if dq[0][0] > cutoff:                      # el buffer no cubre la ventana
+            return None
+        in_window = [(ts, px) for ts, px in dq if ts >= cutoff]
+        if len(in_window) < ev.markprice_min_ticks:
+            return None
+        ref_px = in_window[0][1]
+        if ref_px <= 0:
+            return None
+        return (newest_px / ref_px - 1.0) * 10_000.0
 
     def _compute_atr_baseline(self, sym: str) -> float | None:
         """Mediana del ATR sobre vol_regime_lookback velas (línea base de volatilidad).
@@ -425,8 +466,14 @@ class Orchestrator:
         #     Se computa antes de decide_event (lectura síncrona del buffer, sin await).
         atr_baseline = self._compute_atr_baseline(sym)
 
-        # (3) Decisión de originación (puro): impulso del buffer + cooldown del símbolo.
-        impulse = self._price_impulse_bps(sym, ev.confirm_window_seconds)
+        # (3) Plano de datos en tiempo real (Fase 2.5(i)): impulso desde el deque de
+        #     markPrice. FALLA-CERRADO: None (buffer frío/stale) → no operar, SIEMPRE,
+        #     aun con el gate de impulso ablado (confirm_impulse_bps=0). El None se
+        #     resuelve AQUÍ (orquestador), así decide_event sigue puro (recibe float).
+        impulse = self._price_impulse_bps(sym, ev.confirm_window_seconds, now)
+        if impulse is None:
+            self.alerts.alert(AlertLevel.WARNING, "event_no_price", sym)
+            return
         decision = decide_event(
             intent.sentiment, sym, impulse, self.cfg,
             as_of=now, last_event_trade_at=self._last_event_trade.get(sym),
@@ -583,12 +630,21 @@ class Orchestrator:
         if sentiment_fetch is not None:
             tasks.append(self._supervise(
                 lambda: self._sentiment_loop(sentiment_fetch), name="sentiment"))
-        # Fast Path: solo si está habilitado Y hay fuente de eventos. El gate
-        # maestro evita que un despiste arranque el Fast Path antes de validarlo.
-        if self.cfg.event.enabled and event_fetch is not None:
-            tasks.append(self._supervise(
-                lambda: self._event_loop(event_fetch), name="event_producer"))
-            tasks.append(self._supervise(self._event_consumer, name="event_consumer"))
+        # Fast Path: solo si está habilitado. El gate maestro evita que un despiste
+        # arranque el Fast Path antes de validarlo en testnet.
+        if self.cfg.event.enabled:
+            # Plano de datos en tiempo real (Fase 2.5(i)): un stream markPrice@1s por
+            # símbolo alimenta el micro-buffer; es prerrequisito del impulso, así que
+            # arranca aunque aún no haya event_fetch cableado (Fase 2.5(ii)).
+            for sym in self.cfg.market.symbols:
+                tasks.append(self._supervise(
+                    lambda s=sym: stream_mark_price(data_client, s, self._ingest_mark_price),
+                    name=f"markprice:{sym}"))
+            # Productor + consumidor de eventos: solo si hay fuente de eventos.
+            if event_fetch is not None:
+                tasks.append(self._supervise(
+                    lambda: self._event_loop(event_fetch), name="event_producer"))
+                tasks.append(self._supervise(self._event_consumer, name="event_consumer"))
         await asyncio.gather(*tasks)
 
     def _make_rest_backfill(self, data_client) -> BackfillFn:

@@ -321,6 +321,31 @@ class EventConfig(BaseModel):
     # después. ge=0 (0 = sin bloqueo por ese lado); le=1440 (un día) ataja un typo.
     macro_block_minutes_before: int = Field(ge=0, le=1440)
     macro_block_minutes_after: int = Field(ge=0, le=1440)
+    # --- Plan V2 Fase 2.5(i): plano de datos en tiempo real (micro-buffer markPrice@1s) ---
+    # Retención del deque de markPrice por símbolo (segundos). El impulso se mide
+    # sobre confirm_window_seconds, así que el buffer debe RETENER al menos esa
+    # ventana (un validador cruzado lo obliga: buffer ≥ confirm_window). ge=1;
+    # le=3600 (1h) ataja un typo que inflaría memoria sin sentido.
+    markprice_buffer_seconds: int = Field(ge=1, le=3600)
+    # Fallar-cerrado por feed congelado: si el tick más reciente es más viejo que
+    # esto, _price_impulse_bps devuelve None (no operamos sobre un precio muerto).
+    # gt=0; le=60 (a 1 tick/s, más de 60s sin tick es un feed claramente caído).
+    markprice_stale_seconds: float = Field(gt=0.0, le=60.0)
+    # Fallar-cerrado por buffer frío: mínimo de ticks dentro de la ventana para
+    # fiarnos del impulso. ge=2 (con <2 no hay retorno medible); le=10000 ataja un
+    # typo (a 1 tick/s serían casi 3h de exigencia).
+    markprice_min_ticks: int = Field(ge=2, le=10000)
+
+    @model_validator(mode="after")
+    def markprice_buffer_cubre_la_ventana(self) -> "EventConfig":
+        # Si el buffer no retiene al menos la ventana de impulso, la comprobación
+        # "ventana cubierta" de _price_impulse_bps nunca pasaría → nunca operaría.
+        if self.markprice_buffer_seconds < self.confirm_window_seconds:
+            raise ValueError(
+                f"markprice_buffer_seconds ({self.markprice_buffer_seconds}) debe "
+                f"ser ≥ confirm_window_seconds ({self.confirm_window_seconds})"
+            )
+        return self
 
 
 class FundingEdgeConfig(BaseModel):

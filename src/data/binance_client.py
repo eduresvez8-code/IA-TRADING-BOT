@@ -159,3 +159,35 @@ async def stream_candles(client: AsyncClient, symbol: str, timeframe: str,
             logger.warning("stream %s %s caído; reconexión en %.0fs",
                            symbol, timeframe, reconnect_delay, exc_info=True)
             await asyncio.sleep(reconnect_delay)
+
+
+async def stream_mark_price(client: AsyncClient, symbol: str,
+                            on_tick: Callable[[str, datetime, float], None], *,
+                            reconnect_delay: float = 5.0) -> None:
+    """Stream `<symbol>@markPrice@1s` (Futuros USD-M): plano de datos del Fast Path.
+
+    Llama `on_tick(symbol, ts, mark_price)` por cada actualización (≈1/seg). El
+    callback es SÍNCRONO a propósito: el push al deque del orquestador no tiene
+    `await`, así corre atómico frente a la lectura de `_price_impulse_bps` (ambos
+    en el mismo event loop). Reconecta solo, igual que `stream_candles`; la capa
+    externa (`_supervise`) lo reinicia si la corrutina cae por completo.
+
+    Mensaje markPriceUpdate: `p` = mark price (str), `E` = event time (ms epoch).
+    """
+    bsm = BinanceSocketManager(client)
+    while True:
+        try:
+            async with bsm.symbol_mark_price_socket(symbol, fast=True) as stream:
+                logger.info("stream markPrice conectado: %s", symbol)
+                while True:
+                    msg = await stream.recv()
+                    if not isinstance(msg, dict) or msg.get("e") == "error":
+                        raise ConnectionError(f"mensaje de error del stream: {msg}")
+                    ts = datetime.fromtimestamp(msg["E"] / 1000.0, tz=timezone.utc)
+                    on_tick(symbol, ts, float(msg["p"]))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("stream markPrice %s caído; reconexión en %.0fs",
+                           symbol, reconnect_delay, exc_info=True)
+            await asyncio.sleep(reconnect_delay)

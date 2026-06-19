@@ -218,18 +218,19 @@ pero sigue **ciego en tiempo real**: se alimenta de velas cerradas de 5m. Esta
 fase le da los dos sentidos que le faltan.
 
 - **(i) Micro-buffer rodante de `markPrice@1s` (REEMPLAZA la fuente de
-  `_price_impulse_bps`).** Un `collections.deque` por símbolo con pares
-  `(timestamp, markPrice)`, alimentado por un stream WebSocket de Binance Futuros
-  (`<symbol>@markPrice@1s`). `_price_impulse_bps` deja de leer del buffer de velas
-  y pasa a leer este deque de forma **síncrona y atómica dentro de `self._lock`**
-  (sin `await` entre la lectura del primer y el último tick → el productor WS no
-  puede insertar a medias). Mide el retorno sobre los últimos
-  `confirm_window_seconds` de ticks sub-segundo REALES, ya post-noticia.
-  **Fallar-cerrado:** si el buffer está frío (insuficientes ticks dentro de la
-  ventana) o stale (el último tick más viejo que un umbral), reporta "sin
-  confirmación" y `decide_event` rechaza — nunca se confirma a ciegas. Todo umbral
-  nuevo (profundidad mínima de ticks, antigüedad máxima del último tick) por
-  **Vía B** (`settings.yaml` + `config.py` + `test_config.py`).
+  `_price_impulse_bps`). [HECHO]** Un `collections.deque` por símbolo con pares
+  `(timestamp, markPrice)`, alimentado por `stream_mark_price` (WebSocket
+  `<symbol>@markPrice@1s`, `fast=True`) vía el push SÍNCRONO `_ingest_mark_price`
+  (sin `await` → atómico frente a la lectura). `_price_impulse_bps(sym, window,
+  now) -> float | None` deja de leer del buffer de velas y mide el retorno sobre
+  los últimos `confirm_window_seconds` de ticks sub-segundo REALES, post-noticia.
+  **Fallar-cerrado a `None`** (vacío / stale / ventana no cubierta / < min_ticks);
+  el orquestador traduce `None` → no operar **aun con el gate ablado**
+  (`confirm_impulse_bps=0`): nunca se entra sin precio en vivo. `decide_event`
+  sigue puro (recibe `float`). 3 params nuevos por **Vía B**:
+  `markprice_buffer_seconds` (≥ `confirm_window_seconds`, validador cruzado),
+  `markprice_stale_seconds`, `markprice_min_ticks`. El stream y el consumo se
+  cablean en `run()` solo si `event.enabled`.
 - **(ii) `event_fetch` real (RSS rápido → detección de shock).** Hoy
   `_event_loop(fetch)` recibe un `fetch` **inyectable sin implementar** (solo
   existe la costura para los tests). Esta fase entrega el productor real: poll
@@ -251,11 +252,13 @@ la detectamos). No es un problema de granularidad (5m vs 1s); es que se mide el
    en la dirección del shock por casualidad o filtración, el gate aprueba algo que
    no es confirmación post-noticia.
 
-Y por (1)+(2) **invalida la ablación A/B del gate de impulso (§B)**: no se puede
+Y por (1)+(2) **invalidaba la ablación A/B del gate de impulso (§B)**: no se puede
 concluir si la confirmación "ayuda o estorba" cuando la señal que gatea está mal
-temporizada. Por eso `_price_impulse_bps` **no se toca en código todavía** (sigue
-siendo la costura determinista de los unit-tests); solo se documenta que
-**`event.enabled` NO pasa a `true` hasta completar la Fase 2.5**.
+temporizada. **Resuelto por 2.5(i):** el impulso ya se mide sobre la ventana
+post-noticia correcta con ticks `markPrice@1s` reales. **Pendiente: 2.5(ii)**
+(`event_fetch` real). El **bloqueo formal se mantiene** —`event.enabled` NO pasa a
+`true` y el Forward Study NO arranca— hasta completar **2.5(ii)**: sin fuente real
+de eventos el Fast Path no corre end-to-end.
 
 ### FASE 3 — Overlay estratégico (el único alpha real) + capital
 
@@ -329,10 +332,11 @@ arriesgar capital, no seguir añadiendo épées.
 5. **F2.2** `decide_event` puro (6 puertas + confirmación de impulso). ✅ *(446 tests)*
 6. **F2.3** `EventIntent` + cola + `on_event`/productor/consumidor (mismo lock). ✅ *(460 tests)*
 7. **F2.4** sizing de evento + vol-regime en Risk Manager. ✅ *(477 tests)*
-8. **F2.5** plano de datos en tiempo real: micro-buffer `markPrice@1s` (reemplaza
-   la fuente de `_price_impulse_bps`) + `event_fetch` real. **BLOQUEANTE de
+8. **F2.5(i)** micro-buffer `markPrice@1s` (reemplaza la fuente de
+   `_price_impulse_bps`, fallar-cerrado a `None`) + 3 params Vía B. ✅ *(487 tests)*
+9. **F2.5(ii)** `event_fetch` real (RSS→shock→Claude). **BLOQUEANTE de
    `event.enabled` y del Forward Study** (§B/§C). *(siguiente)*
-9. **F3** cross-sectional overlay + gating de capital.
+10. **F3** cross-sectional overlay + gating de capital.
 
 Cada paso: pytest verde + demo aislada + bloque "📖 Explicación" + glosario,
 antes de integrar en `main.py`. Capital real: revisión de métricas con Eduardo.
