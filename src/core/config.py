@@ -114,6 +114,12 @@ class ConfluenceConfig(BaseModel):
 
 
 class SentimentConfig(BaseModel):
+    # Gate de seguridad del overlay de sentimiento del Slow Path (Plan V2). Arranca
+    # en false: con el flag apagado, `run()` NO arranca el `_sentiment_loop` → cero
+    # llamadas a Claude y la señal quant queda PURA (la línea base de paper trading
+    # no se altera). Activarlo gasta Claude Haiku y cambia el comportamiento en vivo,
+    # así que es decisión explícita de Eduardo (mismo razonamiento que event.enabled).
+    enabled: bool
     rss_feeds: list[str]
     poll_interval_seconds: int = Field(ge=30)
     claude_model: str

@@ -348,9 +348,14 @@ arriesgar capital, no seguir añadiendo épées.
    secrets)` cableado en `main.py:live()` (+ salvaguarda: aborta si `event.enabled`
    y falta `ANTHROPIC_API_KEY`). Queda **INERTE** — `run()` no arranca `_event_loop`
    con `event.enabled=false` (gate maestro). **Pendiente:** validación en testnet,
-   que sigue **BLOQUEANTE de `event.enabled`** (§B/§C). `sentiment_fetch=None`
-   explícito: el productor del Slow Path (`dict[symbol → SentimentScore]`) NO existe
-   aún → módulo propio pendiente (resolver `symbol_scope`→símbolos + dedup + tests).
+   que sigue **BLOQUEANTE de `event.enabled`** (§B/§C).
+9b. **Productor del Slow Path ✅** (`src/sentiment/slow_path.py`): `fetch_sentiment`
+   + `build_sentiment_fetch` (espejo de `events.py` pero `dict[symbol→score]`,
+   reutiliza `score_item` y `max_news_age_hours`, last-write-wins, dedup `seen`).
+   Cableado en `main.py:live()` tras el **gate de seguridad `sentiment.enabled`**
+   (Vía B, default false): con el flag apagado `run()` no arranca el `_sentiment_loop`
+   → cero Claude, quant puro. Deuda `DEUDA_TICKER` (scope "BTC" vs "BTCUSDT")
+   documentada, diferida a módulo aparte. *(508 tests)*.
 10. **F3** cross-sectional overlay + gating de capital.
 
 Cada paso: pytest verde + demo aislada + bloque "📖 Explicación" + glosario,

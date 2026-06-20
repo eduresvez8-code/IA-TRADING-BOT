@@ -627,7 +627,11 @@ class Orchestrator:
             for sym in self.cfg.market.symbols
         ]
         tasks.append(self._supervise(self._watchdog_loop, name="watchdog"))
-        if sentiment_fetch is not None:
+        # Slow Path: overlay de sentimiento de noticias. Gate de seguridad de
+        # presupuesto (sentiment.enabled, default false): con el flag apagado NO se
+        # arranca el loop → cero llamadas a Claude y la señal quant queda PURA. Mismo
+        # patrón que event.enabled para el Fast Path.
+        if self.cfg.sentiment.enabled and sentiment_fetch is not None:
             tasks.append(self._supervise(
                 lambda: self._sentiment_loop(sentiment_fetch), name="sentiment"))
         # Fast Path: solo si está habilitado. El gate maestro evita que un despiste
@@ -681,6 +685,12 @@ class Orchestrator:
     async def _sentiment_loop(
         self, fetch: Callable[[], Awaitable[dict[str, SentimentScore]]]
     ) -> None:
+        # Defensa en profundidad del gate de presupuesto: run() ya no arranca esta
+        # tarea con sentiment.enabled=false, pero si alguien la invoca fuera de run()
+        # (test o futuro refactor), el early-return garantiza CERO llamadas a Claude
+        # con el flag apagado. El gate primario sigue en run() (ni crea la tarea).
+        if not self.cfg.sentiment.enabled:
+            return
         while True:
             self.sentiment_store.update(await fetch())
             await asyncio.sleep(self.cfg.sentiment.poll_interval_seconds)

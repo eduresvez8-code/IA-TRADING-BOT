@@ -179,6 +179,7 @@ async def live() -> int:
     from src.execution.executor import Executor
     from src.orchestrator.engine import Orchestrator
     from src.sentiment.events import build_event_fetch
+    from src.sentiment.slow_path import build_sentiment_fetch
 
     settings, secrets = load_settings(), load_secrets()
     if not (secrets.binance_api_key and secrets.binance_api_secret):
@@ -209,12 +210,18 @@ async def live() -> int:
               "Path no puede analizar noticias. Añádela o vuelve a poner enabled=false.")
         return 1
 
-    # --- Slow Path: el productor de sentimiento (dict[symbol → SentimentScore]) aún
-    # NO existe como módulo (no hay build_sentiment_fetch). Sin él, _cycle opera con
-    # quant solo: _fresh_sentiment → None ⇒ decide() en modo quant-only, el mismo
-    # comportamiento ya validado en paper trading. Es un módulo aparte (una sesión =
-    # un módulo), por eso va None EXPLÍCITO en lugar de fabricarlo aquí sin tests.
-    sentiment_fetch = None
+    # --- Slow Path (Plan V2): overlay de sentimiento de noticias. Se construye
+    # SIEMPRE, pero el GATE DE SEGURIDAD settings.sentiment.enabled (default false)
+    # decide si run() arranca el _sentiment_loop. Con el flag apagado el callable
+    # nunca se invoca → cero tokens de Claude y la señal quant queda PURA (no se
+    # altera la línea base de paper trading). Activarlo es decisión explícita.
+    sentiment_fetch = build_sentiment_fetch(settings, secrets)
+    if settings.sentiment.enabled and not secrets.anthropic_api_key:
+        # Misma salvaguarda que el Fast Path: gate abierto + sin clave = restart loop.
+        print("⚠ sentiment.enabled=true pero falta ANTHROPIC_API_KEY en .env — el "
+              "overlay de sentimiento no puede analizar noticias. Añádela o vuelve a "
+              "poner enabled=false.")
+        return 1
 
     print("▶ Iniciando lazo en vivo (Futuros testnet). Ctrl-C para detener.")
     try:

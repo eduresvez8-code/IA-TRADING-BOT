@@ -17,6 +17,7 @@ from src.sentiment.analyzer import analyze
 
 def make_config() -> SentimentConfig:
     return SentimentConfig(
+        enabled=False,
         rss_feeds=["https://coindesk.com/rss"],
         poll_interval_seconds=120,
         claude_model="claude-haiku-4-5-20251001",

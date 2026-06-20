@@ -64,6 +64,7 @@ confluence:
   sentiment_ttl_seconds: 300
 
 sentiment:
+  enabled: false               # gate de seguridad: overlay de noticias OFF (quant puro)
   rss_feeds:
     - "https://www.coindesk.com/arc/outboundfeeds/rss/"
     - "https://cointelegraph.com/rss"

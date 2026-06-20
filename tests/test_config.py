@@ -22,6 +22,7 @@ from src.core.config import (
 
 def _valid_sentiment_kwargs(**overrides):
     base = dict(
+        enabled=False,
         rss_feeds=["https://coindesk.com/rss"],
         poll_interval_seconds=120,
         claude_model="claude-haiku-4-5-20251001",
@@ -43,13 +44,26 @@ def test_settings_yaml_del_repo_es_valido():
     assert 0.0 <= s.sentiment.heuristic_weight <= 1.0
     assert 0.0 < s.sentiment.escalate_score_threshold < 1.0
     assert s.sentiment.max_news_age_hours >= 1
+    # Gate de seguridad del overlay de sentimiento: OFF por defecto en el repo
+    # (quant puro; activarlo gasta Claude y es decisión explícita de Eduardo).
+    assert s.sentiment.enabled is False
 
 
 def test_sentiment_config_valido():
     sc = SentimentConfig(**_valid_sentiment_kwargs())
+    assert sc.enabled is False
     assert sc.heuristic_weight == 0.7
     assert sc.escalate_score_threshold == 0.3
     assert sc.max_news_age_hours == 24
+
+
+def test_sentiment_enabled_es_obligatorio():
+    # Sin `enabled` explícito, la config no valida: el gate no puede quedar implícito
+    # (un descuido no debe encender el overlay de Claude por omisión).
+    kwargs = _valid_sentiment_kwargs()
+    del kwargs["enabled"]
+    with pytest.raises(ValidationError):
+        SentimentConfig(**kwargs)
 
 
 def test_sentiment_heuristic_weight_fuera_de_rango():

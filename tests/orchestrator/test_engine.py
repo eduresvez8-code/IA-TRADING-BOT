@@ -671,3 +671,40 @@ async def test_event_consumer_entrega_intents_a_on_event():
     await asyncio.wait_for(orch._event_queue.join(), timeout=1.0)
     task.cancel()
     assert visto == [SYMBOL]
+
+
+# ----------------- gate de seguridad del Slow Path (sentiment.enabled) -----------------
+
+async def test_sentiment_loop_gate_false_no_llama_a_claude():
+    # El gate de presupuesto: con sentiment.enabled=false, el loop retorna de
+    # inmediato (early-return) → CERO llamadas a Claude y store intacto (quant puro).
+    cfg = CFG.model_copy(deep=True)
+    cfg.sentiment.enabled = False
+    orch = make_env(cfg=cfg)[2]
+    calls: list[int] = []
+
+    async def fetch():
+        calls.append(1)
+        return {SYMBOL: _sent(0.5)}
+
+    await orch._sentiment_loop(fetch)        # NO se cuelga: retorna sin entrar al while
+    assert calls == []                        # nunca se invocó al productor (ni Claude)
+    assert orch.sentiment_store == {}         # señal quant intacta
+
+
+async def test_sentiment_loop_gate_true_actualiza_el_store():
+    # Con el flag encendido, el loop sí sondea y vuelca el sentimiento al store.
+    cfg = CFG.model_copy(deep=True)
+    cfg.sentiment.enabled = True
+    orch = make_env(cfg=cfg)[2]
+
+    async def fetch():
+        return {SYMBOL: _sent(0.5)}
+
+    task = asyncio.create_task(orch._sentiment_loop(fetch))
+    for _ in range(100):                      # cede control hasta la 1ª actualización
+        if SYMBOL in orch.sentiment_store:
+            break
+        await asyncio.sleep(0)
+    task.cancel()                             # cancelamos antes del sleep del poll
+    assert orch.sentiment_store[SYMBOL].score == 0.5

@@ -885,3 +885,26 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   quant-only (`_fresh_sentiment → None ⇒ decide()` sin sentimiento), el mismo
   comportamiento ya validado en paper trading. Fabricar el builder es un módulo
   propio (resolver `symbol_scope`→símbolos + dedup + tests espejo), no "wiring".
+  *(Resuelto: ya existe `build_sentiment_fetch`, ver abajo.)*
+- **Productor del Slow Path (`fetch_sentiment` / `build_sentiment_fetch`)**: espejo de
+  `fetch_events` pero para el overlay de sentimiento. Compone `fetch_feeds` →
+  `score_item` (TODO lo relevante, no solo shocks) → `dict[symbol → SentimentScore]`
+  que el `_sentiment_loop` vuelca al `sentiment_store`. Mismas 3 guardias por coste
+  (dedup `seen`, frescura por `max_news_age_hours`, luego VADER+Claude). Resuelve el
+  scope con `resolve_scope` (misma semántica que `Orchestrator._resolve_scope`). Si
+  varias noticias mapean al mismo símbolo en un poll, gana la de `published_at` más
+  reciente (last-write-wins, procesando en orden ascendente). Reutiliza el param que
+  YA existía (`max_news_age_hours`) → cero hardcoding nuevo.
+- **Gate de seguridad `sentiment.enabled`**: interruptor maestro del overlay de
+  sentimiento (default false), análogo a `event.enabled`. Con el flag apagado, `run()`
+  NO arranca el `_sentiment_loop` → cero llamadas a Claude y la señal quant queda PURA
+  (no se altera la línea base de paper trading). Doble barrera: el gate primario vive
+  en `run()` (ni crea la tarea) y un early-return en `_sentiment_loop` lo refuerza
+  (defensa en profundidad si se invoca fuera de `run()`). Activarlo gasta Claude Haiku
+  y es decisión explícita de Eduardo.
+- **`DEUDA_TICKER` (scope "BTC" vs símbolo "BTCUSDT")**: Claude devuelve tickers como
+  ["BTC"], pero `market.symbols` son ["BTCUSDT"], así que un `symbol_scope`
+  NO-wildcard rara vez machea en `resolve_scope` → en la práctica el overlay entra por
+  "*" (market-wide, como el viejo Fear&Greed). Deuda COMPARTIDA con el Fast Path
+  (`_resolve_scope`); normalizarla toca ambos paths + el prompt de `analyze` → módulo
+  aparte (marcado `TODO: DEUDA_TICKER` en `slow_path.py`).

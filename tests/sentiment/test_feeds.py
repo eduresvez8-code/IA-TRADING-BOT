@@ -46,6 +46,7 @@ MOCK_RSS_SAME_ARTICLE = """<?xml version="1.0" encoding="UTF-8"?>
 
 def make_config(feeds: list[str] | None = None) -> SentimentConfig:
     return SentimentConfig(
+        enabled=False,
         rss_feeds=feeds or ["https://coindesk.com/rss"],
         poll_interval_seconds=120,
         claude_model="claude-haiku-4-5-20251001",
