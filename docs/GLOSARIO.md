@@ -1020,3 +1020,53 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   ~0 o rebate), pero eso tiene incertidumbre de fill + selección adversa que este backtest
   NO puede validar sin datos de order book (L2). Es un lead para forward-test, no un edge
   probado.
+
+---
+
+## Familia D — Squeeze de volatilidad → ruptura (TTM / Bollinger-Keltner, 1h)
+
+**Bollinger Bands (BB)** — Bandas a ±`n_std` desviaciones típicas del cierre alrededor
+  de su media móvil: `mid = SMA(close, N)`, `BB_upper/lower = mid ± n_std·σ(close, N)`.
+  Miden la dispersión del PRECIO DE CIERRE. El ancho `2·n_std·σ` crece y se contrae con
+  la volatilidad. Estándar: N=20, n_std=2.
+
+**Keltner Channels (KC)** — Bandas a ±`k·ATR` alrededor de la misma media:
+  `KC_upper/lower = mid ± k·ATR(N)`. A diferencia de las BB (que usan σ del cierre), las
+  KC usan el ATR (rango verdadero, incluye gaps y mechas). Estándar: k=1.5. Por usar el
+  rango intrabar, el canal de Keltner es una referencia de volatilidad más "lenta" y
+  robusta que la σ del cierre.
+
+**Squeeze (TTM Squeeze)** — Estado de COMPRESIÓN de volatilidad: ocurre cuando las
+  Bollinger están DENTRO de las Keltner (`bb_std·σ < k·ATR`). Equivale a una RAZÓN de
+  volatilidades: la dispersión del cierre cayó por debajo del rango verdadero medio → el
+  mercado está "enrollado". El folclore técnico dice que un squeeze precede a una
+  expansión direccional, y que romper la banda tras un squeeze señala el inicio de un
+  movimiento que CONTINÚA (momentum). Es la hipótesis OPUESTA a la reversión (IC>0
+  esperado, no IC<0).
+
+**Falso breakout (whipsaw)** — Ruptura de la banda que NO continúa: el precio rompe,
+  atrae entradas de momentum, y revierte dejándolas atrapadas. En majors líquidos y muy
+  arbitrados es el modo dominante: el %ganadores de las rupturas cae por debajo de 50%.
+  Es la razón mecánica de que la continuación tras squeeze no produzca edge.
+
+**Persistencia / agrupamiento de volatilidad (volatility clustering, GARCH)** — Propiedad
+  empírica: la volatilidad ES autocorrelacionada — periodos de baja vol tienden a SEGUIR
+  de baja vol, y los de alta vol de alta vol. Esto CONTRADICE la premisa del squeeze: un
+  estado comprimido NO precede sistemáticamente a una expansión; tiende a PERSISTIR
+  comprimido. El probe de auditoría D lo midió directo: `IC(compresión, |ret futuro|) > 0`
+  en los 5 activos → más squeeze predice MENOS movimiento futuro, no más.
+
+**GROSS mixto vs GROSS real-pero-caro** — Matiz crítico que distingue D de C. En C el
+  GROSS era fuerte, consistente y de signo correcto (+34%/año, 5/5 activos) → señal real
+  enterrada por costos (rescatable con maker). En D el GROSS es de SIGNO MIXTO y pequeño
+  (BTC +8.7%, ETH −3.5%, SOL −17.4%) → NO hay señal que rescatar ni con ejecución
+  perfecta. La descomposición gross/net no solo mide "cuánto cuesta": diagnostica si
+  siquiera existe un edge bruto. En D el null es del tipo "no hay señal", no "señal cara".
+
+**Hallazgo Familia D (2026-06-20)** — El squeeze→ruptura NO aporta edge en los 5 majors
+  a 1h. (1) IC de continuación ≈ 0 / levemente negativo (ETH −0.065, XRP −0.057), ninguno
+  con |t_corr|≥2 → sin momentum tras la ruptura. (2) Robusto a la sensibilidad del umbral
+  (subir las σ de ruptura no mejora el IC; thr≥2 deja ~0 eventos). (3) La premisa misma
+  está invertida: el squeeze predice CONTINUIDAD de baja vol (clustering), no expansión.
+  (4) GROSS de signo mixto → null tipo "no hay señal", más fuerte que el de C. Veredicto:
+  familia MUERTA. Cierra el mandato de 5 familias del Slow Path.

@@ -9,8 +9,9 @@ matriz re-evalúa hipótesis NUEVAS bajo un embudo anti-overfit:
       Descarta si no supera la Regla de Oro (|t|≥golden_min_tstat).
     ETAPA 2 (P&L, caro) → equity curve con costos → Sharpe · MaxDD · PF.
 
-Esta sesión implementa SOLO la Familia E (carry). B/C/D quedan como stubs
-explícitos (una sesión = un módulo).
+Las 5 familias están implementadas en módulos propios (una sesión = un módulo):
+E (carry) aquí, B en pairs.py, C en vwap.py, D en squeeze.py. Los `run_family_*`
+de abajo son los puntos de entrada estables que delegan en cada módulo.
 
 — Familia E · Cash-and-Carry de funding (delta-neutral) —
 Estructura: long spot + short perp del MISMO notional → delta direccional ≈ 0.
@@ -140,9 +141,9 @@ def simulate_carry(
     )
 
 
-# --------------------- Familias pendientes (stubs explícitos) ---------------------
-# Firmas listas para las próximas sesiones modulares. Lanzan en vez de devolver
-# vacío para que nadie las cuente como "evaluadas y sin candidata" por error.
+# --------------------- Puntos de entrada de las familias B/C/D ---------------------
+# Delegan en sus módulos. Firmas estables para el runner; el cómputo vive en cada
+# módulo (pairs.py, vwap.py, squeeze.py) — una sesión = un módulo.
 
 def run_family_pairs(log_prices: "pd.DataFrame", cfg: QuantMatrixConfig) -> list:
     """Familia B — cointegración de pares (rolling OLS + IC gate + P&L).
@@ -165,7 +166,11 @@ def run_family_volume(df: "pd.DataFrame", cfg: QuantMatrixConfig, *, symbol: str
     return simulate_vwap(df, cfg, symbol=symbol)
 
 
-def run_family_squeeze(cfg: QuantMatrixConfig):
-    """Familia D — squeeze de volatilidad (GARCH/ATR multi-ventana → ruptura)."""
-    raise NotImplementedError(
-        "Familia D (squeeze de volatilidad) — pendiente de su sesión modular")
+def run_family_squeeze(df: "pd.DataFrame", cfg: QuantMatrixConfig, *, symbol: str = ""):
+    """Familia D — squeeze de volatilidad → ruptura (BB+Keltner, 1h).
+
+    df: OHLCV de 1h (columnas high, low, close). Devuelve un SqueezeStats.
+    Implementada en backtest/squeeze.py.
+    """
+    from backtest.squeeze import simulate_squeeze
+    return simulate_squeeze(df, cfg, symbol=symbol)

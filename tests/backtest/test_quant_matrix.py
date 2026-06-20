@@ -110,10 +110,17 @@ def test_period_returns_sobre_capital():
     assert r[1] == pytest.approx(0.0002 / 2.0)
 
 
-@pytest.mark.parametrize("fn", [run_family_squeeze])
-def test_familias_pendientes_son_stubs_explicitos(fn):
-    # Deben LANZAR (no devolver vacío): no contar como "evaluadas sin candidata".
-    # run_family_pairs (B) y run_family_volume (C) ya fueron implementadas
-    # (ver tests/backtest/test_pairs.py y test_vwap.py). Solo D-squeeze queda stub.
-    with pytest.raises(NotImplementedError):
-        fn(QM)
+def test_matriz_quant_sin_stubs_pendientes():
+    # Las 5 familias están implementadas: B (pairs), C (vwap), D (squeeze), E (carry).
+    # run_family_squeeze ya NO es un stub que lanza NotImplementedError; delega en
+    # backtest/squeeze.py y devuelve un SqueezeStats sobre un OHLCV de 1h.
+    from backtest.squeeze import SqueezeStats
+    n = 600
+    rng = np.random.default_rng(0)
+    close = 100.0 * np.exp(np.cumsum(rng.normal(0, 0.003, n)))
+    df = pd.DataFrame({
+        "high": close * 1.001, "low": close * 0.999, "close": close,
+        "volume": rng.uniform(1, 10, n),
+    })
+    result = run_family_squeeze(df, QM, symbol="X")
+    assert isinstance(result, SqueezeStats)

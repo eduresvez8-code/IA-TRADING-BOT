@@ -109,6 +109,11 @@ def _valid_quant_matrix_kwargs(**overrides):
         vwap_z_entry=2.0,
         vwap_z_exit=0.5,
         vwap_forward_horizon=6,
+        squeeze_bb_period=20,
+        squeeze_bb_std=2.0,
+        squeeze_keltner_atr_mult=1.5,
+        squeeze_forward_horizon=4,
+        squeeze_breakout_threshold=1.0,
     )
     base.update(overrides)
     return base
@@ -179,6 +184,50 @@ def test_vwap_config_del_repo_es_valido():
     assert qm.vwap_z_window == 288
     assert qm.vwap_z_exit < qm.vwap_z_entry
     assert qm.atr_period == 14
+
+
+# --- Familia D — squeeze de volatilidad ---
+
+def test_squeeze_bb_period_minimo():
+    # Menos de 10 barras da σ/ATR demasiado ruidosos para hablar de régimen (ge=10).
+    with pytest.raises(ValidationError):
+        QuantMatrixConfig(**_valid_quant_matrix_kwargs(squeeze_bb_period=9))
+
+
+def test_squeeze_bb_std_fuera_de_rango_falla():
+    # Por debajo de 1σ la banda es tan estrecha que casi todo cierre la rompe (ge=1.0).
+    with pytest.raises(ValidationError):
+        QuantMatrixConfig(**_valid_quant_matrix_kwargs(squeeze_bb_std=0.5))
+    # Más de 4σ casi nunca se rompe (le=4.0).
+    with pytest.raises(ValidationError):
+        QuantMatrixConfig(**_valid_quant_matrix_kwargs(squeeze_bb_std=5.0))
+
+
+def test_squeeze_keltner_mult_fuera_de_rango_falla():
+    with pytest.raises(ValidationError):
+        QuantMatrixConfig(**_valid_quant_matrix_kwargs(squeeze_keltner_atr_mult=0.5))
+
+
+def test_squeeze_breakout_threshold_fuera_de_rango_falla():
+    # Por debajo de media banda no es ruptura (ge=0.5); más de 3 anchos no dispara (le=3.0).
+    with pytest.raises(ValidationError):
+        QuantMatrixConfig(**_valid_quant_matrix_kwargs(squeeze_breakout_threshold=0.4))
+    with pytest.raises(ValidationError):
+        QuantMatrixConfig(**_valid_quant_matrix_kwargs(squeeze_breakout_threshold=3.5))
+
+
+def test_squeeze_forward_horizon_minimo_uno():
+    with pytest.raises(ValidationError):
+        QuantMatrixConfig(**_valid_quant_matrix_kwargs(squeeze_forward_horizon=0))
+
+
+def test_squeeze_config_del_repo_es_valido():
+    qm = load_settings().quant_matrix
+    assert qm.squeeze_bb_period == 20
+    assert qm.squeeze_bb_std == 2.0
+    assert qm.squeeze_keltner_atr_mult == 1.5
+    assert qm.squeeze_forward_horizon == 4
+    assert qm.squeeze_breakout_threshold == 1.0
 
 
 def test_confluence_config_valido():

@@ -243,3 +243,9 @@ quant_matrix:
   vwap_z_entry: 2.0                   # umbral de entrada (2σ sobre el VWAP)
   vwap_z_exit: 0.5                    # umbral de cierre (revirtió hacia el VWAP)
   vwap_forward_horizon: 6             # horizonte IC Etapa 1 (6 barras = 30 min)
+  # Familia D — squeeze de volatilidad → ruptura (1h candles)
+  squeeze_bb_period: 20               # ventana de BB (SMA+σ) y del ATR de Keltner (estándar TTM)
+  squeeze_bb_std: 2.0                 # nº de σ de las Bollinger (estándar)
+  squeeze_keltner_atr_mult: 1.5       # multiplicador del ATR de Keltner (estándar TTM)
+  squeeze_forward_horizon: 4          # horizonte IC Etapa 1 + holding time-based (4h)
+  squeeze_breakout_threshold: 1.0     # |close−mid| > thr·(bb_std·σ): 1.0 = en la banda Bollinger

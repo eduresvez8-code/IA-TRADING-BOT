@@ -7,13 +7,14 @@ perfil de costos conservador de `quant_matrix` (taker 0.05% VIP0):
 
     Familia B · Cointegración de pares (1h)      → IC del z-score del spread
     Familia C · Reversión a VWAP intradía (5m)   → IC de la desviación al VWAP
+    Familia D · Squeeze de volatilidad (1h)      → IC de la ruptura tras squeeze
     Familia E · Cash-and-Carry de funding (8h)   → yield estructural delta-neutral
 
-Cada familia imprime su propia tabla (esquemas distintos: B/C son señales
+Cada familia imprime su propia tabla (esquemas distintos: B/C/D son señales
 predictivas con IC; E es un yield sin IC). La Regla de Oro corona solo lo que
 pasa |t|≥golden_min_tstat ∧ PF>golden_min_profit_factor ∧ signo 4/4 folds.
 
-D (squeeze de volatilidad) queda como stub para su sesión modular.
+Con D la matriz queda 100% implementada (las 5 familias del mandato).
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ import pandas as pd
 from src.core.config import load_settings
 from backtest.pairs import run_pairs_all
 from backtest.quant_matrix import simulate_carry
+from backtest.squeeze import simulate_squeeze
 from backtest.vwap import simulate_vwap
 
 
@@ -68,6 +70,31 @@ def _run_vwap(cfg, cdir: Path) -> list[dict]:
             "Activo": st.symbol, "IC": round(st.ic_spearman, 4),
             "t_corr": round(st.ic_tstat, 2), "Trades": st.n_trades,
             "HoldMed": round(st.avg_holding_bars, 1),
+            "NetoAnual%": round(st.net_return_ann_pct, 2),
+            "Sharpe": round(st.sharpe, 2), "MaxDD%": round(st.max_drawdown * 100, 1),
+            "PF": round(st.profit_factor, 2), "%Gana": round(st.pct_winning_trades, 1),
+            "Folds": f"{st.folds_same_sign}/{st.n_folds}",
+            "Golden": "✅" if st.passes_golden else "—",
+        })
+    return rows
+
+
+# --------------------------------- Familia D ---------------------------------
+
+def _run_squeeze(cfg, cdir: Path) -> list[dict]:
+    rows = []
+    for sym in cfg.scan.symbols:
+        path = cdir / f"{sym}_1h.parquet"
+        if not path.exists():
+            continue
+        df = pd.read_parquet(path)
+        st = simulate_squeeze(df, cfg.quant_matrix, symbol=sym)
+        rows.append({
+            "Activo": st.symbol, "%Squeeze": round(st.pct_squeeze, 1),
+            "Fires": st.n_fires, "IC": round(st.ic_spearman, 4),
+            "t_corr": round(st.ic_tstat, 2), "Trades": st.n_trades,
+            "HoldMed": round(st.avg_holding_bars, 1),
+            "BrutoAnual%": round(st.gross_return_ann_pct, 2),
             "NetoAnual%": round(st.net_return_ann_pct, 2),
             "Sharpe": round(st.sharpe, 2), "MaxDD%": round(st.max_drawdown * 100, 1),
             "PF": round(st.profit_factor, 2), "%Gana": round(st.pct_winning_trades, 1),
@@ -139,6 +166,12 @@ def main() -> int:
         _run_vwap(cfg, cdir),
         note="El IC se mide saltando la barra inmediata (sin bid-ask bounce). "
              "Lo decisivo es NetoAnual% tras costos, no el IC.",
+    )
+    _section(
+        "Familia D · Squeeze de volatilidad (1h) — espera IC > 0 (la ruptura continúa)",
+        _run_squeeze(cfg, cdir),
+        note="Hipótesis de CONTINUACIÓN (opuesta a C). BrutoAnual% vs NetoAnual% "
+             "separa 'no hay señal' de 'señal enterrada por costos'.",
     )
     _section(
         "Familia E · Cash-and-Carry de funding (8h) — yield estructural (sin IC)",

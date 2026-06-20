@@ -513,6 +513,34 @@ class QuantMatrixConfig(BaseModel):
             )
         return v
 
+    # --- Familia D — squeeze de volatilidad → ruptura (1h) ---
+    # Squeeze = Bollinger DENTRO de Keltner (bb_std·σ < keltner_k·ATR): la
+    # dispersión del cierre se contrae por debajo del rango verdadero medio.
+    # Ventana común de BB (SMA + σ) y del ATR de Keltner. ge=10 (con <10 barras la
+    # σ y el ATR son demasiado ruidosos para hablar de "régimen" de volatilidad);
+    # le=500 ataja un typo. 20 es el estándar TTM.
+    squeeze_bb_period: int = Field(ge=10, le=500)
+    # Nº de desviaciones típicas de las Bollinger. ge=1.0 (por debajo la banda es
+    # tan estrecha que casi todo cierre la rompe → ruido); le=4.0 (más de 4σ casi
+    # nunca se rompe). 2.0 es el estándar.
+    squeeze_bb_std: float = Field(ge=1.0, le=4.0)
+    # Multiplicador del ATR de las Keltner. ge=1.0 / le=4.0 por simetría con bb_std:
+    # define la referencia de "rango verdadero" contra la que se compara la banda.
+    # 1.5 es el estándar TTM. El squeeze es más exigente cuanto MENOR es este k
+    # relativo a bb_std (banda debe comprimirse más para caer dentro de Keltner).
+    squeeze_keltner_atr_mult: float = Field(ge=1.0, le=4.0)
+    # Horizonte (barras de 1h) del IC de la Etapa 1 Y del holding time-based de la
+    # Etapa 2. La ruptura/continuación es multi-barra: gatearla en h=1 mide solo el
+    # impulso instantáneo (contaminado por el bid-ask del propio breakout). ge=1;
+    # le=168 (1 semana de 1h) ataja un holding absurdamente largo.
+    squeeze_forward_horizon: int = Field(ge=1, le=168)
+    # Umbral de ruptura en unidades de ancho de banda: se considera "rompió" cuando
+    # |close − mid| > threshold · (bb_std·σ). 1.0 = exactamente en la banda
+    # Bollinger. ge=0.5 (por debajo de media banda no es ruptura); le=3.0 (más de
+    # 3 anchos de banda casi nunca dispara). Es la perilla de sensibilidad
+    # "cuántas σ de ruptura" — sin sobreoptimizar (default conservador 1.0).
+    squeeze_breakout_threshold: float = Field(ge=0.5, le=3.0)
+
 
 class Settings(BaseModel):
     market: MarketConfig
