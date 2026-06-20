@@ -908,3 +908,28 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   "*" (market-wide, como el viejo Fear&Greed). Deuda COMPARTIDA con el Fast Path
   (`_resolve_scope`); normalizarla toca ambos paths + el prompt de `analyze` → módulo
   aparte (marcado `TODO: DEUDA_TICKER` en `slow_path.py`).
+
+## Matriz cuantitativa (research del Slow Path)
+
+- **Embudo de 2 etapas (`run_quant_matrix`)**: anti-overfit por diseño. Etapa 1 =
+  gate de significancia BARATO (descarta sin construir P&L); Etapa 2 = backtest con
+  costos solo para las supervivientes. El gate toma DOS formas según el tipo de
+  estrategia: **IC de Spearman + t-stat(n_eff)** para señales predictivas (familias
+  A/C/D), y **t-stat de la media del retorno neto** para yield/spread (E/B). Por eso
+  el IC sale `N/A` para el carry: medir correlación señal→futuro no tiene sentido en
+  un yield estructural.
+- **Cash-and-carry delta-neutral (Familia E)**: long spot + short perp del MISMO
+  notional → delta direccional ≈ 0 (inmune al precio). El yield es el funding que el
+  short COBRA cuando `funding>0`. Por CANTIDAD (1 larga, 1 corta) es delta-neutral
+  para siempre → NO hay rebalanceo de delta; y el perp no expira → NO hay roll. El
+  costo dominante es entrada/salida (4 lados taker) + fricción de capital.
+- **Fricción de capital (`carry_capital_multiplier`)**: el delta-neutral inmoviliza
+  AMBAS piernas (spot completo + margen del perp). Con multiplicador 2.0 (1x cada
+  pierna, sin riesgo de liquidación), el yield sobre CAPITAL es la MITAD del yield
+  sobre notional. Es el parámetro que convierte un 7% bruto en ~3.5% neto.
+- **El Sharpe del carry ENGAÑA**: el funding cobrado cada 8h es casi determinista
+  (varianza ínfima periodo a periodo) → Sharpe anualizado absurdo (9-25). Pero ese
+  número NO ve los riesgos reales que están FUERA de la serie de funding: liquidación
+  del short en un pump, basis risk (spot/perp divergen al entrar-salir) y cascadas de
+  funding negativo en un deleveraging. Para el carry, mirar MaxDD + peor periodo +
+  walk-forward, no el Sharpe.

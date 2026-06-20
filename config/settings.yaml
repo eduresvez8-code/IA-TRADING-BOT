@@ -223,3 +223,10 @@ storage:
   candles_dir: "data/candles"
   funding_dir: "data/funding"
   universe_dir: "data/universe"
+
+quant_matrix:
+  taker_commission_pct: 0.05          # VIP0 conservador (aislado de backtest.commission_pct)
+  carry_capital_multiplier: 2.0       # delta-neutral inmoviliza spot + margen perp 1x
+  carry_maintenance_bps_per_period: 0.0  # haircut mantenimiento/8h (0 = upper bound)
+  golden_min_tstat: 2.0               # Regla de Oro: |t| >= 2
+  golden_min_profit_factor: 1.15      # Regla de Oro: PF neto > 1.15

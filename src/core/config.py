@@ -428,6 +428,32 @@ class StorageConfig(BaseModel):
     universe_dir: str
 
 
+class QuantMatrixConfig(BaseModel):
+    """Matriz de research del Slow Path (backtest/run_quant_matrix.py).
+
+    Costos AISLADOS de `BacktestConfig` a propósito: la matriz usa un perfil de
+    fricción más conservador (taker 0.05% VIP0) sin alterar los P&L de los
+    backtests legacy. Cero Hardcoding: todo umbral de la Regla de Oro y del
+    simulador de carry vive aquí.
+    """
+    # Comisión taker por lado (% del notional). 0.05 = VIP0 conservador de Binance
+    # Futuros. le=1.0 ataja el typo 0.05 → 5%.
+    taker_commission_pct: float = Field(ge=0, le=1.0)
+    # Familia E (carry): capital desplegado = notional × esto. El cash-and-carry
+    # delta-neutral inmoviliza AMBAS piernas; 2.0 = spot completo + margen perp 1x
+    # (conservador, sin riesgo de liquidación). ge=1.0: no puedes desplegar menos
+    # que el notional del spot que compras.
+    carry_capital_multiplier: float = Field(ge=1.0)
+    # Familia E: haircut de mantenimiento por periodo de 8h (bps sobre notional):
+    # borrow del spot, gestión de margen. Default 0 = upper bound del carry (la
+    # física spot-perp por cantidad NO exige rebalanceo de delta). ge=0.
+    carry_maintenance_bps_per_period: float = Field(ge=0)
+    # Regla de Oro (gate del embudo): significancia mínima |t| y Profit Factor.
+    # gt=0 / gt=1: un PF≤1 no gana, un t≤0 no es señal.
+    golden_min_tstat: float = Field(gt=0)
+    golden_min_profit_factor: float = Field(gt=1.0)
+
+
 class Settings(BaseModel):
     market: MarketConfig
     risk: RiskConfig
@@ -446,6 +472,7 @@ class Settings(BaseModel):
     orchestrator: OrchestratorConfig
     event: EventConfig
     storage: StorageConfig
+    quant_matrix: QuantMatrixConfig
 
 
 def load_settings(path: Path | None = None) -> Settings:

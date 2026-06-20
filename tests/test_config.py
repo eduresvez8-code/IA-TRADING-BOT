@@ -13,6 +13,7 @@ from src.core.config import (
     ExecutionConfig,
     FundingEdgeConfig,
     MeanReversionConfig,
+    QuantMatrixConfig,
     RiskConfig,
     ScanConfig,
     SentimentConfig,
@@ -89,6 +90,37 @@ def _valid_confluence_kwargs(**overrides):
     )
     base.update(overrides)
     return base
+
+
+def _valid_quant_matrix_kwargs(**overrides):
+    base = dict(
+        taker_commission_pct=0.05,
+        carry_capital_multiplier=2.0,
+        carry_maintenance_bps_per_period=0.0,
+        golden_min_tstat=2.0,
+        golden_min_profit_factor=1.15,
+    )
+    base.update(overrides)
+    return base
+
+
+def test_quant_matrix_config_del_repo_es_valido():
+    qm = load_settings().quant_matrix
+    assert qm.taker_commission_pct == 0.05
+    assert qm.carry_capital_multiplier >= 1.0
+    assert qm.golden_min_profit_factor > 1.0
+
+
+def test_quant_matrix_capital_multiplier_minimo_es_uno():
+    # No puedes desplegar menos capital que el notional spot que compras (ge=1.0).
+    with pytest.raises(ValidationError):
+        QuantMatrixConfig(**_valid_quant_matrix_kwargs(carry_capital_multiplier=0.5))
+
+
+def test_quant_matrix_pf_debe_superar_uno():
+    # Un PF de corte ≤ 1 no exigiría rentabilidad (gt=1.0).
+    with pytest.raises(ValidationError):
+        QuantMatrixConfig(**_valid_quant_matrix_kwargs(golden_min_profit_factor=1.0))
 
 
 def test_confluence_config_valido():
