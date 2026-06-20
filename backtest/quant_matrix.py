@@ -155,10 +155,14 @@ def run_family_pairs(log_prices: "pd.DataFrame", cfg: QuantMatrixConfig) -> list
     return run_pairs_all(log_prices, cfg)
 
 
-def run_family_volume(cfg: QuantMatrixConfig):
-    """Familia C — microestructura/volumen (desviación de VWAP, VPA)."""
-    raise NotImplementedError(
-        "Familia C (volumen/VWAP) — pendiente de su sesión modular")
+def run_family_volume(df: "pd.DataFrame", cfg: QuantMatrixConfig, *, symbol: str = ""):
+    """Familia C — reversión a VWAP intradía (microestructura/volumen, 5m).
+
+    df: OHLCV de 5m (columnas open_time, high, low, close, volume).
+    Devuelve un VwapStats. Implementada en backtest/vwap.py.
+    """
+    from backtest.vwap import simulate_vwap
+    return simulate_vwap(df, cfg, symbol=symbol)
 
 
 def run_family_squeeze(cfg: QuantMatrixConfig):

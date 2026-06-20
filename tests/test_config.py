@@ -102,6 +102,13 @@ def _valid_quant_matrix_kwargs(**overrides):
         pairs_lookback_hours=720,
         pairs_z_entry=2.0,
         pairs_z_exit=0.5,
+        slippage_pct=0.02,
+        slippage_atr_mult=0.1,
+        atr_period=14,
+        vwap_z_window=288,
+        vwap_z_entry=2.0,
+        vwap_z_exit=0.5,
+        vwap_forward_horizon=6,
     )
     base.update(overrides)
     return base
@@ -147,6 +154,31 @@ def test_pairs_config_del_repo_es_valido():
     qm = load_settings().quant_matrix
     assert qm.pairs_lookback_hours == 720
     assert qm.pairs_z_exit < qm.pairs_z_entry
+
+
+def test_vwap_z_exit_debe_ser_menor_que_z_entry():
+    # Si z_exit >= z_entry, abriría y cerraría en la misma barra.
+    with pytest.raises(ValidationError):
+        QuantMatrixConfig(**_valid_quant_matrix_kwargs(vwap_z_entry=2.0, vwap_z_exit=2.0))
+
+
+def test_vwap_z_window_minimo_una_hora():
+    # Menos de 12 barras de 5m (1h) no da media/desv estables (ge=12).
+    with pytest.raises(ValidationError):
+        QuantMatrixConfig(**_valid_quant_matrix_kwargs(vwap_z_window=11))
+
+
+def test_slippage_atr_mult_absurdo_es_rechazado():
+    # Un k enorme inflaría el slippage sin sentido (le=5.0).
+    with pytest.raises(ValidationError):
+        QuantMatrixConfig(**_valid_quant_matrix_kwargs(slippage_atr_mult=10.0))
+
+
+def test_vwap_config_del_repo_es_valido():
+    qm = load_settings().quant_matrix
+    assert qm.vwap_z_window == 288
+    assert qm.vwap_z_exit < qm.vwap_z_entry
+    assert qm.atr_period == 14
 
 
 def test_confluence_config_valido():

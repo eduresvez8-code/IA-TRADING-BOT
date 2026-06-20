@@ -971,3 +971,52 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   (muy por debajo del mínimo de 2.0). P&L simulado: entre −53% y −500% anualizado.
   Diagnóstico: los spreads de crypto a 1h son I(1) (random walks), no I(0). Las noticias
   y los shocks de mercado crean divergencias que persisten, no revierten.
+
+## Familia C — Reversión a VWAP intradía
+
+**VWAP (Volume-Weighted Average Price)** — Precio medio ponderado por volumen:
+  `VWAP = Σ(precio_típico·volumen)/Σ(volumen)`. El "centro de gravedad" del precio
+  donde más dinero cambió de manos. Los algos de ejecución institucional (TWAP/VWAP)
+  intentan operar cerca del VWAP del día → crea presión de reversión hacia él.
+
+**VWAP anclado intradía (daily-anchored)** — El acumulado de Σ(pv) y Σ(v) se REINICIA
+  a medianoche UTC. Cada día empieza con VWAP = precio de la primera barra y va
+  "promediando" según avanza el día. Anclar al día evita el problema I(1): la
+  desviación al VWAP es estacionaria DENTRO del día (a diferencia del spread de pares,
+  que es un random walk multi-día).
+
+**Desviación al VWAP** — `dev = (close − VWAP)/VWAP`. Mide cuán lejos está el precio de
+  su centro de gravedad. Se z-scorea (`z = (dev−μ)/σ` rolling) para tener un umbral de
+  entrada estacionario comparable en el tiempo.
+
+**Bid-ask bounce (rebote)** — El precio de cierre salta entre el bid y el ask según
+  quién ejecutó la última orden. Esto genera una autocorrelación NEGATIVA de 1 barra
+  PURAMENTE MECÁNICA que parece "reversión" pero NO es capturable: para cobrarla
+  tendrías que cruzar el spread (comprar al ask, vender al bid) y pagar exactamente lo
+  que el rebote te daría. La trampa clásica que mata las estrategias de reversión a 5m.
+
+**Test de bounce (skip-1)** — Para distinguir reversión REAL de rebote fantasma: medir
+  el IC con la entrada DIFERIDA una barra (entrar en close_{t+1}, no close_t). Si el
+  IC colapsa a ~0 al saltar la barra inmediata, era rebote. Si sobrevive, es reversión
+  real y operable. En la matriz se implementa con `z.shift(1)` en la señal de trading.
+
+**Señal multi-barra (horizonte del IC)** — La reversión a VWAP se desarrolla en ~30-60
+  min (6-12 barras de 5m), no en 1 barra. Gatear el IC en h=1 SUBESTIMA la señal. Por
+  eso `vwap_forward_horizon` mide el IC al horizonte real de la reversión (la curva de
+  IC creciente con h es además evidencia de que la señal es real, no un fluke puntual).
+
+**Edge real pero antieconómico** — Una señal puede ser ESTADÍSTICAMENTE real (IC<0
+  significativo, bounce-robust, gross-positivo) y aun así PERDER dinero porque el edge
+  por trade (pocos bps) es menor que el costo por trade (taker+slippage ~18 bps a 5m).
+  Es un null FUNDAMENTALMENTE distinto al "no hay señal": aquí la señal existe pero la
+  fricción la entierra. El embudo de 2 etapas separa exactamente estos dos casos.
+
+**Hallazgo Familia C (2026-06-20)** — La reversión a VWAP intradía es el PRIMER signal
+  direccional real del proyecto: IC<0 (signo correcto) en los 5 activos, XRP significativo
+  (t_corr=−2.68), sobrevive el test de bounce, GROSS +33.8%/año (PF 1.10, 56% ganadores).
+  PERO el costo implícito es ~149%/año a taker 0.05%+slippage → NETO −115%/año. Subir el
+  umbral a 4σ (267 trades/3años) solo llega a breakeven (+0.24%). Veredicto: señal real,
+  antieconómica con órdenes taker. Única vía a viabilidad = ejecución MAKER (limit, fee
+  ~0 o rebate), pero eso tiene incertidumbre de fill + selección adversa que este backtest
+  NO puede validar sin datos de order book (L2). Es un lead para forward-test, no un edge
+  probado.

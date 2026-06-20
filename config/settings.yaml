@@ -234,3 +234,12 @@ quant_matrix:
   pairs_lookback_hours: 720           # ventana rolling OLS + z-score (30 días)
   pairs_z_entry: 2.0                  # umbral de entrada (2σ)
   pairs_z_exit: 0.5                   # umbral de cierre (media casi recuperada)
+  # Costos de slippage para familias direccionales (C/D; el carry no lo usa)
+  slippage_pct: 0.02                  # deslizamiento fijo por lado (%) — aislado de backtest
+  slippage_atr_mult: 0.1              # slippage dinámico: k·ATR/precio (0 = solo fijo)
+  atr_period: 14                      # ventana del ATR del slippage dinámico
+  # Familia C — reversión a VWAP intradía (5m candles)
+  vwap_z_window: 288                  # ventana z-score de la desviación (1 día de 5m)
+  vwap_z_entry: 2.0                   # umbral de entrada (2σ sobre el VWAP)
+  vwap_z_exit: 0.5                    # umbral de cierre (revirtió hacia el VWAP)
+  vwap_forward_horizon: 6             # horizonte IC Etapa 1 (6 barras = 30 min)

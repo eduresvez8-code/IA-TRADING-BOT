@@ -476,6 +476,43 @@ class QuantMatrixConfig(BaseModel):
             )
         return v
 
+    # --- Costos de slippage para familias DIRECCIONALES (C, D; el carry no lo usa) ---
+    # Aislados de BacktestConfig por la misma razón que taker_commission_pct: la
+    # matriz lleva su propio perfil de fricción. slippage fijo por lado (% del
+    # notional). ge=0; le=1.0 ataja el typo 0.02 → 2%.
+    slippage_pct: float = Field(ge=0, le=1.0)
+    # Slippage dinámico: slip = fijo + k·ATR/precio. k=0 ⇒ solo el fijo. le=5.0
+    # ataja un k absurdo que infló el slippage sin sentido.
+    slippage_atr_mult: float = Field(ge=0, le=5.0)
+    # Ventana del ATR usado por el slippage dinámico. ge=2 (con <2 no hay rango
+    # verdadero); le=500 ataja un typo.
+    atr_period: int = Field(ge=2, le=500)
+
+    # --- Familia C — reversión a VWAP intradía (5m) ---
+    # Ventana rolling del z-score de la desviación. ge=12 (1 hora de 5m: mínimo
+    # para una media/desv estables); le=8640 (30 días de 5m) ataja un typo.
+    vwap_z_window: int = Field(ge=12, le=8640)
+    # Umbral de entrada (|z|). ge=0.5 (por debajo entraría en casi todas las
+    # barras); le=5.0 (más de 5σ casi nunca dispara).
+    vwap_z_entry: float = Field(ge=0.5, le=5.0)
+    # Umbral de cierre. ge=0 (0 = cierra al cruzar la media). El validador exige
+    # z_exit < z_entry (si no, abriría y cerraría en la misma barra).
+    vwap_z_exit: float = Field(ge=0.0, le=5.0)
+    # Horizonte (barras de 5m) del IC de la Etapa 1. La reversión a VWAP es
+    # MULTI-barra: gatearla en h=1 la subestima. ge=1; le=288 (1 día de 5m).
+    vwap_forward_horizon: int = Field(ge=1, le=288)
+
+    @field_validator("vwap_z_exit")
+    @classmethod
+    def vwap_exit_por_debajo_del_entry(cls, v: float, info) -> float:
+        entry = info.data.get("vwap_z_entry")
+        if entry is not None and v >= entry:
+            raise ValueError(
+                f"vwap_z_exit ({v}) debe ser estrictamente menor que "
+                f"vwap_z_entry ({entry})"
+            )
+        return v
+
 
 class Settings(BaseModel):
     market: MarketConfig
