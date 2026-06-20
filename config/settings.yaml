@@ -230,3 +230,7 @@ quant_matrix:
   carry_maintenance_bps_per_period: 0.0  # haircut mantenimiento/8h (0 = upper bound)
   golden_min_tstat: 2.0               # Regla de Oro: |t| >= 2
   golden_min_profit_factor: 1.15      # Regla de Oro: PF neto > 1.15
+  # Familia B — cointegración de pares (1h candles)
+  pairs_lookback_hours: 720           # ventana rolling OLS + z-score (30 días)
+  pairs_z_entry: 2.0                  # umbral de entrada (2σ)
+  pairs_z_exit: 0.5                   # umbral de cierre (media casi recuperada)

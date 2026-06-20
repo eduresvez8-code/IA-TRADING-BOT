@@ -99,6 +99,9 @@ def _valid_quant_matrix_kwargs(**overrides):
         carry_maintenance_bps_per_period=0.0,
         golden_min_tstat=2.0,
         golden_min_profit_factor=1.15,
+        pairs_lookback_hours=720,
+        pairs_z_entry=2.0,
+        pairs_z_exit=0.5,
     )
     base.update(overrides)
     return base
@@ -121,6 +124,29 @@ def test_quant_matrix_pf_debe_superar_uno():
     # Un PF de corte ≤ 1 no exigiría rentabilidad (gt=1.0).
     with pytest.raises(ValidationError):
         QuantMatrixConfig(**_valid_quant_matrix_kwargs(golden_min_profit_factor=1.0))
+
+
+def test_pairs_lookback_minimo_24h():
+    # Menos de 1 día de lookback no tiene sentido para estimar OLS y z-score.
+    with pytest.raises(ValidationError):
+        QuantMatrixConfig(**_valid_quant_matrix_kwargs(pairs_lookback_hours=23))
+
+
+def test_pairs_z_exit_debe_ser_menor_que_z_entry():
+    # Si z_exit >= z_entry, entraríamos y saldríamos en el mismo bar.
+    with pytest.raises(ValidationError):
+        QuantMatrixConfig(**_valid_quant_matrix_kwargs(pairs_z_entry=2.0, pairs_z_exit=2.0))
+
+
+def test_pairs_z_exit_igual_a_z_entry_tambien_falla():
+    with pytest.raises(ValidationError):
+        QuantMatrixConfig(**_valid_quant_matrix_kwargs(pairs_z_entry=1.5, pairs_z_exit=1.5))
+
+
+def test_pairs_config_del_repo_es_valido():
+    qm = load_settings().quant_matrix
+    assert qm.pairs_lookback_hours == 720
+    assert qm.pairs_z_exit < qm.pairs_z_entry
 
 
 def test_confluence_config_valido():

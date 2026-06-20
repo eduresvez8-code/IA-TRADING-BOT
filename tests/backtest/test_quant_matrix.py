@@ -110,8 +110,9 @@ def test_period_returns_sobre_capital():
     assert r[1] == pytest.approx(0.0002 / 2.0)
 
 
-@pytest.mark.parametrize("fn", [run_family_pairs, run_family_volume, run_family_squeeze])
+@pytest.mark.parametrize("fn", [run_family_volume, run_family_squeeze])
 def test_familias_pendientes_son_stubs_explicitos(fn):
     # Deben LANZAR (no devolver vacío): no contar como "evaluadas sin candidata".
+    # run_family_pairs ya fue implementada en Familia B (ver tests/backtest/test_pairs.py).
     with pytest.raises(NotImplementedError):
         fn(QM)

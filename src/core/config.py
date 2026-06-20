@@ -452,6 +452,29 @@ class QuantMatrixConfig(BaseModel):
     # gt=0 / gt=1: un PF≤1 no gana, un t≤0 no es señal.
     golden_min_tstat: float = Field(gt=0)
     golden_min_profit_factor: float = Field(gt=1.0)
+    # Familia B — cointegración de pares.
+    # pairs_lookback_hours: ventana rolling para OLS (β) y z-score (μ/σ). ge=24
+    # (mínimo 1 día de datos para estimar β y z-score); le=8760 (1 año = límite
+    # superior razonable; más ventana que datos no sirve de nada).
+    pairs_lookback_hours: int = Field(ge=24, le=8760)
+    # z_entry: umbral de entrada. ge=0.5 (por debajo entraríamos en casi todos los
+    # bares); le=5.0 (más de 5σ es tan raro que nunca habría trades).
+    pairs_z_entry: float = Field(ge=0.5, le=5.0)
+    # z_exit: umbral de salida (cierre). ge=0 (0 = cierra cuando el spread cruza la
+    # media). El validador exige z_exit < z_entry: si fueran iguales entraríamos y
+    # saldríamos en el mismo bar.
+    pairs_z_exit: float = Field(ge=0.0, le=5.0)
+
+    @field_validator("pairs_z_exit")
+    @classmethod
+    def exit_por_debajo_del_entry(cls, v: float, info) -> float:
+        entry = info.data.get("pairs_z_entry")
+        if entry is not None and v >= entry:
+            raise ValueError(
+                f"pairs_z_exit ({v}) debe ser estrictamente menor que "
+                f"pairs_z_entry ({entry})"
+            )
+        return v
 
 
 class Settings(BaseModel):

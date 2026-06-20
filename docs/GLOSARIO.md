@@ -933,3 +933,41 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   del short en un pump, basis risk (spot/perp divergen al entrar-salir) y cascadas de
   funding negativo en un deleveraging. Para el carry, mirar MaxDD + peor periodo +
   walk-forward, no el Sharpe.
+
+## Familia B — Cointegración de pares
+
+**Cointegración** — Dos series I(1) (caminos aleatorios) están cointegradas si existe
+  β tal que `spread_t = log(P_A)_t − β·log(P_B)_t` es I(0) (estacionario, revierte
+  a la media). Si el spread es estacionario, la distancia entre las dos series no
+  puede crecer indefinidamente → oportunidad de mean-reversion.
+
+**Hedge ratio β** — El coeficiente de la regresión OLS `log_A = α + β·log_B + ε`.
+  β "neutraliza" la exposición: long 1 unidad de A + short β unidades de B → el spread
+  ε es aproximadamente delta-neutral respecto al movimiento conjunto.
+
+**Rolling OLS vectorizado** — β estimada cada barra sobre la ventana [t-w:t-1] (shift
+  de 1 para evitar lookahead): `β_t = Cov(log_A, log_B)_{rolling} / Var(log_B)_{rolling}`.
+  Vectorizado con pandas `.rolling().cov() / .rolling().var()` (O(n) vs O(n·w) del loop).
+
+**IC de pares (Spearman con n_eff)** — Para señales de mean-reversion se espera IC < 0:
+  cuando z_t es alto (spread sobre la media), el siguiente cambio de spread es negativo.
+  PERO el z-score es altamente autocorrelado para spreads de crypto (ρ₁ ≈ 0.99 para I(1))
+  → n_eff ≈ 19 para n=3000. El t-stat naive infla la significancia ×22; el t_corr honesto
+  es cercano a 0.
+
+**n_eff (número efectivo de observaciones)** — Corrección de Bartlett para series
+  autocorreladas: `n_eff = n × (1−ρ₁) / (1+ρ₁)` donde ρ₁ = autocorr(signal, lag=1).
+  Para ρ₁ = 0.99 y n = 3000: n_eff = 15. Para |IC| = 0.05 hacer t_corr = 0.19 << 2.0.
+  Sin esta corrección, cualquier z-score lento parecerá significativo aunque sea ruido.
+
+**Spread I(0) vs I(1)** — I(0) = estacionario (white noise, AR(1) estable): IC < 0,
+  n_eff alto, t_corr alto → pasa el gate. I(1) = random walk: IC ≈ 0, z autocorrelado,
+  n_eff pequeño, t_corr ≈ 0 → falla el gate. La prueba de cointegración discrimina entre
+  ellos automáticamente a través del IC + n_eff.
+
+**Hallazgo Familia B (2026-06-20)** — NINGÚN par de los 5 activos (BTC/ETH/SOL/XRP/LINK)
+  pasa el IC gate a frecuencia 1h. IC es POSITIVO para todos (0.10–0.30) → el spread
+  exhibe momentum débil (divergencia persiste) en vez de mean-reversion. t_corr ≈ 0.3–0.5
+  (muy por debajo del mínimo de 2.0). P&L simulado: entre −53% y −500% anualizado.
+  Diagnóstico: los spreads de crypto a 1h son I(1) (random walks), no I(0). Las noticias
+  y los shocks de mercado crean divergencias que persisten, no revierten.

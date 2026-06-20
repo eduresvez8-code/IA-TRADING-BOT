@@ -144,10 +144,15 @@ def simulate_carry(
 # Firmas listas para las próximas sesiones modulares. Lanzan en vez de devolver
 # vacío para que nadie las cuente como "evaluadas y sin candidata" por error.
 
-def run_family_pairs(cfg: QuantMatrixConfig):
-    """Familia B — cointegración de pares (Engle-Granger + Z-score del spread)."""
-    raise NotImplementedError(
-        "Familia B (cointegración de pares) — pendiente de su sesión modular")
+def run_family_pairs(log_prices: "pd.DataFrame", cfg: QuantMatrixConfig) -> list:
+    """Familia B — cointegración de pares (rolling OLS + IC gate + P&L).
+
+    log_prices: DataFrame con columnas = símbolos y valores = log(close).
+    Evalúa todos los C(n, 2) pares y devuelve una lista de PairsStats.
+    """
+    from backtest.pairs import run_pairs_all
+    import pandas as pd  # noqa: F401 — type hint en el cuerpo
+    return run_pairs_all(log_prices, cfg)
 
 
 def run_family_volume(cfg: QuantMatrixConfig):
