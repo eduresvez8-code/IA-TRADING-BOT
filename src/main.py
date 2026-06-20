@@ -178,6 +178,7 @@ async def live() -> int:
     from src.execution.binance_futures import BinanceFuturesExchange
     from src.execution.executor import Executor
     from src.orchestrator.engine import Orchestrator
+    from src.sentiment.events import build_event_fetch
 
     settings, secrets = load_settings(), load_secrets()
     if not (secrets.binance_api_key and secrets.binance_api_secret):
@@ -194,9 +195,34 @@ async def live() -> int:
     executor = Executor(exchange, settings, storage)
     orch = Orchestrator(executor, settings)
 
+    # --- Fast Path (Plan V2 §2.5(ii)): productor de eventos real (RSS→shock→Claude).
+    # Se construye SIEMPRE, pero queda INERTE hasta que se valide en testnet: run()
+    # solo arranca el _event_loop/streams markPrice si settings.event.enabled (gate
+    # maestro, hoy false). Construir el closure no toca la red ni gasta tokens; la
+    # primera llamada a Claude ocurre dentro de _event_loop, que no se lanza con el
+    # gate cerrado. Así el cableado queda listo para el día que el gate flipee.
+    event_fetch = build_event_fetch(settings, secrets)
+    if settings.event.enabled and not secrets.anthropic_api_key:
+        # Salvaguarda: con el gate abierto, _event_loop llamaría a Claude y, sin
+        # clave, fallaría en bucle bajo _supervise (restart infinito). Fallar-rápido.
+        print("⚠ event.enabled=true pero falta ANTHROPIC_API_KEY en .env — el Fast "
+              "Path no puede analizar noticias. Añádela o vuelve a poner enabled=false.")
+        return 1
+
+    # --- Slow Path: el productor de sentimiento (dict[symbol → SentimentScore]) aún
+    # NO existe como módulo (no hay build_sentiment_fetch). Sin él, _cycle opera con
+    # quant solo: _fresh_sentiment → None ⇒ decide() en modo quant-only, el mismo
+    # comportamiento ya validado en paper trading. Es un módulo aparte (una sesión =
+    # un módulo), por eso va None EXPLÍCITO en lugar de fabricarlo aquí sin tests.
+    sentiment_fetch = None
+
     print("▶ Iniciando lazo en vivo (Futuros testnet). Ctrl-C para detener.")
     try:
-        await orch.run(data_client)  # sentiment_fetch=… se enchufa en el hardening
+        await orch.run(
+            data_client,
+            sentiment_fetch=sentiment_fetch,
+            event_fetch=event_fetch,
+        )
     finally:
         await data_client.close_connection()
         await exchange.close()

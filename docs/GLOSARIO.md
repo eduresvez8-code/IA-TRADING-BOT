@@ -869,3 +869,19 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   INTENT vs `analyzed_at`) porque el lag del RSS gratis es de 1-5 min. Ahorra además
   la llamada a Claude sobre titulares viejos y defiende aun con el gate de impulso
   ablado (`confirm_impulse_bps=0`).
+- **Wiring operativo (Fase 2.5(ii))**: el paso de "función existe y testeada" a
+  "función conectada en `main.py`". Cablear `event_fetch=build_event_fetch(...)` en
+  `live()` NO enciende el Fast Path: `run()` solo arranca `_event_loop`/streams
+  `markPrice` si `event.enabled` (gate maestro, hoy false). Es preparatorio — deja el
+  callable listo e INERTE para el día que la validación en testnet habilite el gate.
+- **Construir ≠ ejecutar (closure inerte)**: `build_event_fetch` crea dos closures y
+  un `seen` vacío; no abre red ni gasta tokens. La primera llamada a Claude vive
+  dentro de `_event_loop`, que no se lanza con el gate cerrado. Por eso es seguro
+  construirlo incondicionalmente (y exponer hoy cualquier error de import/firma) en
+  vez de esconderlo tras `if event.enabled` hasta producción.
+- **`sentiment_fetch=None` explícito (Slow Path sin productor)**: el productor del
+  overlay de sentimiento (`dict[symbol → SentimentScore]`) todavía no existe como
+  módulo. Pasar `None` explícito es documentación ejecutable: sin él, `_cycle` corre
+  quant-only (`_fresh_sentiment → None ⇒ decide()` sin sentimiento), el mismo
+  comportamiento ya validado en paper trading. Fabricar el builder es un módulo
+  propio (resolver `symbol_scope`→símbolos + dedup + tests espejo), no "wiring".

@@ -344,8 +344,13 @@ arriesgar capital, no seguir añadiendo épées.
    `_price_impulse_bps`, fallar-cerrado a `None`) + 3 params Vía B. ✅ *(487 tests)*
 9. **F2.5(ii)** `event_fetch` real (`src/sentiment/events.py`: RSS→shock→Claude,
    dedup por `news_id`, frescura `max_headline_age_seconds`). Función + tests ✅
-   *(496 tests)*. **Pendiente operativo:** wiring en `main.py` + validación testnet
-   (sigue **BLOQUEANTE de `event.enabled`** hasta entonces, §B/§C).
+   *(496 tests)*. **Wiring operativo ✅:** `event_fetch=build_event_fetch(settings,
+   secrets)` cableado en `main.py:live()` (+ salvaguarda: aborta si `event.enabled`
+   y falta `ANTHROPIC_API_KEY`). Queda **INERTE** — `run()` no arranca `_event_loop`
+   con `event.enabled=false` (gate maestro). **Pendiente:** validación en testnet,
+   que sigue **BLOQUEANTE de `event.enabled`** (§B/§C). `sentiment_fetch=None`
+   explícito: el productor del Slow Path (`dict[symbol → SentimentScore]`) NO existe
+   aún → módulo propio pendiente (resolver `symbol_scope`→símbolos + dedup + tests).
 10. **F3** cross-sectional overlay + gating de capital.
 
 Cada paso: pytest verde + demo aislada + bloque "📖 Explicación" + glosario,
