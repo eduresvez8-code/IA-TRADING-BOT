@@ -1070,3 +1070,49 @@ Términos en orden de aparición en el proyecto. Se amplía en cada sprint.
   está invertida: el squeeze predice CONTINUIDAD de baja vol (clustering), no expansión.
   (4) GROSS de signo mixto → null tipo "no hay señal", más fuerte que el de C. Veredicto:
   familia MUERTA. Cierra el mandato de 5 familias del Slow Path.
+
+## Opción 2 — Quant demotado a régimen/sizing (inversión de causalidad)
+
+**Inversión de roles (Opción 2).** Cambio en `decide()` (Slow Path) por el que la
+NOTICIA pasa a ORIGINAR la dirección y el quant deja de hacerlo. Motivación empírica:
+el `ema_cross_rsi` de producción, cuando originaba en 5m, perdía dinero (Sharpe negativo,
+PF<1 a 3 años; ver memoria finding-quant-production-loses). En vez de tirar el quant, se
+le quita el gatillo y se le deja como filtro de contexto. Antes: quant→dirección,
+sentimiento→confirma/veta. Ahora: sentimiento→dirección, quant→confirma/dimensiona.
+
+**Régimen (régime).** Lectura de la TENDENCIA de fondo del precio en un timeframe
+superior (HTF, 1h), no de la vela de entrada (5m). En Opción 2 el quant produce el
+régimen: corre el mismo EMA-cross+RSI pero sobre velas resampleadas a 1h. Solo confirma
+(régimen fuerte y a favor → tamaño pleno), guarda silencio (régimen débil → tamaño
+reducido) o VETA (régimen fuerte y opuesto → HOLD `regime_conflict`).
+
+**Por qué el HTF y no el 5m (evidencia cripto).** Toda la literatura que halla edge en
+EMA-cross para cripto lo halla en velas DIARIAS u horarias, nunca intradía: en 5m los
+cruces son ruido que los costos se comen (quant-signals: "daily dramatically outperformed
+hourly"; Grayscale: mejor Sharpe con media corta de 10–30 días; arXiv 2511.00665: óptimo
+en diario). El 9/21 no estaba "mal": estaba en el timeframe equivocado. Como el régimen ya
+NO opera (solo lee tendencia), no paga costos → el problema del −45% desaparece por
+construcción.
+
+**Resampleo a buckets completos (causal).** `_buffer_df_htf` agrega las velas 5m a 1h
+quedándose SOLO con buckets que tienen las 12 velas completas. La 1h en formación se
+descarta: usar la vela en curso no es look-ahead (solo contiene 5m ya cerradas) pero sí
+mete jitter intra-hora; descartarla da una lectura de tendencia estable y fiel a "EMA
+sobre cierres de 1h".
+
+**buffer_target / regime_htf_bars.** El buffer de 5m se dimensiona = max(warmup_operativo,
+regime_htf_bars × ratio(HTF/base)). Con 50 velas de 1h × 12 = 600 velas de 5m a
+backfillear/retener, suficientes para que el EMA(21)+RSI(14) del régimen tenga ventana.
+El gate de "operar" sigue sobre `warmup_candles` (vela base); el régimen degrada a neutro
+mientras no haya suficientes velas HTF (la noticia opera con tamaño reducido, no se bloquea).
+
+**Razones nuevas de `decide` (auditoría).** `no_news_origination` (sin noticia
+significativa → no se abre, ES la inversión), `regime_confirms` (régimen fuerte y a favor
+→ 1.0), `regime_neutral` (régimen débil → reducido), `regime_conflict` (régimen fuerte y
+opuesto → veto). Sustituyen a las viejas `quant_weak`/`sentiment_confirms`/
+`sentiment_neutral`/`sentiment_conflict`.
+
+**Separación ATR base vs dirección HTF.** El ATR de los stops sigue saliendo de la vela
+base (5m): un stop dimensionado con ATR de 1h sería ~3.5× más ancho de lo debido para una
+entrada intradía. Por eso el engine calcula DOS señales: la base (5m) solo para el ATR del
+stop, y el régimen (1h) solo para la dirección/tamaño.

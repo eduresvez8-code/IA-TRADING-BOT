@@ -365,4 +365,4 @@ def test_pipeline_confluencia_a_orden_short():
     assert a.approved is True
     assert a.order.side == Side.SELL
     assert a.order.stop_loss > a.order.entry_price
-    assert a.order.decision_reason == "sentiment_confirms"
+    assert a.order.decision_reason == "regime_confirms"

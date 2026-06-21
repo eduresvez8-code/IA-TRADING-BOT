@@ -1,7 +1,9 @@
 """Orquestador en vivo: el lazo que une todos los motores del bot.
 
 Por cada vela cerrada (`on_closed_candle`): reconcilia el estado con el exchange,
-calcula la señal cuantitativa, lee el último sentimiento, cruza en la confluencia,
+calcula el ATR base (5m) para los stops y el RÉGIMEN del quant sobre velas
+resampleadas al HTF (Opción 2: el quant ya no origina, solo confirma/dimensiona),
+lee el último sentimiento (que ORIGINA la dirección), cruza en la confluencia,
 pide veredicto al Risk Manager y aplica la política de UNA pierna por símbolo.
 
 Blindaje de concurrencia y ciclo de vida (Sprint 7.2):
@@ -172,7 +174,7 @@ class Orchestrator:
     async def _backfill_buffer(self, sym: str) -> bool:
         if self._backfill_fn is None:
             return False
-        candles = await self._backfill_fn(sym, self.cfg.orchestrator.warmup_candles)
+        candles = await self._backfill_fn(sym, self._buffer_target())
         self.buffers[sym] = list(candles)
         if candles:
             # El feed está FRESCO justo tras el backfill (acabamos de traer datos):
@@ -222,7 +224,9 @@ class Orchestrator:
             if candle.open_time > last + self._interval:
                 self._needs_rewarm.add(sym)  # hueco: faltan velas intermedias
         buf.append(candle)
-        maxlen = max(self.cfg.orchestrator.warmup_candles * 2, 200)
+        # Retén lo suficiente para formar el régimen HTF, con holgura para que el
+        # EMA del HTF tenga ventana estable; nunca menos del mínimo histórico (200).
+        maxlen = max(self._buffer_target() * 2, 200)
         if len(buf) > maxlen:
             del buf[: len(buf) - maxlen]
 
@@ -373,17 +377,29 @@ class Orchestrator:
                               f"anomalía en gracia {self._fmt_keys(seen)} — re-chequeando")
             return  # en gracia: no operamos esta vela
 
-        # --- 2. Señal cuantitativa ---
-        signal = self.signal_fn(self._buffer_df(sym), sym)
-        if signal is None:
+        # --- 2. Señal base (timeframe de entrada) → ATR para los stops ---
+        # El ATR de los stops DEBE salir del timeframe base (5m): un trade
+        # intradía con stops de 1h sería ~3.5x más ancho de lo debido. Por eso la
+        # señal base se mantiene en la vela de trabajo aunque la DIRECCIÓN ya no
+        # salga de aquí (Opción 2).
+        base_signal = self.signal_fn(self._buffer_df(sym), sym)
+        if base_signal is None:
             return
-        atr = signal.features.get("atr")
+        atr = base_signal.features.get("atr")
         if atr is None:
             return
 
-        # --- 3. Confluencia con el sentimiento más reciente Y FRESCO (TTL) ---
+        # --- 2b. Régimen (Opción 2): el quant sobre velas resampleadas al HTF.
+        # Ya NO origina la dirección; solo confirma/dimensiona la apuesta de la
+        # noticia. Si aún no hay suficientes velas HTF cerradas, régimen NEUTRO
+        # (score 0): la noticia opera con tamaño reducido, no se bloquea.
+        regime = self._regime_signal(sym)
+        if regime is None:
+            regime = base_signal.model_copy(update={"score": 0.0})
+
+        # --- 3. Confluencia: la NOTICIA origina; el régimen confirma (TTL fresco) ---
         sentiment = self._fresh_sentiment(sym, now)
-        decision = decide(signal, sentiment, self.cfg, as_of=now)
+        decision = decide(regime, sentiment, self.cfg, as_of=now)
 
         # --- 4. Veredicto del Risk Manager ---
         state = await self.executor.snapshot_portfolio(now=now)
@@ -564,6 +580,50 @@ class Orchestrator:
             "low": [c.low for c in buf], "close": [c.close for c in buf],
             "volume": [c.volume for c in buf],
         })
+
+    # ------------------------- régimen HTF (Opción 2) -------------------------
+
+    def _htf_ratio(self) -> int:
+        """Velas base por vela HTF (ej. 1h/5m = 12). Deriva de la config, no se
+        hardcodea: si cambias htf_timeframe o timeframe, el ratio se recalcula."""
+        return (interval_to_ms(self.cfg.market.htf_timeframe)
+                // interval_to_ms(self.cfg.market.timeframe))
+
+    def _buffer_target(self) -> int:
+        """Velas base a backfillear/retener: el MAYOR entre el warmup operativo
+        (gate de 5m) y las que necesita el régimen HTF (regime_htf_bars * ratio).
+        Sin esto, el buffer de 5m no tendría historia para formar las ~50 velas de
+        1h que el EMA-cross necesita para leer la tendencia."""
+        return max(self.cfg.orchestrator.warmup_candles,
+                   self.cfg.orchestrator.regime_htf_bars * self._htf_ratio())
+
+    def _buffer_df_htf(self, sym: str) -> pd.DataFrame:
+        """Resamplea el buffer de velas base al HTF, devolviendo SOLO buckets
+        completos (causal: nunca usa la vela HTF en formación). Un bucket es
+        completo si contiene exactamente `_htf_ratio()` velas base; los incompletos
+        (la última en curso, o huecos del feed) se descartan para no fabricar una
+        vela HTF con datos parciales."""
+        base = self._buffer_df(sym)
+        if base.empty:
+            return base
+        ratio = self._htf_ratio()
+        idx = pd.to_datetime(base["open_time"], utc=True)
+        rule = pd.Timedelta(milliseconds=interval_to_ms(self.cfg.market.htf_timeframe))
+        grouped = base.set_index(idx).resample(rule, label="left", closed="left")
+        agg = grouped.agg({"open": "first", "high": "max", "low": "min",
+                           "close": "last", "volume": "sum"})
+        full = grouped.size() == ratio          # solo buckets HTF completos
+        return agg[full].reset_index(drop=True)
+
+    def _regime_signal(self, sym: str) -> Signal | None:
+        """Señal de RÉGIMEN: el quant corrido sobre las velas resampleadas al HTF.
+        Devuelve None si aún no hay velas HTF completas suficientes (el llamador lo
+        trata como régimen neutro). Reusa el MISMO signal_fn que la señal base, así
+        que vivo y backtest comparten la fórmula; solo cambia el timeframe de entrada."""
+        htf_df = self._buffer_df_htf(sym)
+        if htf_df.empty:
+            return None
+        return self.signal_fn(htf_df, sym)
 
     @staticmethod
     def _fmt(d: dict[LegKey, float]) -> dict[str, float]:

@@ -65,24 +65,27 @@ def test_events_from_rows():
 
 # ------------------------------ A/B del sentimiento ------------------------------
 
-def test_sentimiento_neutro_opera_la_tecnica():
+def test_sin_noticias_no_origina():
+    # Opción 2 (inversión): sin noticias el quant ya NO origina → 0 trades. El
+    # backtest llama al `decide` en vivo, así que refleja la nueva causalidad: el
+    # EMA-cross en solitario (que perdía dinero) deja de meter entradas.
     res = run_confluence(make_uptrend_df(), "BTCUSDT", "5m", None, CFG)
-    assert len(res.trades) > 0            # sin noticias: opera el quant (tamaño reducido)
+    assert len(res.trades) == 0
 
 
-def test_sentimiento_opuesto_veta_las_entradas():
-    # Quant alcista fuerte + sentimiento bajista significativo → HOLD: 0 trades.
+def test_noticia_opuesta_al_regimen_veta_las_entradas():
+    # Régimen (quant) alcista fuerte + noticia bajista significativa → la noticia
+    # pediría SHORT pero el régimen la veta (regime_conflict) → 0 trades.
     res = run_confluence(make_uptrend_df(), "BTCUSDT", "5m", [event(-0.8)], CFG)
     assert len(res.trades) == 0
 
 
-def test_sentimiento_confirma_aumenta_el_tamano():
-    neutral = run_confluence(make_uptrend_df(), "BTCUSDT", "5m", None, CFG)
-    confirm = run_confluence(make_uptrend_df(), "BTCUSDT", "5m", [event(0.6)], CFG)
-    assert neutral.trades and confirm.trades
-    # confirma (size 1.0) vs neutro (size reduced): la primera entrada es mayor.
-    ratio = 1.0 / CFG.confluence.reduced_size_factor
-    assert confirm.trades[0].quantity == pytest.approx(neutral.trades[0].quantity * ratio)
+def test_noticia_alineada_con_regimen_origina():
+    # Noticia alcista + régimen (quant) alcista fuerte → regime_confirms → opera.
+    # (El tamaño pleno vs reducido por régimen/confianza se cubre en los tests
+    # unitarios de `decide` y en test_baja_confianza_reduce_aunque_confirme.)
+    res = run_confluence(make_uptrend_df(), "BTCUSDT", "5m", [event(0.6)], CFG)
+    assert len(res.trades) > 0
 
 
 def test_baja_confianza_reduce_aunque_confirme():

@@ -74,12 +74,12 @@ def _leg(qty: float = 1.0) -> ExchangePosition:
                             entry_price=1000.0, initial_margin=333.0)
 
 
-def make_env(*, dual_mode=False, storage=None, backfill_fn=None, cfg=CFG):
+def make_env(*, dual_mode=False, storage=None, backfill_fn=None, cfg=CFG, signal_fn=None):
     ex = FakeFuturesExchange(wallet_balance=10_000.0, filters=FILTERS,
                              prices={"BTCUSDT": 1000.0, "ETHUSDT": 2000.0}, dual_mode=dual_mode)
     execu = Executor(ex, cfg, storage=storage)
     rec = RecordingAlertSink()
-    sig = StubSignal()
+    sig = signal_fn if signal_fn is not None else StubSignal()
     orch = Orchestrator(execu, cfg, alerts=rec, sentiment_store={}, signal_fn=sig,
                         backfill_fn=backfill_fn)
     return ex, execu, orch, rec, sig
@@ -164,7 +164,7 @@ async def test_resync_tras_confirmacion_cuando_sl_tp_cierra():
     assert (SYMBOL, LONG) not in orch._in_flight
 
     ex.positions.pop((SYMBOL, LONG))  # un SL/TP cierra la pierna
-    sig.score = 0.1
+    orch.sentiment_store.pop(SYMBOL, None)  # sin noticia fresca → no reabre (Opción 2)
     await feed(orch, [3])
     assert orch.halted is False
     assert orch.expected == {}
@@ -221,7 +221,7 @@ async def test_open_no_confirmado_expira():
     orch.sentiment_store[SYMBOL] = _sent(0.6)
     await feed(orch, [0, 1])  # abre LONG (in_flight=0)
     ex.hidden.add((SYMBOL, LONG))  # nunca se confirma
-    sig.score = 0.1
+    orch.sentiment_store.pop(SYMBOL, None)  # sin noticia fresca → no reabre (Opción 2)
     await feed(orch, [2, 3, 4, 5])  # edad 1,2,3,4 → >grace(3) expira
     assert (SYMBOL, LONG) not in orch._in_flight
     assert (SYMBOL, LONG) not in orch.expected
@@ -370,31 +370,107 @@ def test_fresh_sentiment_caduca_por_ttl():
     assert SYMBOL not in orch.sentiment_store
 
 
-async def test_sentimiento_opuesto_caducado_no_bloquea_el_trade():
-    # Quant fuerte LONG + sentimiento bajista pero CADUCADO (analyzed_at de hace
-    # 30 min, TTL 300s) → se trata como "sin noticia": no hay conflicto y el LONG
-    # se abre (con tamaño reducido). Es el bug que el TTL corrige: sin él, ese
-    # score viejo seguiría vetando el trade por sentiment_conflict.
+async def test_sentimiento_caducado_no_origina():
+    # Opción 2: un sentimiento CADUCADO (analyzed_at de hace 30 min, TTL 300s) se
+    # purga y se trata como "sin noticia" → no_news_origination → no se abre nada.
+    # (Antes, con el quant originando, el LONG se abría igual; ahora, sin noticia
+    # fresca, NO hay trade: el quant ya no tiene gatillo.)
     ex, orch, rec, sig = await build(cfg=_cfg_ttl(300))
-    sig.score = 0.8
     orch.sentiment_store[SYMBOL] = SentimentScore(
-        news_id="old", symbol_scope=[SYMBOL], score=-0.7, confidence=0.8,
+        news_id="old", symbol_scope=[SYMBOL], score=0.7, confidence=0.8,
         high_impact=False, analyzed_at=T0 - timedelta(minutes=30))
     await feed(orch, [0, 1])
-    assert (SYMBOL, LONG) in ex.positions
+    assert (SYMBOL, LONG) not in ex.positions
+    assert (SYMBOL, SHORT) not in ex.positions
     assert SYMBOL not in orch.sentiment_store  # el score caduco fue purgado
 
 
-async def test_sentimiento_opuesto_fresco_si_bloquea():
-    # Contraste del anterior: el MISMO sentimiento bajista, pero FRESCO en la vela
-    # i=1, sí dispara sentiment_conflict → HOLD → no se abre el LONG.
-    ex, orch, rec, sig = await build(cfg=_cfg_ttl(300))
-    sig.score = 0.8
+async def test_noticia_fresca_bajista_origina_short():
+    # Inversión Opción 2 a nivel engine: la NOTICIA pone la dirección. Un titular
+    # bajista FRESCO origina un SHORT (régimen aún neutro en el test → tamaño
+    # reducido), SIN que el quant tenga que estar bajista. Hedge mode para abrir
+    # el corto de forma explícita.
+    ex, orch, rec, sig = await build(dual_mode=True, cfg=_cfg_ttl(300))
     orch.sentiment_store[SYMBOL] = SentimentScore(
         news_id="new", symbol_scope=[SYMBOL], score=-0.7, confidence=0.8,
         high_impact=False, analyzed_at=_t(1))
     await feed(orch, [0, 1])
+    assert (SYMBOL, SHORT) in ex.positions
     assert (SYMBOL, LONG) not in ex.positions
+
+
+# ------------------------------ Régimen HTF (Opción 2) ------------------------------
+
+
+def _downtrend_buffer(n: int) -> list[Candle]:
+    """n velas de 5m en bajada monótona (closes decrecientes) → régimen 1h bajista."""
+    out = []
+    for i in range(n):
+        price = 2000.0 * (1 - 0.0005 * i)
+        out.append(Candle(symbol=SYMBOL, timeframe="5m",
+                          open_time=T0 + timedelta(minutes=5 * i),
+                          open=price, high=price * 1.001, low=price * 0.999,
+                          close=price, volume=10.0))
+    return out
+
+
+def test_htf_ratio_y_buffer_target_derivados():
+    # 1h/5m = 12 velas base por vela HTF; el buffer objetivo cubre el régimen
+    # (regime_htf_bars * ratio), nunca menos que el warmup operativo.
+    ex, execu, orch, rec, sig = make_env()
+    assert orch._htf_ratio() == 12
+    assert orch._buffer_target() == max(
+        CFG.orchestrator.warmup_candles, CFG.orchestrator.regime_htf_bars * 12)
+
+
+def test_buffer_df_htf_solo_buckets_completos():
+    # 24 velas de 5m = 2 horas EXACTAS → 2 velas de 1h completas. Una vela 25 abre
+    # un bucket parcial que se descarta (causal: no se usa la 1h en formación).
+    ex, execu, orch, rec, sig = make_env()
+    orch.buffers[SYMBOL] = _downtrend_buffer(24)
+    assert len(orch._buffer_df_htf(SYMBOL)) == 2
+    orch.buffers[SYMBOL] = _downtrend_buffer(25)
+    assert len(orch._buffer_df_htf(SYMBOL)) == 2          # el bucket parcial se descarta
+    orch.buffers[SYMBOL] = _downtrend_buffer(23)
+    assert len(orch._buffer_df_htf(SYMBOL)) == 1          # el 2º bucket queda incompleto
+
+
+def test_regime_signal_neutro_sin_suficientes_velas():
+    # Con pocas velas no hay buckets HTF → régimen None (el engine lo trata neutro).
+    ex, execu, orch, rec, sig = make_env()
+    orch.buffers[SYMBOL] = _downtrend_buffer(6)
+    assert orch._regime_signal(SYMBOL) is None
+
+
+async def test_regime_signal_lee_tendencia_real_en_htf():
+    # Con el quant REAL sobre un downtrend largo, el régimen sale fuertemente
+    # bajista (|score| ≥ umbral). Esta es la señal que confirma/veta la noticia.
+    from src.quant.strategy import compute_signal
+    ex, orch, rec, sig = await build(signal_fn=compute_signal)
+    orch.buffers[SYMBOL] = _downtrend_buffer(orch._buffer_target())
+    regime = orch._regime_signal(SYMBOL)
+    assert regime is not None
+    assert regime.score <= -CFG.confluence.quant_strong_threshold
+
+
+async def test_regimen_fuerte_opuesto_veta_la_noticia_end_to_end():
+    # Integración: régimen 1h fuertemente BAJISTA + noticia ALCISTA fresca →
+    # regime_conflict → HOLD → no se abre nada (ni LONG ni SHORT). Prueba que la
+    # tendencia HTF realmente VETA la originación por noticia en el lazo completo.
+    from src.quant.strategy import compute_signal
+    ex, orch, rec, sig = await build(dual_mode=True, cfg=_cfg_ttl(300),
+                                     signal_fn=compute_signal)
+    n = orch._buffer_target()
+    orch.buffers[SYMBOL] = _downtrend_buffer(n)
+    orch.sentiment_store[SYMBOL] = SentimentScore(
+        news_id="bull", symbol_scope=[SYMBOL], score=0.7, confidence=0.8,
+        high_impact=False, analyzed_at=T0 + timedelta(minutes=5 * n))
+    nxt = Candle(symbol=SYMBOL, timeframe="5m",
+                 open_time=T0 + timedelta(minutes=5 * n),
+                 open=1400.0, high=1401.0, low=1399.0, close=1400.0, volume=10.0)
+    await orch.on_closed_candle(nxt, now=T0 + timedelta(minutes=5 * n))
+    assert (SYMBOL, LONG) not in ex.positions
+    assert (SYMBOL, SHORT) not in ex.positions
 
 
 # ------------------------------ Fast Path (Plan V2 §2.3) ------------------------------

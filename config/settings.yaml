@@ -153,6 +153,13 @@ orchestrator:
   # desincronización y disparar el HALT (circuit breaker c). Absorbe la latencia
   # del WebSocket: una aparición transitoria no detiene el bot, una sostenida sí.
   reconcile_grace_cycles: 3
+  # Velas del HTF (htf_timeframe = 1h) que el quant usa para leer el RÉGIMEN de
+  # tendencia (Opción 2). 50 ≥ el mínimo de 35 (ema_slow 21 + rsi 14) con holgura.
+  # El engine backfillea regime_htf_bars * (1h/5m) = 50 * 12 = 600 velas de 5m,
+  # las resamplea a 1h y corre el EMA-cross ahí. La literatura cripto solo halla
+  # edge de EMA-cross en velas DIARIAS/horarias, nunca en 5m → el régimen vive en
+  # el HTF, no en la vela base de entrada.
+  regime_htf_bars: 50
 
 # --- Fast Path: originación de trades por evento (Plan V2 Fase 2) ---
 # Gobierna CUÁNDO un shock (hack/ETF/depeg…) cuaja en una orden. La lógica

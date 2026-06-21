@@ -284,6 +284,12 @@ class OrchestratorConfig(BaseModel):
     # (al menos una confirmación); le=20 ataja un valor que volvería inútil el
     # circuit breaker.
     reconcile_grace_cycles: int = Field(ge=1, le=20)
+    # Velas HTF (htf_timeframe) a retener para la lectura de RÉGIMEN del quant
+    # (Opción 2: quant demotado a confirmar/dimensionar). El engine deriva cuántas
+    # velas base necesita backfillear/retener = regime_htf_bars * (htf/base). El
+    # quant exige ema_slow_period + rsi_period velas (35 con 21+14), así que ge=35
+    # garantiza que el régimen tenga datos; le=500 ataja un buffer desmedido.
+    regime_htf_bars: int = Field(ge=35, le=500)
 
 
 class EventConfig(BaseModel):

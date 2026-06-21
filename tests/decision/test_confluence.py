@@ -42,104 +42,113 @@ def make_sentiment(score: float, *, high_impact: bool = False,
     )
 
 
-# ---- Fila 0: macro PROGRAMADO bloquea; SHOCK direccional NO (Plan V2 Fase 1.2) ----
+# ---- Fila 0: macro PROGRAMADO bloquea (tiene prioridad sobre todo) ----
 
-def test_scheduled_macro_bloquea_aunque_quant_y_sentimiento_confirmen():
-    # FOMC/CPI: resultado incierto → no abrir hacia el dato, gane lo que gane la
-    # técnica. El bloqueo tiene prioridad sobre todo.
+def test_scheduled_macro_bloquea_aunque_haya_noticia_y_regimen():
+    # FOMC/CPI: resultado incierto → no abrir hacia el dato, diga lo que diga el
+    # régimen. El bloqueo tiene prioridad sobre la originación por noticia.
     d = decide(make_signal(0.9), make_sentiment(0.8, event_kind="scheduled"), CFG)
     assert d.action == Action.HOLD
     assert d.size_factor == 0.0
     assert d.reason == "scheduled_macro_block"
 
 
-def test_shock_no_bloquea_y_confirma_la_direccion():
-    # Corrige el veto invertido del v1: un shock direccional (hack/ETF) que CONFIRMA
-    # la dirección quant ya NO se tira a HOLD — cae a la matriz normal → LONG pleno.
-    d = decide(make_signal(0.8), make_sentiment(0.6, event_kind="shock"), CFG)
+# ---- Fila 1: la INVERSIÓN — sin noticia significativa NO se abre (Opción 2) ----
+
+def test_regimen_fuerte_sin_noticia_no_origina():
+    # El cambio de fondo: aunque el quant (régimen) sea fortísimo, sin sentimiento
+    # NO se abre nada. El quant ya no tiene gatillo (su EMA-cross en 5m perdía).
+    d = decide(make_signal(0.9), None, CFG)
+    assert d.action == Action.HOLD
+    assert d.size_factor == 0.0
+    assert d.reason == "no_news_origination"
+
+
+def test_sentimiento_debil_no_origina():
+    # Sentimiento por debajo del umbral de originación → tampoco abre.
+    d = decide(make_signal(0.9), make_sentiment(0.1), CFG)
+    assert d.action == Action.HOLD
+    assert d.reason == "no_news_origination"
+
+
+def test_sentimiento_justo_en_umbral_si_origina():
+    thr = CFG.confluence.sentiment_confirm_threshold
+    d = decide(make_signal(0.8), make_sentiment(thr), CFG)
+    assert d.action == Action.LONG  # >= umbral origina
+
+
+# ---- La NOTICIA pone la dirección; régimen FUERTE y alineado → tamaño pleno ----
+
+def test_noticia_alcista_con_regimen_a_favor_long_pleno():
+    d = decide(make_signal(0.8), make_sentiment(0.6), CFG)
     assert d.action == Action.LONG
     assert d.size_factor == 1.0
-    assert d.reason == "sentiment_confirms"
+    assert d.reason == "regime_confirms"
 
 
-def test_shock_opuesto_cae_a_conflicto_no_a_bloqueo():
-    # Shock bajista contra quant alcista: no es bloqueo macro, es la regla de
-    # conflicto normal (la noticia puede invalidar el patrón técnico).
-    d = decide(make_signal(0.8), make_sentiment(-0.6, event_kind="shock"), CFG)
-    assert d.action == Action.HOLD
-    assert d.reason == "sentiment_conflict"
-
-
-# ---- Fila 1: quant débil → HOLD (circuit breaker b incluido) ----
-
-def test_quant_debil_es_hold():
-    d = decide(make_signal(0.2), make_sentiment(0.1), CFG)
-    assert d.action == Action.HOLD
-    assert d.reason == "quant_weak"
-
-
-def test_sentimiento_extremo_sin_quant_no_abre():
-    # Circuit breaker (b): titular extremo pero el precio no se ha movido.
-    d = decide(make_signal(0.1), make_sentiment(0.95), CFG)
-    assert d.action == Action.HOLD
-    assert d.reason == "quant_weak"
-
-
-# ---- Fila 2: quant fuerte + sentimiento opuesto fuerte → HOLD ----
-
-def test_long_con_sentimiento_opuesto_es_hold():
-    d = decide(make_signal(0.8), make_sentiment(-0.6), CFG)
-    assert d.action == Action.HOLD
-    assert d.reason == "sentiment_conflict"
-
-
-def test_conflicto_tiene_prioridad_sobre_gate_de_cortos():
-    # Quant bajista + sentimiento alcista: el conflicto se evalúa ANTES del gate
-    # de Spot, así que el motivo es el conflicto, no short_disabled_spot.
-    d = decide(make_signal(-0.8), make_sentiment(0.6), CFG)
-    assert d.action == Action.HOLD
-    assert d.reason == "sentiment_conflict"
-
-
-# ---- Fila 3 y 4 en LONG (Spot) ----
-
-def test_long_confirmado_tamano_pleno():
-    d = decide(make_signal(0.8), make_sentiment(0.5), CFG)
-    assert d.action == Action.LONG
-    assert d.size_factor == 1.0
-    assert d.reason == "sentiment_confirms"
-
-
-def test_long_sentimiento_neutro_tamano_reducido():
-    d = decide(make_signal(0.8), make_sentiment(0.1), CFG)
-    assert d.action == Action.LONG
-    assert d.size_factor == CFG.confluence.reduced_size_factor
-    assert d.reason == "sentiment_neutral"
-
-
-def test_long_sin_sentimiento_tamano_reducido():
-    d = decide(make_signal(0.8), None, CFG)
-    assert d.action == Action.LONG
-    assert d.size_factor == CFG.confluence.reduced_size_factor
-    assert d.sentiment_score == 0.0
-
-
-# ---- Futuros: la rama SHORT es simétrica a la LONG ----
-
-def test_short_confirmado_tamano_pleno():
+def test_noticia_bajista_con_regimen_a_favor_short_pleno():
     d = decide(make_signal(-0.8), make_sentiment(-0.6), CFG)
     assert d.action == Action.SHORT
     assert d.size_factor == 1.0
-    assert d.reason == "sentiment_confirms"
+    assert d.reason == "regime_confirms"
 
 
-def test_short_neutro_tamano_reducido():
-    d = decide(make_signal(-0.8), None, CFG)
-    assert d.action == Action.SHORT
+def test_shock_significativo_origina_como_noticia():
+    # Un shock direccional con score significativo origina por el Slow Path normal
+    # (la originación sub-vela vive en el Fast Path; aquí cae a la matriz).
+    d = decide(make_signal(0.8), make_sentiment(0.6, event_kind="shock"), CFG)
+    assert d.action == Action.LONG
+    assert d.reason == "regime_confirms"
+
+
+# ---- Régimen NEUTRO/débil → opera la noticia con tamaño reducido ----
+
+def test_regimen_neutro_tamano_reducido():
+    # Noticia alcista origina, pero la tendencia HTF es débil (0.1 < umbral) → no
+    # confirma ni contradice → tamaño reducido.
+    d = decide(make_signal(0.1), make_sentiment(0.6), CFG)
+    assert d.action == Action.LONG
     assert d.size_factor == CFG.confluence.reduced_size_factor
+    assert d.reason == "regime_neutral"
 
 
-# ---- Gate de cortos desactivado (config long-only) ----
+def test_sin_quant_pero_con_noticia_opera_reducido():
+    # Régimen exactamente neutro (0.0, p.ej. HTF aún sin calentar) + noticia → la
+    # noticia ORIGINA igual, con tamaño reducido. (El engine pasa régimen 0 así.)
+    d = decide(make_signal(0.0), make_sentiment(0.6), CFG)
+    assert d.action == Action.LONG
+    assert d.size_factor == CFG.confluence.reduced_size_factor
+    assert d.reason == "regime_neutral"
+
+
+def test_regimen_debil_opuesto_no_veta():
+    # Tendencia HTF bajista pero DÉBIL (−0.2, bajo umbral) contra noticia alcista:
+    # no es lo bastante fuerte para vetar → opera reducido, no HOLD.
+    d = decide(make_signal(-0.2), make_sentiment(0.6), CFG)
+    assert d.action == Action.LONG
+    assert d.size_factor == CFG.confluence.reduced_size_factor
+    assert d.reason == "regime_neutral"
+
+
+# ---- Régimen FUERTE y OPUESTO a la noticia → veta (espejo del viejo conflicto) ----
+
+def test_regimen_fuerte_opuesto_veta():
+    # Noticia alcista pero tendencia 1h marcadamente bajista → no peleamos la
+    # tendencia con un titular puntual. HOLD por regime_conflict.
+    d = decide(make_signal(-0.8), make_sentiment(0.6), CFG)
+    assert d.action == Action.HOLD
+    assert d.size_factor == 0.0
+    assert d.reason == "regime_conflict"
+
+
+def test_regimen_fuerte_opuesto_veta_simetrico_short():
+    # Noticia bajista pero tendencia 1h alcista fuerte → veta el SHORT.
+    d = decide(make_signal(0.8), make_sentiment(-0.6), CFG)
+    assert d.action == Action.HOLD
+    assert d.reason == "regime_conflict"
+
+
+# ---- Gate de cortos (config) ----
 
 def test_short_bloqueado_si_gate_desactivado():
     d = decide(make_signal(-0.8), make_sentiment(-0.6), cfg_sin_cortos())
@@ -147,15 +156,27 @@ def test_short_bloqueado_si_gate_desactivado():
     assert d.reason == "short_disabled"
 
 
+def test_short_gate_tiene_prioridad_sobre_regimen():
+    # Noticia bajista (→SHORT) + régimen alcista (conflicto) PERO shorts off: el
+    # gate de venue es restricción dura y se evalúa antes → short_disabled, no
+    # regime_conflict.
+    d = decide(make_signal(0.8), make_sentiment(-0.6), cfg_sin_cortos())
+    assert d.action == Action.HOLD
+    assert d.reason == "short_disabled"
+
+
 # ---- Bordes y auditoría ----
 
-def test_quant_justo_en_el_umbral_es_fuerte():
+def test_regimen_justo_en_el_umbral_es_fuerte():
     thr = CFG.confluence.quant_strong_threshold
-    d = decide(make_signal(thr), None, CFG)
+    d = decide(make_signal(thr), make_sentiment(0.6), CFG)
     assert d.action == Action.LONG
+    assert d.size_factor == 1.0
+    assert d.reason == "regime_confirms"
 
 
 def test_decision_registra_scores_para_auditoria():
+    # quant_score guarda el RÉGIMEN; sentiment_score, la noticia.
     d = decide(make_signal(0.7), make_sentiment(0.4), CFG)
     assert d.quant_score == 0.7
     assert d.sentiment_score == 0.4
@@ -170,8 +191,8 @@ def test_as_of_fija_el_timestamp_de_forma_determinista():
     later = NOW + timedelta(hours=5)
     d = decide(make_signal(0.8), old, CFG, as_of=later)
     assert d.timestamp == later
-    assert d.action == Action.LONG  # la matriz ignora la edad: el sentimiento confirma
-    assert d.reason == "sentiment_confirms"
+    assert d.action == Action.LONG  # la matriz ignora la edad: la noticia origina
+    assert d.reason == "regime_confirms"
 
 
 # ===========================================================================

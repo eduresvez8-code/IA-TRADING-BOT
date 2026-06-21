@@ -2,10 +2,13 @@
 
 Conviven dos caminos (Plan V2 §2), ambos convergen en el mismo Risk Manager:
 
-- `decide` (**Slow Path / estratégico**): por vela cerrada (5m). El quant manda
-  la DIRECCIÓN; el sentimiento solo CONFIRMA (tamaño pleno), guarda silencio
-  (tamaño reducido) o VETA. Nunca abre por sentimiento solo: sin movimiento de
-  precio que lo respalde, un titular extremo puede ser falso (circuit breaker (b)).
+- `decide` (**Slow Path / estratégico**): por vela cerrada (5m). Opción 2 (quant
+  demotado a régimen/sizing): la NOTICIA origina la DIRECCIÓN; el quant ya no
+  origina — lee la TENDENCIA en el timeframe superior (HTF) y solo CONFIRMA
+  (tamaño pleno), guarda silencio (tamaño reducido) o VETA si la tendencia es
+  fuerte y opuesta. Sin noticia significativa no se abre nada: el EMA-cross en 5m
+  perdía dinero cuando originaba (finding-quant-production-loses), así que se le
+  quitó el gatillo y se le dejó como filtro de contexto.
 
 - `decide_event` (**Fast Path / originación por evento**): por LLEGADA de un
   shock de noticia. Aquí la NOTICIA origina y el quant ya NO es condición
@@ -45,7 +48,9 @@ def decide(
     """Combina señal técnica y sentimiento en una Decision auditable.
 
     Args:
-        signal:    salida del Quant Engine (score técnico en [-1, +1]).
+        signal:    salida del Quant Engine como RÉGIMEN (score de tendencia en
+                   [-1, +1], idealmente calculado en el HTF). Ya no origina la
+                   dirección: solo confirma/dimensiona la apuesta de la noticia.
         sentiment: salida del Sentiment Engine, o None si no hay noticia
                    relevante para este símbolo en la ventana actual. La
                    CADUCIDAD (TTL) del sentimiento la aplica quien posee el reloj
@@ -65,7 +70,7 @@ def decide(
     """
     cfg = (settings or load_settings()).confluence
     now = as_of or datetime.now(timezone.utc)
-    quant = signal.score
+    quant = signal.score        # ahora RÉGIMEN (tendencia HTF), confirma/dimensiona
     sent = sentiment.score if sentiment is not None else 0.0
     event_kind = sentiment.event_kind if sentiment is not None else "none"
 
@@ -83,40 +88,51 @@ def decide(
     # (0) Macro PROGRAMADO de resultado incierto (FOMC, CPI): no abrir HACIA un
     #     dato que puede ir a cualquier lado. Solo los `scheduled` bloquean; tiene
     #     prioridad sobre todo. Un `shock` direccional (hack/ETF/depeg) ya NO
-    #     bloquea: cae a la matriz normal (Plan V2 Fase 1.2, crítica #2 — corrige
-    #     la lógica invertida del v1 que tiraba los eventos más operables). El
-    #     refinamiento por ventana temporal (bloquear solo cerca del dato) y la
-    #     ORIGINACIÓN por shock viven en el Fast Path (Fase 2).
+    #     bloquea: cae a la matriz normal (Plan V2 Fase 1.2, crítica #2). La
+    #     ORIGINACIÓN por shock sub-vela vive en el Fast Path (`decide_event`);
+    #     aquí, un shock con score significativo SÍ origina como cualquier noticia.
     if event_kind == "scheduled":
         return _decision(Action.HOLD, 0.0, "scheduled_macro_block")
 
-    # (1) Sin señal técnica fuerte no se abre. Esto encarna el circuit breaker
-    #     (b): el sentimiento, por extremo que sea, no entra solo al mercado.
-    if abs(quant) < cfg.quant_strong_threshold:
-        return _decision(Action.HOLD, 0.0, "quant_weak")
-
-    direction = Action.LONG if quant > 0 else Action.SHORT
-    sent_aligned = _sign(sent) == _sign(quant)
+    # (1) INVERSIÓN DE ROLES (Opción 2): la NOTICIA origina la dirección, no el
+    #     quant. Sin sentimiento significativo no se abre NADA — el quant por sí
+    #     solo ya no entra al mercado (su EMA-cross en 5m perdía dinero originando;
+    #     ver memoria finding-quant-production-loses). Reusa el mismo umbral, pero
+    #     su rol pasó de "confirmar" a "originar".
     sent_significant = abs(sent) >= cfg.sentiment_confirm_threshold
+    if not sent_significant:
+        return _decision(Action.HOLD, 0.0, "no_news_origination")
 
-    # (2) Sentimiento significativo y OPUESTO al quant → la noticia puede
-    #     invalidar el patrón técnico. Mejor no operar (HOLD), no apostar a ciegas.
-    if sent_significant and not sent_aligned:
-        return _decision(Action.HOLD, 0.0, "sentiment_conflict")
+    # La noticia pone la dirección (antes la ponía el quant).
+    direction = Action.LONG if sent > 0 else Action.SHORT
 
-    # Gate de cortos (config, no venue hardcodeado). En Futuros USD-M va activo
-    # (allow_short=true) y los SHORT fluyen simétricos; ponerlo en false vuelve
-    # el bot long-only sin tocar código.
+    # (2) Gate de cortos (config, no venue hardcodeado). En Futuros USD-M va activo
+    #     (allow_short=true) y los SHORT fluyen simétricos; ponerlo en false vuelve
+    #     el bot long-only sin tocar código. Es una restricción dura de venue: se
+    #     evalúa antes que el régimen porque, si no podemos tomar la dirección,
+    #     da igual lo que diga la tendencia.
     if direction == Action.SHORT and not cfg.allow_short:
         return _decision(Action.HOLD, 0.0, "short_disabled")
 
-    # (3) Sentimiento confirma la dirección técnica → convicción plena.
-    if sent_significant and sent_aligned:
-        return _decision(direction, 1.0, "sentiment_confirms")
+    # Régimen = lectura de tendencia del quant en el timeframe superior (HTF). Ya
+    # NO origina; solo modula el TAMAÑO de la apuesta de la noticia.
+    regime_aligned = _sign(quant) == _sign(sent)
+    regime_strong = abs(quant) >= cfg.quant_strong_threshold
 
-    # (4) Sentimiento neutro (o ausente) → operamos la técnica con tamaño
-    #     reducido: hay señal de precio pero nadie la respalda con noticias.
-    return _decision(direction, cfg.reduced_size_factor, "sentiment_neutral")
+    # (3) Régimen FUERTE y OPUESTO a la noticia → no peleamos una tendencia 1h
+    #     marcada por un titular puntual (catch-a-falling-knife). Veto = HOLD.
+    #     Espejo simétrico del viejo "sentiment_conflict", con los roles cambiados.
+    if regime_strong and not regime_aligned:
+        return _decision(Action.HOLD, 0.0, "regime_conflict")
+
+    # (4) Régimen FUERTE y a favor → la tendencia HTF respalda la noticia →
+    #     convicción plena.
+    if regime_strong and regime_aligned:
+        return _decision(direction, 1.0, "regime_confirms")
+
+    # (5) Régimen débil/neutro → operamos la noticia con tamaño reducido: hay
+    #     catalizador, pero la tendencia no lo respalda ni lo contradice.
+    return _decision(direction, cfg.reduced_size_factor, "regime_neutral")
 
 
 def decide_event(

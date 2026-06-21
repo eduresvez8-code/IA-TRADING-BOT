@@ -727,20 +727,30 @@ def test_settings_yaml_orchestrator():
     s = load_settings()
     assert 20 <= s.orchestrator.warmup_candles <= 1000
     assert 1 <= s.orchestrator.reconcile_grace_cycles <= 20
+    # Régimen HTF (Opción 2): debe cubrir el mínimo del quant (ema_slow + rsi).
+    assert s.orchestrator.regime_htf_bars >= s.quant.ema_slow_period + s.quant.rsi_period
 
 
 def test_warmup_demasiado_corto_es_rechazado():
     # Un buffer < 20 velas no daría datos a los indicadores (ge=20).
     from src.core.config import OrchestratorConfig
     with pytest.raises(ValidationError):
-        OrchestratorConfig(warmup_candles=5, reconcile_grace_cycles=3)
+        OrchestratorConfig(warmup_candles=5, reconcile_grace_cycles=3, regime_htf_bars=50)
 
 
 def test_gracia_cero_es_rechazada():
     # Una gracia de 0 dispararía el HALT a la primera observación (ge=1).
     from src.core.config import OrchestratorConfig
     with pytest.raises(ValidationError):
-        OrchestratorConfig(warmup_candles=60, reconcile_grace_cycles=0)
+        OrchestratorConfig(warmup_candles=60, reconcile_grace_cycles=0, regime_htf_bars=50)
+
+
+def test_regime_htf_bars_por_debajo_del_minimo_del_quant_es_rechazado():
+    # El régimen necesita ema_slow(21) + rsi(14) = 35 velas HTF para tener señal;
+    # ge=35 lo garantiza. Menos sería un quant que nunca confirma.
+    from src.core.config import OrchestratorConfig
+    with pytest.raises(ValidationError):
+        OrchestratorConfig(warmup_candles=60, reconcile_grace_cycles=3, regime_htf_bars=34)
 
 
 # ------------------------- EventConfig (Plan V2 Fase 2.1) -------------------------
