@@ -487,6 +487,9 @@ def test_resolve_scope_wildcard_e_interseccion():
     assert set(orch._resolve_scope(["*"])) == set(CFG.market.symbols)
     assert orch._resolve_scope(["BTCUSDT", "DOGEUSDT"]) == ["BTCUSDT"]  # filtra lo no seguido
     assert orch._resolve_scope(["DOGEUSDT"]) == []
+    # FIX DEUDA_TICKER: el ticker de activo base que devuelve Claude ahora machea el
+    # par completo (BTC → BTCUSDT), antes caía a [] y solo entraba por "*".
+    assert orch._resolve_scope(["BTC"]) == ["BTCUSDT"]
 
 
 # ---- on_event: gate maestro y circuit breakers ----

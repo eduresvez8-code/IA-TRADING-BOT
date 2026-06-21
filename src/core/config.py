@@ -37,6 +37,11 @@ class MarketConfig(BaseModel):
     symbols: list[str]
     timeframe: str
     htf_timeframe: str
+    # Quotes válidos para derivar el ACTIVO BASE de un símbolo (BTCUSDT → BTC) al
+    # resolver el scope de una noticia (src/core/scope.py). Cero Hardcoding: el
+    # código no asume "USDT". Solo operamos perps USD-M, así que por defecto en el
+    # YAML es ["USDT"]; añadir USDC/otros aquí si algún día se opera ese quote.
+    quote_assets: list[str] = Field(min_length=1)
 
 
 class RiskConfig(BaseModel):

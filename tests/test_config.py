@@ -35,9 +35,21 @@ def _valid_sentiment_kwargs(**overrides):
     return base
 
 
+def test_market_quote_assets_requerido_no_vacio():
+    # quote_assets gobierna la derivación del activo base al resolver scope de
+    # noticias (src/core/scope.py). min_length=1: una lista vacía no permitiría
+    # macher 'BTC'→'BTCUSDT' y dejaría la DEUDA_TICKER sin arreglar.
+    from src.core.config import MarketConfig
+    with pytest.raises(ValidationError):
+        MarketConfig(symbols=["BTCUSDT"], timeframe="5m", htf_timeframe="1h", quote_assets=[])
+    mc = MarketConfig(symbols=["BTCUSDT"], timeframe="5m", htf_timeframe="1h", quote_assets=["USDT"])
+    assert mc.quote_assets == ["USDT"]
+
+
 def test_settings_yaml_del_repo_es_valido():
     s = load_settings()
     assert "BTCUSDT" in s.market.symbols
+    assert s.market.quote_assets == ["USDT"]
     assert s.risk.risk_per_trade_pct <= 2.0
     assert len(s.sentiment.rss_feeds) >= 1
     assert s.backtest.initial_capital > 0

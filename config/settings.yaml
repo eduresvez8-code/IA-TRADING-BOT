@@ -6,6 +6,7 @@ market:
   symbols: ["BTCUSDT", "ETHUSDT"]
   timeframe: "5m"            # vela base de trabajo
   htf_timeframe: "1h"        # timeframe superior para contexto/tendencia
+  quote_assets: ["USDT"]     # quotes para derivar el activo base (BTCUSDT→BTC) al resolver scope de noticias
 
 risk:
   risk_per_trade_pct: 1.0    # % del capital arriesgado por operación

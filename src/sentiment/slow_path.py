@@ -47,6 +47,7 @@ from typing import Awaitable, Callable
 
 from src.core.config import Secrets, SentimentConfig, Settings
 from src.core.models import NewsItem, SentimentScore
+from src.core.scope import resolve_scope
 from src.sentiment.analyzer import analyze
 from src.sentiment.events import FetchFeedsFn
 from src.sentiment.feeds import fetch_feeds
@@ -55,28 +56,11 @@ from src.sentiment.scoring import AnalyzeFn, score_item
 logger = logging.getLogger(__name__)
 
 
-def resolve_scope(scope: list[str], symbols: list[str]) -> list[str]:
-    """Resuelve el symbol_scope de una noticia a los símbolos que operamos.
-
-    "*" (todo el mercado) → todos los configurados; en otro caso, la intersección
-    EXACTA con `symbols` (ignoramos tickers que no seguimos). Misma semántica que
-    `Orchestrator._resolve_scope` para que Fast y Slow Path traten el scope igual.
-
-    TODO: DEUDA_TICKER — Claude devuelve tickers como ["BTC"], pero `symbols` son
-    ["BTCUSDT"], así que un scope NO-wildcard rara vez machea y casi todo el overlay
-    entra por "*". Normalizar (BTC→BTCUSDT) debe hacerse de forma consistente en
-    AMBOS paths (este `resolve_scope` y `Orchestrator._resolve_scope`) y alineado con
-    el prompt de `analyze` → es un módulo aparte, fuera del alcance de esta sesión.
-    """
-    if "*" in scope:
-        return list(symbols)
-    return [s for s in scope if s in symbols]
-
-
 async def fetch_sentiment(
     config: SentimentConfig,
     symbols: list[str],
     *,
+    quote_assets: list[str],
     analyze_fn: AnalyzeFn,
     seen: dict[str, datetime],
     fetch_feeds_fn: FetchFeedsFn = fetch_feeds,
@@ -88,6 +72,8 @@ async def fetch_sentiment(
         config:     SentimentConfig (feeds RSS + heuristic_weight + max_news_age_hours).
         symbols:    los símbolos que operamos (`settings.market.symbols`), para
                     resolver el scope de cada noticia.
+        quote_assets: quotes para derivar el activo base al resolver scope
+                    (`settings.market.quote_assets`); ver `src/core/scope.py`.
         analyze_fn: escala un NewsItem a SentimentScore (Claude en prod).
         seen:       estado del caller: news_id → instante en que se emitió. Se muta
                     in-place (dedup persistente entre polls).
@@ -128,7 +114,7 @@ async def fetch_sentiment(
         seen[item.id] = now  # visto aunque sea None (irrelevante no merece re-evaluación)
         if score is None:
             continue
-        for sym in resolve_scope(score.symbol_scope, symbols):
+        for sym in resolve_scope(score.symbol_scope, symbols, quote_assets):
             out[sym] = score
     return out
 
@@ -156,6 +142,7 @@ def build_sentiment_fetch(
         return await fetch_sentiment(
             settings.sentiment,
             settings.market.symbols,
+            quote_assets=settings.market.quote_assets,
             analyze_fn=_analyze,
             seen=seen,
         )

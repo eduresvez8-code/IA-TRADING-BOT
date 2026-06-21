@@ -8,11 +8,12 @@ from datetime import datetime, timedelta, timezone
 
 from src.core.config import load_settings
 from src.core.models import NewsItem, SentimentScore
-from src.sentiment.slow_path import fetch_sentiment, resolve_scope
+from src.sentiment.slow_path import fetch_sentiment
 
 NOW = datetime(2026, 6, 19, 12, 0, tzinfo=timezone.utc)
 CFG = load_settings().sentiment
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
+QUOTES = ["USDT"]   # para resolver el scope por activo base (ver tests/core/test_scope.py)
 
 # Títulos calibrados al filtro (mismos que test_events): "hacked"→escala a Claude,
 # "steady"→relevante-no-escala (score local), "Apple"→irrelevante (None).
@@ -47,17 +48,10 @@ def make_feeds(items: list[NewsItem]):
     return fetch_feeds_fn
 
 
-def test_resolve_scope_wildcard_y_exacto():
-    assert resolve_scope(["*"], SYMBOLS) == SYMBOLS          # mercado → todos
-    assert resolve_scope(["BTCUSDT"], SYMBOLS) == ["BTCUSDT"]  # exacto
-    assert resolve_scope(["BTC"], SYMBOLS) == []             # "BTC" != "BTCUSDT"
-    assert resolve_scope(["DOGEUSDT"], SYMBOLS) == []        # no lo seguimos
-
-
 async def test_wildcard_se_expande_a_todos_los_simbolos():
     calls: list[str] = []
     out = await fetch_sentiment(
-        CFG, SYMBOLS, analyze_fn=make_analyze(calls), seen={},
+        CFG, SYMBOLS, quote_assets=QUOTES,analyze_fn=make_analyze(calls), seen={},
         fetch_feeds_fn=make_feeds([make_news(SHOCK), make_news(IRRELEVANT)]), now=NOW,
     )
     assert set(out) == {"BTCUSDT", "ETHUSDT"}    # "*" llega a ambos
@@ -65,12 +59,25 @@ async def test_wildcard_se_expande_a_todos_los_simbolos():
     assert calls == [SHOCK[:16]]                 # Claude SOLO sobre el shock
 
 
+async def test_scope_por_activo_base_mapea_a_un_solo_simbolo():
+    # FIX DEUDA_TICKER en el Slow Path: Claude devuelve scope ["BTC"] → debe entrar
+    # SOLO en BTCUSDT (no en ambos como con "*"), gracias al match por activo base.
+    calls: list[str] = []
+    out = await fetch_sentiment(
+        CFG, SYMBOLS, quote_assets=QUOTES,
+        analyze_fn=make_analyze(calls, scope=("BTC",)), seen={},
+        fetch_feeds_fn=make_feeds([make_news(SHOCK)]), now=NOW,
+    )
+    assert set(out) == {"BTCUSDT"}              # solo BTC, no ETH
+    assert out["BTCUSDT"].news_id == SHOCK[:16]
+
+
 async def test_last_write_wins_por_published_at():
     calls: list[str] = []
     viejo = make_news(SHOCK, id="old", published_at=NOW - timedelta(hours=1))
     nuevo = make_news(SHOCK, id="new", published_at=NOW)
     out = await fetch_sentiment(
-        CFG, SYMBOLS, analyze_fn=make_analyze(calls, scores={"old": 0.2, "new": 0.9}),
+        CFG, SYMBOLS, quote_assets=QUOTES,analyze_fn=make_analyze(calls, scores={"old": 0.2, "new": 0.9}),
         seen={}, fetch_feeds_fn=make_feeds([nuevo, viejo]), now=NOW,   # orden mezclado
     )
     assert out["BTCUSDT"].score == 0.9 and out["ETHUSDT"].score == 0.9  # gana el nuevo
@@ -81,7 +88,7 @@ async def test_score_local_se_emite_sin_llamar_a_claude():
     # relevante-no-escalado: score local, sin gastar Claude.
     calls: list[str] = []
     out = await fetch_sentiment(
-        CFG, SYMBOLS, analyze_fn=make_analyze(calls), seen={},
+        CFG, SYMBOLS, quote_assets=QUOTES,analyze_fn=make_analyze(calls), seen={},
         fetch_feeds_fn=make_feeds([make_news(LOCAL)]), now=NOW,
     )
     assert set(out) == {"BTCUSDT", "ETHUSDT"}   # score local entra (scope ["*"])
@@ -91,7 +98,7 @@ async def test_score_local_se_emite_sin_llamar_a_claude():
 async def test_irrelevante_no_entra_pero_se_marca_visto():
     seen: dict[str, datetime] = {}
     out = await fetch_sentiment(
-        CFG, SYMBOLS, analyze_fn=make_analyze([]), seen=seen,
+        CFG, SYMBOLS, quote_assets=QUOTES,analyze_fn=make_analyze([]), seen=seen,
         fetch_feeds_fn=make_feeds([make_news(IRRELEVANT)]), now=NOW,
     )
     assert out == {}                            # no relevante → fuera del store
@@ -103,9 +110,9 @@ async def test_dedup_no_repuntua_el_mismo_titular():
     seen: dict[str, datetime] = {}
     analyze = make_analyze(calls)
     feeds = make_feeds([make_news(SHOCK)])
-    first = await fetch_sentiment(CFG, SYMBOLS, analyze_fn=analyze, seen=seen,
+    first = await fetch_sentiment(CFG, SYMBOLS, quote_assets=QUOTES,analyze_fn=analyze, seen=seen,
                                   fetch_feeds_fn=feeds, now=NOW)
-    second = await fetch_sentiment(CFG, SYMBOLS, analyze_fn=analyze, seen=seen,
+    second = await fetch_sentiment(CFG, SYMBOLS, quote_assets=QUOTES,analyze_fn=analyze, seen=seen,
                                    fetch_feeds_fn=feeds, now=NOW)
     assert set(first) == {"BTCUSDT", "ETHUSDT"} and second == {}  # 2º poll no re-emite
     assert calls == [SHOCK[:16]]                                  # Claude una vez
@@ -116,7 +123,7 @@ async def test_frescura_descarta_titular_viejo_sin_llamar_a_claude():
     viejo_h = CFG.max_news_age_hours + 1
     viejo = make_news(SHOCK, published_at=NOW - timedelta(hours=viejo_h))
     out = await fetch_sentiment(
-        CFG, SYMBOLS, analyze_fn=make_analyze(calls), seen={},
+        CFG, SYMBOLS, quote_assets=QUOTES,analyze_fn=make_analyze(calls), seen={},
         fetch_feeds_fn=make_feeds([viejo]), now=NOW,
     )
     assert out == {} and calls == []            # ni se emite ni se gasta Claude
@@ -125,7 +132,7 @@ async def test_frescura_descarta_titular_viejo_sin_llamar_a_claude():
 async def test_seen_se_purga_por_la_ventana_de_frescura():
     viejo_h = CFG.max_news_age_hours + 1
     seen = {"viejo_id": NOW - timedelta(hours=viejo_h)}
-    await fetch_sentiment(CFG, SYMBOLS, analyze_fn=make_analyze([]), seen=seen,
+    await fetch_sentiment(CFG, SYMBOLS, quote_assets=QUOTES,analyze_fn=make_analyze([]), seen=seen,
                           fetch_feeds_fn=make_feeds([]), now=NOW)
     assert "viejo_id" not in seen
 
@@ -134,7 +141,7 @@ async def test_fallo_de_claude_se_salta_y_se_reintenta():
     calls: list[str] = []
     seen: dict[str, datetime] = {}
     out = await fetch_sentiment(
-        CFG, SYMBOLS, analyze_fn=make_analyze(calls, raise_on=SHOCK[:16]), seen=seen,
+        CFG, SYMBOLS, quote_assets=QUOTES,analyze_fn=make_analyze(calls, raise_on=SHOCK[:16]), seen=seen,
         fetch_feeds_fn=make_feeds([make_news(SHOCK)]), now=NOW,
     )
     assert out == {}

@@ -34,6 +34,7 @@ from typing import Awaitable, Callable
 import pandas as pd
 
 from src.core.config import Settings, load_settings
+from src.core.scope import resolve_scope
 from src.core.models import (
     Action,
     Candle,
@@ -318,13 +319,13 @@ class Orchestrator:
     def _resolve_scope(self, scope: list[str]) -> list[str]:
         """Resuelve el symbol_scope de una noticia a los símbolos que operamos.
 
-        "*" (todo el mercado) → todos los configurados; en otro caso, la
-        intersección con market.symbols (ignoramos símbolos que no seguimos).
+        Delega en `src/core/scope.resolve_scope` (única fuente de verdad, compartida
+        con el Slow Path): "*" → todos; en otro caso machea por nombre completo o por
+        ACTIVO BASE (BTC → BTCUSDT, vía market.quote_assets). Ignora lo no seguido.
         """
-        syms = self.cfg.market.symbols
-        if "*" in scope:
-            return list(syms)
-        return [s for s in scope if s in syms]
+        return resolve_scope(
+            scope, self.cfg.market.symbols, self.cfg.market.quote_assets
+        )
 
     async def _cycle(self, sym: str, candle: Candle, now: datetime) -> None:
         acct = await self.executor.exchange.get_account()

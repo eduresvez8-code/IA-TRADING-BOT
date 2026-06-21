@@ -48,6 +48,7 @@ from datetime import datetime, timedelta, timezone
 
 from src.core.config import load_secrets, load_settings
 from src.core.models import NewsItem, SentimentScore
+from src.core.scope import resolve_scope
 from src.sentiment.analyzer import analyze
 from src.sentiment.events import fetch_events
 from src.sentiment.feeds import fetch_feeds
@@ -149,24 +150,28 @@ async def run_fast_path(
         print("  (Amplía con --age-hours N si quieres ver la pipeline de Claude con noticias más viejas.)")
         return
 
-    print(f"{'Score':>6}  {'Conf':>5}  {'Scope':<12}  {'Origina':>8}  {'Dir':>7}  Rationale")
+    symbols = settings.market.symbols
+    quotes = settings.market.quote_assets
+    print(f"{'Score':>6}  {'Conf':>5}  {'Scope':<10}  {'→Símbolos':<18}  {'Origina':>8}  {'Dir':>7}  Rationale")
     print("-" * 100)
     n_orig = 0
     for sc in sorted(scores, key=lambda s: abs(s.score), reverse=True):
         originates = abs(sc.score) >= ev.min_impact_score and sc.confidence >= ev.min_confidence
         if originates:
             n_orig += 1
-        scope = ",".join(sc.symbol_scope)[:12]
+        scope = ",".join(sc.symbol_scope)[:10]
+        # Resolución real (fix DEUDA_TICKER): a qué símbolos del universo entra.
+        resolved = resolve_scope(sc.symbol_scope, symbols, quotes)
+        resolved_txt = (",".join(resolved) or "(ninguno)")[:18]
         flag = "✅ SÍ" if originates else "—"
-        print(f"{sc.score:>+6.2f}  {sc.confidence:>5.2f}  {scope:<12}  {flag:>8}  "
-              f"{_dir(sc.score):>7}  {sc.rationale[:46]}")
+        print(f"{sc.score:>+6.2f}  {sc.confidence:>5.2f}  {scope:<10}  {resolved_txt:<18}  "
+              f"{flag:>8}  {_dir(sc.score):>7}  {sc.rationale[:40]}")
 
     print("-" * 100)
     print(f"  Shocks analizados por Claude: {len(scores)}  |  originarían trade: {n_orig}")
     print(f"  Llamadas a Claude gastadas: {calls['n']}")
-    if any("*" not in s.symbol_scope for s in scores):
-        print("  ⚠ DEUDA_TICKER: algún scope no-wildcard (p.ej. ['BTC']) NO machea "
-              "['BTCUSDT']; en vivo entraría solo el scope '*'.")
+    print(f"  (→Símbolos resuelve el scope por activo base: 'BTC'→'BTCUSDT'. Vacío = "
+          f"shock de un activo que NO operamos.)")
 
 
 # ---------------------------------------------------------------------------
