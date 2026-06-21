@@ -184,18 +184,59 @@ async def test_score_is_clamped_below_minus_one():
 # ---------------------------------------------------------------------------
 
 
-async def test_analyze_raises_on_invalid_json():
-    """If Claude returns non-JSON, we raise ValueError with a clear message."""
+def _mock_claude_raw(text: str) -> MagicMock:
+    """Mock que devuelve `text` CRUDO (sin json.dumps): para simular fences/preámbulos."""
     mock_response = MagicMock()
-    mock_response.content = [MagicMock(text="Sorry, I cannot analyze this.")]
-
+    mock_response.content = [MagicMock(text=text)]
     mock_client = MagicMock()
     mock_client.messages = AsyncMock()
     mock_client.messages.create = AsyncMock(return_value=mock_response)
+    return mock_client
 
+
+async def test_analyze_raises_when_no_json_object():
+    """Sin ningún objeto JSON (no hay llaves) → ValueError claro."""
+    mock_client = _mock_claude_raw("Sorry, I cannot analyze this.")
+    with patch("src.sentiment.analyzer.anthropic.AsyncAnthropic", return_value=mock_client):
+        with pytest.raises(ValueError, match="no JSON object"):
+            await analyze(make_news(), make_config(), make_secrets())
+
+
+async def test_analyze_raises_on_malformed_json_object():
+    """Hay llaves pero el contenido no es JSON válido → ValueError 'not valid JSON'."""
+    mock_client = _mock_claude_raw("{ score: not-json, }")
     with patch("src.sentiment.analyzer.anthropic.AsyncAnthropic", return_value=mock_client):
         with pytest.raises(ValueError, match="not valid JSON"):
             await analyze(make_news(), make_config(), make_secrets())
+
+
+async def test_analyze_strips_markdown_fence():
+    """REGRESIÓN (cazado por el demo del Fast Path en vivo): claude-haiku-4-5
+    envuelve el JSON en ```json … ``` pese a pedirle 'no markdown'. Debe parsearse
+    igual extrayendo el objeto entre la primera { y la última }."""
+    payload = {
+        "score": -0.85, "confidence": 0.92, "high_impact": True,
+        "symbol_scope": ["*"], "rationale": "Major exchange hack.",
+    }
+    fenced = "```json\n" + json.dumps(payload) + "\n```"
+    with patch("src.sentiment.analyzer.anthropic.AsyncAnthropic", return_value=_mock_claude_raw(fenced)):
+        result = await analyze(make_news(), make_config(), make_secrets())
+    assert result.score == pytest.approx(-0.85)
+    assert result.confidence == pytest.approx(0.92)
+    assert result.symbol_scope == ["*"]
+
+
+async def test_analyze_handles_preamble_text():
+    """Claude a veces añade un preámbulo antes del JSON ('Here is the analysis:')."""
+    payload = {
+        "score": 0.6, "confidence": 0.8, "high_impact": False,
+        "symbol_scope": ["BTC"], "rationale": "Bullish.",
+    }
+    noisy = "Here is the analysis:\n" + json.dumps(payload) + "\nHope this helps!"
+    with patch("src.sentiment.analyzer.anthropic.AsyncAnthropic", return_value=_mock_claude_raw(noisy)):
+        result = await analyze(make_news(), make_config(), make_secrets())
+    assert result.score == pytest.approx(0.6)
+    assert result.symbol_scope == ["BTC"]
 
 
 # ---------------------------------------------------------------------------

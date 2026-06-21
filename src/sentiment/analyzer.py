@@ -65,8 +65,20 @@ async def analyze(
     )
 
     raw = response.content[0].text
+    # Claude envuelve el JSON en un bloque markdown (```json … ```) o le añade un
+    # preámbulo PESE a pedirle "no markdown" en el prompt. Es comportamiento real
+    # observado con claude-haiku-4-5 (lo cazó el demo del Fast Path en vivo; los
+    # mocks de los tests devolvían JSON limpio y lo ocultaban). En vez de confiar en
+    # que obedezca, extraemos el objeto entre la PRIMERA '{' y la ÚLTIMA '}': robusto
+    # a fences, preámbulos y texto sobrante sin depender del formato exacto.
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        logger.error("Claude returned no JSON object for news_id=%s: %.200s", item.id, raw)
+        raise ValueError("Claude response contains no JSON object")
+    candidate = raw[start : end + 1]
     try:
-        data = json.loads(raw)
+        data = json.loads(candidate)
     except json.JSONDecodeError as exc:
         logger.error("Claude returned non-JSON for news_id=%s: %.200s", item.id, raw)
         raise ValueError(f"Claude response is not valid JSON: {exc}") from exc
