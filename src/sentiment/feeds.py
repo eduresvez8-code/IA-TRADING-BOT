@@ -1,10 +1,14 @@
 """RSS feed ingestion.
 
-Fetches all configured feeds asynchronously and returns deduplicated NewsItems.
+Fetches all configured feeds concurrently and returns deduplicated NewsItems.
 Deduplication is by URL hash (SHA-256 prefix): the same story from two feeds
 appears once.
+
+Fetches run in parallel (asyncio.gather): total latency = max(individual feeds),
+not sum — so one slow or blocked feed can't stall the others.
 """
 
+import asyncio
 import calendar
 import hashlib
 import logging
@@ -19,25 +23,45 @@ from src.core.models import NewsItem
 
 logger = logging.getLogger(__name__)
 
+_USER_AGENT = "Mozilla/5.0 (compatible; NewsBot/1.0)"
+
+
+async def _fetch_one(
+    client: httpx.AsyncClient, url: str
+) -> list[NewsItem]:
+    """Fetch a single RSS feed; return [] on any error (don't block other feeds)."""
+    try:
+        response = await client.get(url)
+        feed = feedparser.parse(response.text)
+        items = []
+        for entry in feed.entries:
+            item = _parse_entry(entry, url)
+            if item:
+                items.append(item)
+        return items
+    except Exception as exc:
+        logger.warning("Error fetching %s: %s", url, exc)
+        return []
+
 
 async def fetch_feeds(config: SentimentConfig) -> list[NewsItem]:
-    """Fetch and deduplicate all configured RSS feeds."""
+    """Fetch and deduplicate all configured RSS feeds (concurrent)."""
+    async with httpx.AsyncClient(
+        timeout=config.fetch_timeout_seconds,
+        follow_redirects=True,
+        headers={"User-Agent": _USER_AGENT},
+    ) as client:
+        batches = await asyncio.gather(
+            *[_fetch_one(client, url) for url in config.rss_feeds]
+        )
+
     items: list[NewsItem] = []
     seen_ids: set[str] = set()
-
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        for url in config.rss_feeds:
-            try:
-                response = await client.get(url)
-                feed = feedparser.parse(response.text)
-                for entry in feed.entries:
-                    item = _parse_entry(entry, url)
-                    if item and item.id not in seen_ids:
-                        items.append(item)
-                        seen_ids.add(item.id)
-            except httpx.HTTPError as exc:
-                logger.warning("Error fetching %s: %s", url, exc)
-
+    for batch in batches:
+        for item in batch:
+            if item.id not in seen_ids:
+                items.append(item)
+                seen_ids.add(item.id)
     return items
 
 

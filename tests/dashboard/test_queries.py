@@ -82,11 +82,19 @@ async def test_liveness_fresco_vs_obsoleto(populated):
     assert stale["meta"]["stale"] is True          # 2000s > 900s
 
 
-async def test_modo_gates_off_por_defecto(populated):
+async def test_modo_slow_path_activo(populated):
+    # settings.yaml del repo (2026-06-21): sentiment=True, event=False → Slow Path.
     snap = build_snapshot(populated, now=NOW, testnet=True)
-    # settings.yaml del repo: event/sentiment enabled = false → sin originación.
-    assert "Gates OFF" in snap["meta"]["mode"]
+    assert "Slow Path" in snap["meta"]["mode"]
     assert snap["meta"]["event_enabled"] is False
+    assert snap["meta"]["sentiment_enabled"] is True
+
+
+async def test_modo_gates_off_cuando_ambos_desactivados(populated):
+    populated.event.enabled = False
+    populated.sentiment.enabled = False
+    snap = build_snapshot(populated, now=NOW, testnet=True)
+    assert "Gates OFF" in snap["meta"]["mode"]
 
 
 async def test_modo_hibrido_con_ambos_gates(populated):

@@ -26,6 +26,7 @@ def _valid_sentiment_kwargs(**overrides):
         enabled=False,
         rss_feeds=["https://coindesk.com/rss"],
         poll_interval_seconds=120,
+        fetch_timeout_seconds=10,
         claude_model="claude-haiku-4-5-20251001",
         heuristic_weight=0.7,
         escalate_score_threshold=0.3,
@@ -57,9 +58,9 @@ def test_settings_yaml_del_repo_es_valido():
     assert 0.0 <= s.sentiment.heuristic_weight <= 1.0
     assert 0.0 < s.sentiment.escalate_score_threshold < 1.0
     assert s.sentiment.max_news_age_hours >= 1
-    # Gate de seguridad del overlay de sentimiento: OFF por defecto en el repo
-    # (quant puro; activarlo gasta Claude y es decisión explícita de Eduardo).
-    assert s.sentiment.enabled is False
+    # Gate de sentimiento: booleano válido (True en testnet live, False por defecto).
+    assert isinstance(s.sentiment.enabled, bool)
+    assert 5 <= s.sentiment.fetch_timeout_seconds <= 60
 
 
 def test_sentiment_config_valido():

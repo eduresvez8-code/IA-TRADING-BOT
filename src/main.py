@@ -217,7 +217,12 @@ async def live() -> int:
     # decide si run() arranca el _sentiment_loop. Con el flag apagado el callable
     # nunca se invoca → cero tokens de Claude y la señal quant queda PURA (no se
     # altera la línea base de paper trading). Activarlo es decisión explícita.
-    sentiment_fetch = build_sentiment_fetch(settings, secrets)
+    async def _on_scored(item, score) -> None:
+        ts_ms = int(score.analyzed_at.timestamp() * 1000)
+        await storage.save_news(item)
+        await storage.save_sentiment_score(score, ts_ms=ts_ms)
+
+    sentiment_fetch = build_sentiment_fetch(settings, secrets, on_scored=_on_scored)
     if settings.sentiment.enabled and not secrets.anthropic_api_key:
         # Misma salvaguarda que el Fast Path: gate abierto + sin clave = restart loop.
         print("⚠ sentiment.enabled=true pero falta ANTHROPIC_API_KEY en .env — el "

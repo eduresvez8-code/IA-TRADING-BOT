@@ -38,6 +38,8 @@ async def score_item(
     escalate = fr.is_high_impact or abs(fr.local_score) >= config.escalate_score_threshold
     if escalate:
         score = await analyze_fn(item)
+        if score is None:
+            return None
         # event_kind es una etiqueta determinista por términos (del filtro), no un
         # juicio de Claude: la fijamos aquí para que el origen sea auditable y
         # gratuito, sin depender del esquema JSON del modelo.

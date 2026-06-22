@@ -49,6 +49,7 @@ def make_config(feeds: list[str] | None = None) -> SentimentConfig:
         enabled=False,
         rss_feeds=feeds or ["https://coindesk.com/rss"],
         poll_interval_seconds=120,
+        fetch_timeout_seconds=10,
         claude_model="claude-haiku-4-5-20251001",
         heuristic_weight=0.7,
         escalate_score_threshold=0.3,

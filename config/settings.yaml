@@ -68,9 +68,11 @@ sentiment:
   enabled: true                # Slow Path ON (Opción 2): noticias originan, régimen 1h confirma — validación testnet 2026-06-21
   rss_feeds:
     - "https://www.coindesk.com/arc/outboundfeeds/rss/"
-    - "https://cointelegraph.com/rss"
     - "https://decrypt.co/feed"
+    - "https://theblock.co/rss.xml"
+    - "https://beincrypto.com/feed/"
   poll_interval_seconds: 120
+  fetch_timeout_seconds: 10   # timeout por feed; feeds paralelos → total = max(individuales)
   claude_model: "claude-haiku-4-5-20251001"
   heuristic_weight: 0.7        # peso del diccionario cripto vs. VADER (VADER = 1 - esto)
   escalate_score_threshold: 0.3  # |score_local| >= esto → llamar a Claude

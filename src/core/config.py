@@ -127,6 +127,7 @@ class SentimentConfig(BaseModel):
     enabled: bool
     rss_feeds: list[str]
     poll_interval_seconds: int = Field(ge=30)
+    fetch_timeout_seconds: int = Field(default=10, ge=5, le=60)
     claude_model: str
     heuristic_weight: float = Field(ge=0.0, le=1.0)
     escalate_score_threshold: float = Field(gt=0.0, lt=1.0)

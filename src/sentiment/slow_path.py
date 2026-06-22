@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Optional
 
 from src.core.config import Secrets, SentimentConfig, Settings
 from src.core.models import NewsItem, SentimentScore
@@ -55,6 +55,8 @@ from src.sentiment.scoring import AnalyzeFn, score_item
 
 logger = logging.getLogger(__name__)
 
+OnScoredFn = Callable[[NewsItem, SentimentScore], Awaitable[None]]
+
 
 async def fetch_sentiment(
     config: SentimentConfig,
@@ -65,6 +67,7 @@ async def fetch_sentiment(
     seen: dict[str, datetime],
     fetch_feeds_fn: FetchFeedsFn = fetch_feeds,
     now: datetime | None = None,
+    on_scored: Optional[OnScoredFn] = None,
 ) -> dict[str, SentimentScore]:
     """Sondea los feeds y devuelve el sentimiento FRESCO y NO VISTO por símbolo.
 
@@ -114,13 +117,21 @@ async def fetch_sentiment(
         seen[item.id] = now  # visto aunque sea None (irrelevante no merece re-evaluación)
         if score is None:
             continue
+        if on_scored is not None:
+            try:
+                await on_scored(item, score)
+            except Exception:
+                logger.warning("on_scored falló para news_id=%s", item.id, exc_info=True)
         for sym in resolve_scope(score.symbol_scope, symbols, quote_assets):
             out[sym] = score
     return out
 
 
 def build_sentiment_fetch(
-    settings: Settings, secrets: Secrets
+    settings: Settings,
+    secrets: Secrets,
+    *,
+    on_scored: Optional[OnScoredFn] = None,
 ) -> Callable[[], Awaitable[dict[str, SentimentScore]]]:
     """Arma el `sentiment_fetch` de PRODUCCIÓN (Claude real + `seen` persistente).
 
@@ -145,6 +156,7 @@ def build_sentiment_fetch(
             quote_assets=settings.market.quote_assets,
             analyze_fn=_analyze,
             seen=seen,
+            on_scored=on_scored,
         )
 
     return _sentiment_fetch
