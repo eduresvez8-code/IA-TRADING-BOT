@@ -228,13 +228,17 @@ en orden: **Don Pirry** (retratos, sus manos, sus gafas) › el **grano** › la
 
 ---
 
-## ✅ Para avanzar necesito de vos
+## ✅ Identidad visual — DECISIONES FINALES (2026-06-22)
 
-1. **Ruta de logo:** ¿**1** (Sello del Maestro), **2** (Firma) o **3** (Ciencia)?
-   *(recomiendo 1, con la firma 2 de apoyo)*
-2. **Paleta:** ¿**A** (tu verde), **B** (Etiqueta de autor) o **C** (salvia/honey)?
-   *(recomiendo B)*
-3. *(Opcional)* ¿Te laten las tipografías del **Combo 1**?
+- **Logo (cara principal):** **Ruta 5 — Retrato de una línea** de Don Pirry.
+- **Sistema de marca:** cara = **Ruta 5** · ícono/sello = monograma **DP** (Ruta 4) ·
+  **firma** en el cierre de la bolsa · toques de **ciencia** (gota/burbuja) en los
+  sellos de proceso.
+- **Paleta:** **B (Etiqueta de autor)** — crema `#F2E8D8` · espresso `#2A1B12` ·
+  dorado `#C9A24B` · cobre `#B0552F`.
+- **Tipografías:** Combo 1 — **Fraunces** (titular) + **Work Sans** (texto) + firma
+  manuscrita. *(Cambiable si no te late.)*
 
-Con eso preparo el **brief final para el ilustrador** + el primer **mockup de bolsa**
-(Fase 4). Te dejo los bocetos visuales abajo. 👇
+**Siguiente:** `03-brief-ilustrador-logo.md` (specs para producir el logo real) →
+**Fase 4 — Empaque**. Para el retrato real necesito una **foto de frente de Don
+Pirry**, con buena luz.
