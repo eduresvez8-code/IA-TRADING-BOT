@@ -37,10 +37,12 @@ como **🔎 Mi lectura honesta**.
 
 | Atributo | Dato | Valor de marca |
 |----------|------|----------------|
-| Municipio | **Pueblo Rico, Risaralda** | Origen específico, no genérico |
-| Altura | **1.600 msnm** | Rango de café especial |
-| Variedades | **Castillo Rosario** y **Bourbon Rosado (Pink Bourbon)** | Pink Bourbon = varietal de moda, muy buscado en specialty |
-| Procesos | Fermentaciones cuidadas/experimentales | Diferenciador real, ownable |
+| Municipio | **Pueblo Rico, Risaralda** | Zona de **caña/panela**, no cafetera → Don Pirry es **pionero** |
+| Finca / vereda | **La Manuelita**, vereda **El Recreo** | Nombres reales para trazabilidad y etiqueta |
+| Altura | **1.600 msnm** | Trazabilidad (NO usar como bandera "altura" — legal) |
+| Referente geográfico | **Cerro Tatamá** cerca | Solo contexto poético ("vivimos en un paraíso"), no ícono |
+| Variedades | **Castillo Rosario** (Clásico) y **Borbón Rosado** (Reserva) | Borbón Rosado = Pink Bourbon, varietal de moda en specialty |
+| Procesos | Lavado / **Honey** / Natural — fermentaciones inoculadas | **Estrella: Borbón Rosado Honey.** Diferenciador real, ownable |
 | Calidad de taza | **Hasta 89 puntos SCA** | 80+ = especial; 85+ = excelente; **89 = sobresaliente** |
 
 **🔎 Mi lectura honesta:** este es tu activo más fuerte y lo estabas
@@ -54,9 +56,18 @@ tienes **real y verificable**. Hay que ponerla al frente, no esconderla.
 ## 4. Don Pirry — el corazón de la marca
 
 - Papá de Eduardo, **60 años**. ~10 años dedicado de lleno al café.
-- **Apasionado por la tecnología** y por lograr la mejor fermentación posible.
-  Trata el café casi como un proyecto técnico → busca el café más especial.
-- "Le mete muchísima pasión" → de ahí el eslogan.
+- **Volvió de Europa** y eligió el campo colombiano (Pueblo Rico). Cosmopolita
+  que elige la tierra → rompe el cliché del campesino.
+- Camino real: **lulo → caña (con tecnología) → café**. Eligió el café por "el
+  pensamiento innovador, mejorar procesos, aumentar calidad en taza".
+- **Casi un científico del café:** microbiología del grano (**Tecnicafé, Cauca**;
+  **Dr. Julián Ovidio Cucuñame Balcázar**), **barismo (SENA)**, y **fermentaciones
+  prolongadas, controladas e inoculadas con microorganismos que aísla de su propio
+  café** — vanguardia real.
+- Su norte (palabras de él): **calidad, inocuidad y trazabilidad**.
+- Su frase, mirando el Cerro Tatamá con el primer café: **"Vivimos en un paraíso."**
+- "Le mete muchísima pasión" → de ahí el eslogan. *(Historia completa en
+  `02-identidad-verbal.md`.)*
 
 **🔎 Mi lectura honesta — esto es oro y es DIFERENTE a Juan Valdez:**
 Juan Valdez es el campesino tradicional romántico (poncho, mula, montaña). Tú

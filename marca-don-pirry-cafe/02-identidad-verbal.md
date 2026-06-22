@@ -1,211 +1,252 @@
 # DON PIRRY CAFÉ — Identidad Verbal (Fase 2)
 
-**Fecha:** 2026-06-21 · **Estado:** Borrador para revisión de Eduardo
+**Fecha:** 2026-06-21 · **Actualizado:** 2026-06-22 (con datos reales de Don Pirry)
+**Estado:** Historia finalizada — falta tu OK + elegir voz y taglines
 **Base:** `01-estrategia.md` (Propósito = homenaje · Arquetipo = Artesano-Creador)
 **Síntesis de plataforma:** *Honramos a Don Pirry haciendo un café digno de su nombre.*
 
-> ⚠️ **Honestidad radical (uno de tus valores):** la historia de abajo es un
-> **borrador** construido con lo que sé hoy. Donde marco **`[POR CONFIRMAR]`**
-> necesito un **dato real tuyo** — un homenaje construido con detalles inventados
-> traicionaría el valor de honestidad. Las preguntas están consolidadas al final.
+> ✅ **Historia construida con hechos reales** que dio el propio Don Pirry
+> (2026-06-22). Ya no hay datos inventados — esto cumple el valor de *honestidad
+> radical*.
 
 ---
 
-## 1. Historia de marca (storytelling de Don Pirry)
+## ⭐ Hechos reales que sostienen toda la marca
 
-La contamos en **tres tamaños**. Misma alma, distinto largo según dónde se use.
+- **Volvió de Europa** y eligió radicarse en el campo: **Pueblo Rico, Risaralda**,
+  tierra de **caña y panela** (no de tradición cafetera → él es **pionero**).
+- Finca **La Manuelita**, **vereda El Recreo**.
+- Camino: **lulo → caña** (con tecnología) → **café** (su amor: "me da la opción
+  del pensamiento innovador, mejorar procesos, aumentar calidad en taza").
+- Se volvió casi **científico del café**: cursos de **fermentación**;
+  **microbiología del café** en **Tecnicafé (Cauca)** y con el biólogo **Dr. Julián
+  Ovidio Cucuñame Balcázar**; **barismo** en el **SENA**.
+- Su firma técnica: **fermentaciones prolongadas, controladas e inoculadas con
+  microorganismos que él mismo aísla de su propio café.** (Vanguardia real.)
+- Su norte, en sus palabras: café reconocido por **calidad, inocuidad y
+  trazabilidad**.
+- Producen Castillo Rosario y **Borbón Rosado** en los **3 procesos** (lavado,
+  honey, natural); **el estrella es el Borbón Rosado Honey**.
+- Su frase, mirando el **Cerro Tatamá** con el primer café del día:
+  **"Vivimos en un paraíso."**
 
-### 1a · Versión larga — "Nuestra historia" (web, ~300 palabras)
-*Voz: primera persona, Eduardo hablando de su papá. Es la forma más honesta de un homenaje.*
+---
+
+## 1. Historia de marca — *dos voces para la web (elegí una o usá ambas)*
+
+### 🅰️ Opción A — Homenaje (voz de Eduardo, el hijo)
 
 > **A mi papá le dicen Pirry.**
 >
-> No es un nombre de marca que inventó una agencia. Es como lo llaman desde
-> siempre los que lo conocen: *Don Pirry*. Una persona real, cercana, de palabra.
+> Podría haberse quedado en Europa. Volvió. Y en vez de ciudad, buscó tierra:
+> compró una finca —**La Manuelita**, en la vereda **El Recreo**— en **Pueblo Rico,
+> Risaralda**, una región de caña y panela donde casi nadie hablaba de café.
 >
-> Hace poco más de diez años, el café lo atrapó. `[POR CONFIRMAR: qué hacía antes
-> / cómo llegó al café]`. Y no lo tomó como un cultivo más: lo tomó como lo toma
-> todo —con una obsesión que a veces nos saca una sonrisa en la familia. Don Pirry
-> es de los que se desvela leyendo, midiendo, probando. Le apasiona la tecnología
-> y trata cada fermentación como un experimento: ¿y si lo dejo unas horas más?,
-> ¿y si bajo la temperatura?, ¿y si esta vez sí?
+> Empezó con lulo. Siguió con caña, pero a su manera: metiéndole tecnología para
+> producir mejor. Y a los dos años se encontró con el café… y no lo soltó. Dice que
+> es el cultivo que más lo deja pensar, mejorar, inventar.
 >
-> Su finca queda en **Pueblo Rico, Risaralda**, a **1.600 metros**. Allí cultiva
-> **Castillo Rosario** y **Bourbon Rosado**, y persigue una sola cosa: la mejor
-> taza posible. No lo decimos nosotros —lo dicen los catadores: su café ha
-> alcanzado **89 puntos en la escala SCA**. `[POR CONFIRMAR: una anécdota — el día
-> que le dieron el puntaje, una madrugada de cosecha, una frase típica de él]`.
+> Lo que vino después no parece la historia de un caficultor, sino la de un
+> **científico enamorado**. Cursos de fermentación. Microbiología del café en
+> Tecnicafé, en el Cauca. Clases con un biólogo, el **Dr. Julián Cucuñame**, para
+> entender la vida que habita dentro del grano. Hoy mi papá hace **fermentaciones
+> largas, controladas, inoculadas con microorganismos que él mismo aísla de su
+> propio café**. Y después se fue a aprender barismo, para cuidar la taza hasta el
+> último sorbo.
 >
-> Yo soy su hijo. Lo que mi papá hace con las manos, yo decidí cuidarlo con la
+> ¿El resultado? Un **Borbón Rosado Honey** que los catadores califican hasta con
+> **89 puntos**. No lo decimos nosotros: lo dice la taza.
+>
+> Pero si le preguntan a él qué hace, no va a hablar de puntajes. Va a mirar hacia
+> el **Cerro Tatamá**, que tenemos ahí nomás, se va a tomar el primer café del día,
+> y va a decir lo de siempre: **"Vivimos en un paraíso."**
+>
+> Yo soy su hijo. Lo que él cuida con las manos y con la ciencia, yo lo cuido con la
 > marca: llevar su café —su nombre— a más tazas. Por eso cada bolsa dice **Don
-> Pirry**. No es un logo: es su palabra. Si su nombre está ahí, es porque la taza
-> es de las que él firmaría.
+> Pirry**. No es un logo: es su palabra. Si su nombre está ahí, es porque la taza es
+> de las que él firmaría.
 >
 > **Don Pirry Café. Pasión con nombre propio.**
 
-### 1b · Versión media — bio / "quiénes somos" (~90 palabras)
+### 🅱️ Opción B — Voz de Don Pirry (sus propias palabras, apenas pulidas)
 
-> A mi papá le dicen **Don Pirry**. Hace más de diez años el café lo atrapó, y
-> como todo lo que hace, lo tomó con obsesión: trata cada fermentación como un
-> experimento hasta dar con la mejor taza. Cultiva **Castillo Rosario** y **Bourbon
-> Rosado** en **Pueblo Rico, Risaralda (1.600 msnm)**, con cafés de hasta **89
-> puntos SCA**. Yo, su hijo, llevo su café al mundo. Cada bolsa lleva su nombre
-> porque lleva su palabra. **Pasión con nombre propio.**
+> Al volver de Europa me radiqué en **Pueblo Rico, Risaralda** —tierra de caña y
+> panela— y compré una finca: **La Manuelita**, en la vereda **El Recreo**. Quería
+> vivir del campo.
+>
+> Empecé con lulo, después caña, pero siempre buscándole la vuelta con tecnología:
+> más producción, más calidad. A los dos años llegó el café, y con él lo que más me
+> gusta: **pensar, innovar, mejorar la taza**.
+>
+> Me metí de lleno en la ciencia de la calidad. Estudié fermentación, microbiología
+> del café en Tecnicafé y con el **Dr. Julián Cucuñame**. Descubrí la vida que vive
+> dentro del grano, y desde entonces no he parado: **fermentaciones prolongadas,
+> controladas, inoculadas con microorganismos que aíslo de mi propio café**.
+> Aprendí barismo para entender la taza completa.
+>
+> Hoy solo quiero una cosa: producir un café reconocido por su **calidad, su
+> inocuidad y su trazabilidad**. Y cada mañana, mirando el **Cerro Tatamá** con el
+> primer café en la mano, lo confirmo: **vivimos en un paraíso.**
+>
+> **— Don Pirry**
 
-### 1c · Versión corta — el pitch (empaque / bio de Instagram)
+**🔎 Mi recomendación:** usá **las dos** en la web. La **A** como "Nuestra historia"
+(el homenaje del hijo, que es el alma de la marca), y la **B** como un recuadro
+destacado *"En palabras de Don Pirry"* (su voz literal le da una autenticidad que
+ningún copywriter puede fingir). Para todo lo demás (redes, empaque) usamos las
+versiones cortas de abajo.
 
-> **El café de Don Pirry.** Hecho a mano en Pueblo Rico (Risaralda) con la
-> obsesión de un maestro. Café de competencia (hasta 89 pts SCA), con nombre y
-> apellido. ☕
+### Versión media — bio / redes (~85 palabras)
 
-**🔎 Por qué funciona así:** el homenaje pide **primera persona** ("a mi papá le
-dicen Pirry") — es lo más íntimo y verdadero. El arquetipo Creador entra con los
-verbos de **oficio** (medir, probar, fermentar, firmar) para que no sea solo
-emoción, sino emoción **respaldada por trabajo**. Y el cierre ("su nombre = su
-palabra") convierte el nombre propio —tu activo legal y emocional— en una
-**promesa de calidad**.
+> A mi papá le dicen **Don Pirry**. Volvió de Europa para hacer campo en **Pueblo
+> Rico (Risaralda)**, tierra de caña donde casi nadie cultivaba café. Se enamoró del
+> grano y se volvió casi científico: microbiología, **fermentaciones inoculadas con
+> microorganismos que aísla de su propio café**, barismo. Su **Borbón Rosado Honey**
+> llega a **89 puntos SCA**. Yo, su hijo, llevo su café al mundo. **Pasión con
+> nombre propio.**
+
+### Versión corta — empaque / bio de Instagram
+
+> **El café de Don Pirry.** Un hombre que volvió de Europa para hacer ciencia del
+> café en Pueblo Rico. Fermentaciones de autor, hasta **89 pts SCA**. Café con
+> nombre y apellido. ☕
+
+> ⚠️ **Nota legal sobre el Cerro Tatamá / "paraíso":** la frase es de Don Pirry y es
+> oro, pero la usamos como **detalle personal y poético** (su mirada, su mañana),
+> **nunca como argumento de "café de altura/montaña"** ni como ícono visual central.
+> El protagonista sigue siendo **la persona**, no la geografía (esto te protege
+> frente a PIRINEOS). El Tatamá puede ser *contexto*, no *bandera*.
 
 ---
 
 ## 2. Tono de voz
 
-Cuatro rasgos. La marca habla como **Don Pirry mismo** (o su hijo hablando de él):
+La marca habla como **Don Pirry** (o su hijo hablando de él): un creador cálido.
 
 | Rasgo | Qué significa | Ejemplo |
 |-------|---------------|---------|
-| **Cálido** | Familia, no empresa. Primera persona, cercano. | "Te lo llevamos nosotros." (no "realizamos el despacho") |
-| **Honesto** | Sin exagerar. Decimos puntaje, varietal, fecha de tueste. | "Tostado el 12 de junio. Bourbon Rosado, 89 pts." |
-| **Conocedor sin pose** | Sabe de café y lo explica simple. No intimida al novato ni aburre al experto. | "Honey significa que dejamos algo de la miel del grano. ¿Resultado? Más dulzura." |
-| **Con chispa** | Curiosidad, humor amable, energía. Conecta con jóvenes. | "Don Pirry volvió a experimentar. Esta vez le salió bien 😏" |
+| **Cálido** | Familia, no empresa. Primera persona, cercano. | "Te lo llevamos nosotros." |
+| **Honesto** | Sin exagerar. Decimos puntaje, varietal, proceso, fecha de tueste. | "Borbón Rosado Honey. Tostado el 12 de junio. 89 pts." |
+| **Conocedor sin pose** | Sabe de café (y de ciencia) y lo explica simple. | "Inoculamos con microorganismos del propio café. ¿Traducción? Más dulzura y carácter, sin inventos de afuera." |
+| **Con chispa** | Curiosidad, energía, humor amable. Conecta con jóvenes. | "Don Pirry volvió a experimentar en la finca. Esta vez le salió de 89 😏" |
 
 **Decimos / No decimos:**
 
 | ✅ Decimos | ❌ No decimos |
 |-----------|--------------|
-| maestro, oficio, a mano, taza, nombre propio, finca, cosecha, experimento | "el mejor café del mundo", superlativos vacíos |
-| "Don Pirry", "su café", "la familia" | "nuestra empresa", "el producto", "la compañía" |
-| números reales (89 pts, 1.600 msnm, fechas) | claims sin prueba |
-| "café de competencia", "de finca" | jerga de barista que excluya al novato |
+| maestro, oficio, a mano, taza, finca, cosecha, **fermentación, microbiología, de autor, ciencia de la taza, inocuidad, trazabilidad** | "el mejor café del mundo", superlativos vacíos |
+| "Don Pirry", "su café", "la familia" | "nuestra empresa", "el producto" |
+| números y nombres reales (89 pts, La Manuelita, Dr. Cucuñame, Borbón Rosado Honey) | claims sin prueba |
+| ciencia explicada simple | jerga que excluya al novato · o tanto tecnicismo que enfríe |
 
-> ⚠️ **Regla legal en la voz:** evitamos apoyar la marca en **"altura / montaña /
-> café de altura"** como *bandera* (eso te acerca a PIRINEOS). El "1.600 msnm" se
-> menciona como **dato de trazabilidad**, no como eslogan. El protagonista siempre
-> es la **persona**, no la geografía.
+> ⚠️ Regla legal en la voz: el "1.600 msnm" y el Tatamá son **trazabilidad/contexto**,
+> no eslogan. La bandera es **la persona**, no la altura.
 
 ---
 
-## 3. Mensajes clave (3 pilares — cada uno con su prueba)
+## 3. Mensajes clave (3 pilares, cada uno con prueba)
 
-| # | Pilar | Mensaje | Prueba (para que no sea humo) | Le habla a |
-|---|-------|---------|-------------------------------|------------|
-| 1 | **La persona** | "Detrás de cada bolsa hay un hombre real: Don Pirry." | Su foto, su historia, su firma en el empaque. | Todos (homenaje) |
-| 2 | **La taza** | "Café de competencia, hecho a mano." | 89 pts SCA, Bourbon Rosado, fermentación documentada. | Conocedores |
+| # | Pilar | Mensaje | Prueba (RTB) | Le habla a |
+|---|-------|---------|--------------|------------|
+| 1 | **La persona** | "Detrás de cada bolsa hay un hombre real: Don Pirry, que volvió de Europa para hacer ciencia del café." | Su historia, su finca La Manuelita, su firma en el empaque. | Todos (homenaje) |
+| 2 | **La taza (de autor)** | "Café de competencia, fermentado con ciencia." | 89 pts SCA, **Borbón Rosado Honey**, fermentaciones inoculadas, microbiología. | Conocedores + jóvenes |
 | 3 | **La cercanía** | "De su finca a tu taza, sin intermediarios." | Entrega personal en Pereira, atención por WhatsApp como familia. | Jóvenes / locales |
 
-*Estos tres mensajes son la base de todo: posts, web, etiquetas, guiones de video.*
+> Las **tres palabras de Don Pirry** —*calidad, inocuidad y trazabilidad*— funcionan
+> como **sello de promesa** repetible en toda la comunicación.
 
 ---
 
 ## 4. Taglines secundarias
 
-**Slogan principal (FIJO, no se toca):** *"Pasión con nombre propio."*
+**Slogan principal (FIJO):** *"Pasión con nombre propio."*
+**Frase firma de Don Pirry (real, usar con cariño):** *"Vivimos en un paraíso."*
 
-Las secundarias son apoyos para usos específicos (hero de web, empaque, posts).
-Te doy un banco agrupado; mis favoritas marcadas ⭐:
+Banco agrupado (mis favoritas ⭐):
 
-**Homenaje (alineadas con tu propósito B):**
+**Homenaje (tu propósito):**
 - ⭐ "Café con nombre y apellido."
 - ⭐ "La taza que Don Pirry firmaría."
 - "De las manos de Don Pirry a las tuyas."
 
-**Oficio / calidad:**
-- "Café de competencia, hecho a mano."
-- "Pasión que se cata."
+**Oficio / ciencia (el ángulo nuevo y diferenciador):**
+- ⭐ "Café de autor, fermentado con ciencia."
+- "Donde la ciencia se vuelve taza."
+- "Calidad, inocuidad y trazabilidad." *(las 3 palabras de él)*
 
 **Cercanía:**
 - ⭐ "De su finca a tu taza."
-- "Café de competencia, cercanía de vecino."
 
-**🔎 Recomendación de uso:** "Café con nombre y apellido" para **empaque** (corta,
-ownable, refuerza lo legal y el homenaje); "La taza que Don Pirry firmaría" como
-**hero de la web** (cuenta la promesa de calidad); "De su finca a tu taza" para
-**redes/envíos** (cercanía).
+**🔎 Uso sugerido:** "Café con nombre y apellido" → **empaque** (corta, ownable,
+refuerza lo legal). "Café de autor, fermentado con ciencia" → **hero de web**
+(captura el diferenciador real). "Vivimos en un paraíso" → **redes/foto** (la voz
+de Don Pirry, emocional). "De su finca a tu taza" → **envíos**.
 
 ---
 
 ## 5. Naming de líneas ✅ DECIDIDO → Sistema 2 (Varietal protagonista)
 
-> **DECISIÓN (2026-06-21):** el **varietal es el héroe** de la bolsa
-> (**CASTILLO ROSARIO** / **BOURBON ROSADO**), con el nivel como subtítulo
-> (*clásico* / *reserva · 89 pts*) y "DON PIRRY" como marca madre arriba.
+> **DECISIÓN:** el **varietal es el héroe** de la bolsa (**CASTILLO ROSARIO** /
+> **BORBÓN ROSADO**), con la marca madre "DON PIRRY" arriba, y dos descriptores
+> debajo: **proceso** (Lavado / **Honey** / Natural) y **nivel** (*clásico* /
+> *reserva · 89 pts*).
 >
-> **🚩 Dos banderas honestas que hay que resolver (en Fase 3/4, no cambian la
-> decisión):**
-> 1. **"Rosario" vs "Rosado" riman y comparten raíz rosa-.** En un estante o
->    catálogo se pueden **confundir a primera vista**. → Lo resolvemos visualmente:
->    que el **par diferenciador grite** (CASTILLO vs **BOURBON**) y separando las
->    dos bolsas por **color/tier** con fuerza. Lo marco para Fase 3.
-> 2. **Las futuras infusiones NO tienen varietal** → este sistema no las cubre.
->    Cuando lleguen necesitarán su propia lógica (p. ej. un sub-sello tipo "Don
->    Pirry **Lab**" o el nombre de la infusión). Lo dejamos anotado para entonces.
+> - **Grafía:** uso **"Borbón Rosado"** (como lo escribe Don Pirry) por autenticidad;
+>   *"Pink Bourbon"* queda como gancho secundario para conocedores/turistas/export.
+> - **Producto estrella = Borbón Rosado Honey** (Reserva). Es el buque insignia.
+> - **El proceso (Honey/Lavado/Natural) ayuda a resolver** la confusión visual
+>   *Rosario↔Rosado* (bandera de Fase 2): añade un diferenciador más en la etiqueta.
+>   Aun así, en Fase 3 haremos que **CASTILLO vs BORBÓN** sea lo que más grite.
+> - **Infusiones futuras:** no tienen varietal → tendrán su propia lógica (p. ej.
+>   un sub-sello "Don Pirry **Lab**", coherente con su lado experimentador).
 
-Para referencia, los tres sistemas que se evaluaron:
+Bolsas de referencia:
 
-| | Sistema | Clásico (Castillo) | Reserva (B. Rosado) | Futuro (infusiones) | Lectura |
-|---|--------|--------------------|--------------------|--------------------|---------|
-| **1** ⭐ | **Tier + marca madre** | **Don Pirry Clásico** | **Don Pirry Reserva** | **Don Pirry Lab** | Claro, escalable. "Lab" = puente perfecto con jóvenes y con el lado experimentador de Don Pirry. |
-| **2** | **Varietal protagonista** | **Castillo** (grande) | **Bourbon Rosado** (grande) | (según infusión) | Lo que aman los conocedores. Menos legible para novatos. |
-| **3** | **Emotivo / herencia** | "El de Siempre" | "Herencia" | "Curiosidades de Don Pirry" | Más alma, más homenaje. Menos claro en estante. |
+```
+   DON PIRRY                    DON PIRRY
+   CASTILLO ROSARIO             BORBÓN ROSADO
+   Lavado · clásico             Honey · reserva · 89 pts
+```
 
-**🔎 Recomiendo el Sistema 1 (Clásico / Reserva / Lab)** y, en el empaque,
-**combinarlo con el 2**: tier grande + **varietal como subtítulo** (lo mejor de
-ambos: claro para el joven, completo para el conocedor). "Don Pirry **Lab**"
-captura tu lado tech/experimental y abre la puerta natural a las infusiones y al
-formato "gotero".
+*(Sistemas alternativos evaluados: 1 = tier "Clásico/Reserva/Lab"; 3 = emotivo
+"El de Siempre/Herencia". Se eligió el varietal.)*
 
 ---
 
-## 6. Léxico de marca (banco de palabras)
+## 6. Léxico de marca
 
-- **Usar mucho:** maestro · oficio · a mano · taza · finca · cosecha · experimento
-  · fermentación · nombre propio · Don Pirry · de competencia · honesto.
-- **Usar con cuidado:** "premium", "especial" (mejor *mostrarlo* con el puntaje
-  que *decirlo*).
-- **Evitar:** "el mejor", superlativos vacíos · jerga que excluya · y como
-  *bandera*: "altura/montaña" (por lo legal — ver §2).
+- **Usar mucho:** maestro · oficio · a mano · taza · finca · La Manuelita ·
+  cosecha · **fermentación · microbiología · de autor · inoculado · ciencia de la
+  taza** · nombre propio · Don Pirry · calidad · inocuidad · trazabilidad.
+- **Usar con cuidado:** "premium"/"especial" (mejor *mostrarlo* con el 89 que
+  *decirlo*); tecnicismos (explicar siempre simple, que no enfríen).
+- **Evitar:** "el mejor", superlativos vacíos · jerga excluyente · y como *bandera*:
+  "altura/montaña/café de altura" (por lo legal).
 
 ---
 
 ## 📖 Mini-glosario (Fase 2)
 
-- **Storytelling:** contar la marca como una historia con personaje (Don Pirry),
-  conflicto (la obsesión por la taza perfecta) y promesa — no como ficha técnica.
-- **Tono de voz:** la *personalidad* en las palabras; cómo suena la marca al
-  escribir/hablar, consistente en todo canal.
-- **Tagline:** frase corta y memorable que acompaña a la marca (≠ slogan oficial,
-  que aquí es fijo: "Pasión con nombre propio").
-- **Naming:** el sistema con que nombramos productos/líneas para que escale sin
-  volverse un caos.
-- **Pilar de mensaje:** una de las 2–4 ideas centrales que repetimos siempre, cada
-  una con su prueba.
+- **Storytelling:** contar la marca como historia con personaje (Don Pirry),
+  tensión (la obsesión por la taza perfecta) y promesa.
+- **Tono de voz:** la personalidad en las palabras, consistente en todo canal.
+- **Tagline:** frase corta de apoyo (≠ el slogan fijo "Pasión con nombre propio").
+- **Naming:** sistema para nombrar líneas/productos de forma escalable.
+- **Pilar de mensaje:** una de las 2–4 ideas centrales que repetimos, cada una con
+  su prueba (RTB).
+- **Fermentación inoculada:** agregar de forma controlada microorganismos
+  (levaduras/bacterias) —aquí, aislados del propio café— para dirigir el perfil de
+  sabor de la taza. Es técnica de vanguardia en café especial.
 
 ---
 
 ## ✅ Para cerrar la Fase 2 necesito de vos
 
-**A) Datos reales para terminar la historia (lo más importante):**
-1. ¿A qué se dedicaba Don Pirry **antes** del café? ¿Cómo llegó al café?
-2. Una **anécdota o imagen real**: una madrugada, una frase típica suya, el día
-   del puntaje, algo que lo pinte de cuerpo entero.
-3. ¿Cómo se llama la **finca** (y/o la vereda)?
-4. ¿El proceso actual del lote estrella es **lavado, honey, natural…**?
-5. ¿Hay algo de él que **no** querés contar / algún límite? (respeto total)
+1. **Historia:** ¿te gusta? ¿Usamos **A + B** en la web (mi recomendación), solo una,
+   o querés ajustar algo del texto?
+2. **Taglines:** ¿con cuáles ⭐ te quedás?
+3. **Confirmar:** ¿la Reserva estrella es el **Borbón Rosado Honey**? ¿OK con la
+   grafía **"Borbón"** (no "Bourbon")?
 
-**B) Naming:** ¿Sistema **1** (Clásico/Reserva/**Lab**), **2** (varietal) o **3**
-(emotivo)? *(recomiendo 1 + varietal de subtítulo)*
-
-**C) Taglines:** ¿con cuáles te quedás de las ⭐ (o querés más opciones)?
-
-Con A, B y C cierro la identidad verbal y pasamos a la **Fase 3 — Identidad
-Visual** (3 rutas de logotipo, paleta definitiva, tipografías), donde por fin
-comparamos tu paleta verde/dorado/cacao contra alternativas.
+Con tu OK, cierro la identidad verbal y pasamos a la **Fase 3 — Identidad Visual**
+(3 rutas de logotipo + tu paleta verde/dorado/cacao vs alternativas + tipografías).
