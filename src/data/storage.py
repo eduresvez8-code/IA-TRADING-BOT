@@ -90,6 +90,38 @@ CREATE TABLE IF NOT EXISTS sentiment_scores (
 )
 """
 
+# Serie temporal de equity (dashboard). Una fila por ciclo del orquestador: sin
+# esto NO hay curva de capital (session_state es una sola fila). La PK por ts hace
+# idempotente re-escribir el mismo instante. `positions` es un JSON con la foto de
+# las piernas abiertas (símbolo/lado/qty/entrada/uPnL) en ese ciclo.
+EQUITY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS equity_snapshots (
+    ts        INTEGER PRIMARY KEY,  -- epoch ms UTC del ciclo
+    wallet    REAL    NOT NULL,     -- colateral SIN PnL no realizado
+    equity    REAL    NOT NULL,     -- wallet + uPnL (margin balance)
+    upnl      REAL    NOT NULL,     -- PnL no realizado total
+    positions TEXT    NOT NULL      -- JSON: [{symbol, side, qty, entry_price, upnl}]
+)
+"""
+
+# Log de decisiones de la confluencia (dashboard "¿por qué (no) operó?"). Persiste
+# TODAS las decisiones, incluidos los HOLD, que antes no dejaban rastro. PK
+# (symbol, ts): una decisión por símbolo por instante. `source`: 'slow' (vela) o
+# 'event' (Fast Path).
+DECISIONS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS decisions (
+    ts              INTEGER NOT NULL,  -- epoch ms UTC de la decisión
+    symbol          TEXT    NOT NULL,
+    action          TEXT    NOT NULL,  -- LONG | SHORT | HOLD
+    reason          TEXT    NOT NULL,  -- regla de la matriz (auditoría)
+    quant_score     REAL    NOT NULL,  -- régimen (Opción 2)
+    sentiment_score REAL    NOT NULL,
+    size_factor     REAL    NOT NULL,
+    source          TEXT    NOT NULL,  -- slow | event
+    PRIMARY KEY (symbol, ts)
+)
+"""
+
 
 class Storage:
     def __init__(self, db_path: str | Path, candles_dir: str | Path):
@@ -106,6 +138,8 @@ class Storage:
         await self._db.execute(SESSION_SCHEMA)
         await self._db.execute(NEWS_SCHEMA)
         await self._db.execute(SCORES_SCHEMA)
+        await self._db.execute(EQUITY_SCHEMA)
+        await self._db.execute(DECISIONS_SCHEMA)
         await self._db.commit()
         return self
 
@@ -255,6 +289,56 @@ class Storage:
              "high_impact": bool(r[4]), "symbol_scope": json.loads(r[5]), "rationale": r[6]}
             for r in rows
         ]
+
+    # ---------- SQLite: serie de equity (curva de capital) ----------
+
+    async def save_equity_snapshot(
+        self, *, ts_ms: int, wallet: float, equity: float, upnl: float,
+        positions: list[dict],
+    ) -> None:
+        await self._db.execute(
+            "INSERT OR REPLACE INTO equity_snapshots VALUES (?, ?, ?, ?, ?)",
+            (ts_ms, wallet, equity, upnl, json.dumps(positions)),
+        )
+        await self._db.commit()
+
+    async def get_equity_snapshots(self, limit: int = 500) -> list[dict]:
+        """Los últimos `limit` snapshots, en orden cronológico ASCENDENTE (curva)."""
+        cur = await self._db.execute(
+            "SELECT ts, wallet, equity, upnl, positions FROM equity_snapshots"
+            " ORDER BY ts DESC LIMIT ?",
+            (limit,),
+        )
+        rows = await cur.fetchall()
+        return [
+            {"ts": r[0], "wallet": r[1], "equity": r[2], "upnl": r[3],
+             "positions": json.loads(r[4])}
+            for r in reversed(rows)
+        ]
+
+    # ---------- SQLite: log de decisiones (¿por qué (no) operó?) ----------
+
+    async def save_decision(
+        self, *, ts_ms: int, symbol: str, action: str, reason: str,
+        quant_score: float, sentiment_score: float, size_factor: float, source: str,
+    ) -> None:
+        await self._db.execute(
+            "INSERT OR REPLACE INTO decisions VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (ts_ms, symbol, action, reason, quant_score, sentiment_score,
+             size_factor, source),
+        )
+        await self._db.commit()
+
+    async def get_decisions(self, limit: int = 100) -> list[dict]:
+        """Las últimas `limit` decisiones, de la más reciente a la más antigua."""
+        cur = await self._db.execute(
+            "SELECT ts, symbol, action, reason, quant_score, sentiment_score,"
+            " size_factor, source FROM decisions ORDER BY ts DESC LIMIT ?",
+            (limit,),
+        )
+        cols = [c[0] for c in cur.description]
+        rows = await cur.fetchall()
+        return [dict(zip(cols, r)) for r in rows]
 
     # ---------- Parquet: histórico para backtesting ----------
 

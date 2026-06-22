@@ -115,6 +115,57 @@ async def test_sentiment_scores_roundtrip(storage):
     assert out[0]["high_impact"] is True and out[0]["ts"] == ts
 
 
+async def test_equity_snapshots_roundtrip_ascendente(storage):
+    # Guardadas en desorden; la curva debe salir cronológica ASCENDENTE.
+    for ts in (3000, 1000, 2000):
+        await storage.save_equity_snapshot(
+            ts_ms=ts, wallet=1000.0 + ts, equity=1000.0 + ts, upnl=0.0,
+            positions=[{"symbol": "BTCUSDT", "side": "LONG", "qty": 0.1,
+                        "entry_price": 50000.0, "upnl": 5.0}])
+    out = await storage.get_equity_snapshots()
+    assert [r["ts"] for r in out] == [1000, 2000, 3000]
+    assert out[0]["positions"][0]["symbol"] == "BTCUSDT"  # JSON deserializado
+
+
+async def test_equity_snapshot_idempotente_por_ts(storage):
+    await storage.save_equity_snapshot(ts_ms=1, wallet=100.0, equity=100.0,
+                                       upnl=0.0, positions=[])
+    await storage.save_equity_snapshot(ts_ms=1, wallet=200.0, equity=205.0,
+                                       upnl=5.0, positions=[])  # mismo ts → reemplaza
+    out = await storage.get_equity_snapshots()
+    assert len(out) == 1 and out[0]["wallet"] == 200.0
+
+
+async def test_equity_limit_devuelve_los_mas_recientes(storage):
+    for i in range(5):
+        await storage.save_equity_snapshot(ts_ms=i, wallet=float(i), equity=float(i),
+                                           upnl=0.0, positions=[])
+    out = await storage.get_equity_snapshots(limit=2)
+    assert [r["ts"] for r in out] == [3, 4]  # los 2 últimos, ascendente
+
+
+async def test_decisions_roundtrip_y_orden_temporal(storage):
+    for i, act in enumerate(["HOLD", "LONG", "HOLD"]):
+        await storage.save_decision(
+            ts_ms=1000 + i, symbol="BTCUSDT", action=act, reason="no_news_origination",
+            quant_score=0.3, sentiment_score=0.0, size_factor=0.0, source="slow")
+    out = await storage.get_decisions()
+    assert len(out) == 3
+    assert out[0]["ts"] == 1002 and out[0]["action"] == "HOLD"  # más reciente primero
+    assert out[0]["source"] == "slow"
+
+
+async def test_decisions_idempotente_por_symbol_ts(storage):
+    await storage.save_decision(ts_ms=1, symbol="BTCUSDT", action="HOLD",
+                                reason="r1", quant_score=0.0, sentiment_score=0.0,
+                                size_factor=0.0, source="slow")
+    await storage.save_decision(ts_ms=1, symbol="BTCUSDT", action="LONG",
+                                reason="regime_confirms", quant_score=0.8,
+                                sentiment_score=0.6, size_factor=1.0, source="slow")
+    out = await storage.get_decisions()
+    assert len(out) == 1 and out[0]["action"] == "LONG"  # (symbol, ts) reemplaza
+
+
 def test_parquet_roundtrip(tmp_path):
     s = Storage(tmp_path / "test.db", tmp_path / "candles")
     df = pd.DataFrame({

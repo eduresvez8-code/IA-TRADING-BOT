@@ -239,6 +239,20 @@ async def live() -> int:
     return 0
 
 
+def dashboard() -> int:
+    """Dashboard de observabilidad en tiempo real (READ-ONLY, proceso aparte).
+
+    Sirve en http://host:port (loopback por defecto) una página única que repolla
+    la SQLite del bot y muestra equity, posiciones, decisiones, órdenes y noticias.
+    Nunca envía órdenes ni toca el exchange: abre la base en modo `ro`. Se puede
+    correr en paralelo a `--live` (otra terminal) o sobre una BD ya existente.
+    """
+    from src.dashboard.server import serve
+
+    serve()
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Bot de trading híbrido")
     parser.add_argument("--check", action="store_true",
@@ -249,6 +263,8 @@ def main() -> int:
                         help="ver saldo, posiciones y últimas órdenes (qué ha hecho el bot)")
     parser.add_argument("--live", action="store_true",
                         help="lazo en vivo contra la testnet de Futuros (requiere claves)")
+    parser.add_argument("--dashboard", action="store_true",
+                        help="dashboard READ-ONLY en tiempo real (http local, no opera)")
     args = parser.parse_args()
 
     if args.check:
@@ -262,9 +278,11 @@ def main() -> int:
     if args.live:
         import asyncio
         return asyncio.run(live())
+    if args.dashboard:
+        return dashboard()
 
-    print("Usa --check (config), --preflight (conexión), --status (qué hizo) "
-          "o --live (operar en testnet).")
+    print("Usa --check (config), --preflight (conexión), --status (qué hizo), "
+          "--live (operar en testnet) o --dashboard (visor en tiempo real).")
     return 0
 
 

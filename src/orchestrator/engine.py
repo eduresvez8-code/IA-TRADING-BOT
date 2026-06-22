@@ -335,6 +335,11 @@ class Orchestrator:
         acct = await self.executor.exchange.get_account()
         actual = {(p.symbol, p.position_side): p.qty for p in acct.positions}
 
+        # Observabilidad (dashboard): foto de equity por ciclo, ANTES de cualquier
+        # early-return de reconciliación → la curva de capital y la señal de
+        # liveness siguen frescas aunque el ciclo no llegue a operar.
+        await self._record_equity(acct, now)
+
         # --- 1a. Piernas en vuelo: promover si el exchange ya las confirma ---
         grace = self.cfg.orchestrator.reconcile_grace_cycles
         for key in list(self._in_flight):
@@ -400,6 +405,7 @@ class Orchestrator:
         # --- 3. Confluencia: la NOTICIA origina; el régimen confirma (TTL fresco) ---
         sentiment = self._fresh_sentiment(sym, now)
         decision = decide(regime, sentiment, self.cfg, as_of=now)
+        await self._record_decision(decision, "slow")  # feed del dashboard (incl. HOLD)
 
         # --- 4. Veredicto del Risk Manager ---
         state = await self.executor.snapshot_portfolio(now=now)
@@ -495,6 +501,7 @@ class Orchestrator:
             intent.sentiment, sym, impulse, self.cfg,
             as_of=now, last_event_trade_at=self._last_event_trade.get(sym),
         )
+        await self._record_decision(decision, "event")  # feed del dashboard (incl. HOLD)
         if decision.action == Action.HOLD:
             # Auditoría: por qué un evento NO operó (kill criteria §C los revisa).
             self.alerts.alert(AlertLevel.INFO, "event_hold", f"{sym}: {decision.reason}")
@@ -560,6 +567,44 @@ class Orchestrator:
                 await self.on_event(intent)
             finally:
                 self._event_queue.task_done()
+
+    async def _record_equity(self, acct, now: datetime) -> None:
+        """Snapshot de equity del ciclo (curva de capital del dashboard).
+
+        Read-only para el trading: solo ESCRIBE en SQLite lo que ya tenemos del
+        `get_account` del ciclo; no toca el exchange. No-op si no hay storage
+        (tests/demo). Una fila por ciclo → serie temporal que `session_state`
+        (fila única) no podía dar.
+        """
+        storage = self.executor.storage
+        if storage is None:
+            return
+        upnl = sum(p.unrealized_pnl for p in acct.positions)
+        positions = [
+            {"symbol": p.symbol, "side": p.position_side.value, "qty": p.qty,
+             "entry_price": p.entry_price, "upnl": p.unrealized_pnl}
+            for p in acct.positions
+        ]
+        await storage.save_equity_snapshot(
+            ts_ms=int(now.timestamp() * 1000), wallet=acct.wallet_balance,
+            equity=acct.wallet_balance + upnl, upnl=upnl, positions=positions,
+        )
+
+    async def _record_decision(self, decision, source: str) -> None:
+        """Persiste la decisión de la confluencia (incluido HOLD) para el dashboard.
+
+        Da trazabilidad al "¿por qué (no) operó?" que antes no dejaba rastro: los
+        HOLD no generaban orden, así que eran invisibles. No-op sin storage.
+        """
+        storage = self.executor.storage
+        if storage is None:
+            return
+        await storage.save_decision(
+            ts_ms=int(decision.timestamp.timestamp() * 1000), symbol=decision.symbol,
+            action=decision.action.value, reason=decision.reason,
+            quant_score=decision.quant_score, sentiment_score=decision.sentiment_score,
+            size_factor=decision.size_factor, source=source,
+        )
 
     async def _persist_session(self, now: datetime) -> None:
         storage = self.executor.storage

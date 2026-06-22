@@ -1116,3 +1116,38 @@ opuesto → veto). Sustituyen a las viejas `quant_weak`/`sentiment_confirms`/
 base (5m): un stop dimensionado con ATR de 1h sería ~3.5× más ancho de lo debido para una
 entrada intradía. Por eso el engine calcula DOS señales: la base (5m) solo para el ATR del
 stop, y el régimen (1h) solo para la dirección/tamaño.
+
+## Dashboard de observabilidad (proceso READ-ONLY)
+
+**Dashboard read-only.** Visor en tiempo real del bot servido en
+`http://127.0.0.1:8787` (`uv run python -m src.main --dashboard`). Es un PROCESO
+APARTE del trading: abre la SQLite en modo `ro` (URI `file:...?mode=ro`), así es
+físicamente incapaz de escribir o enviar órdenes. La regla "toda orden pasa por
+risk/manager → execution" se cumple trivialmente porque el dashboard no conoce al
+executor ni al exchange. Stdlib `http.server` + `sqlite3` → cero dependencias
+nuevas ($0). Solo responde a GET (`/` y `/api/snapshot`) y se enlaza a loopback.
+
+**equity_snapshots (tabla nueva).** Serie temporal de capital, una fila por ciclo
+del orquestador (`ts, wallet, equity, upnl, positions[JSON]`). Resuelve el GAP de
+que `session_state` era una sola fila: sin esto NO había curva de capital. El
+engine la escribe en `_record_equity` desde el `get_account` del ciclo (no hace
+llamadas extra al exchange). De aquí salen la curva, el uPnL, las posiciones
+abiertas y el PnL del día (equity − day_start_wallet).
+
+**decisions (tabla nueva).** Log de TODAS las decisiones de la confluencia,
+incluidos los HOLD (`ts, symbol, action, reason, quant_score, sentiment_score,
+size_factor, source`). Resuelve el GAP de que los HOLD no dejaban rastro: ahora el
+panel "¿por qué (no) operó?" muestra, p.ej., `no_news_origination` /
+`regime_conflict` / `regime_confirms`. `source` distingue `slow` (vela) de `event`
+(Fast Path). El engine la escribe en `_record_decision`.
+
+**Liveness por frescura de datos.** Como el dashboard no comparte memoria con el
+engine (proceso aparte), no puede leer `halted` directamente. En su lugar deriva
+la salud del último `equity_snapshots.ts`: si es más viejo que
+`dashboard.stale_after_intervals × intervalo_de_vela`, marca "datos obsoletos"
+(el bot probablemente está caído/halted). Señal robusta sin acoplar procesos.
+
+**Drawdown / PnL del día (derivados).** El dashboard calcula en `build_snapshot`:
+drawdown = (peak_wallet − equity)/peak_wallet (high-water mark de `session_state`),
+PnL del día = equity − day_start_wallet. No persiste métricas redundantes: las
+deriva al vuelo de las tablas base (single source of truth).

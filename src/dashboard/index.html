@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IA TRADING — Dashboard</title>
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#111722; --panel2:#0d131c; --line:#1d2733;
+    --txt:#d7e0ea; --dim:#7b8794; --faint:#4a5564;
+    --green:#22c55e; --red:#ef4444; --amber:#f59e0b; --blue:#3b82f6; --violet:#8b5cf6;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:var(--sans);
+       font-size:14px;-webkit-font-smoothing:antialiased}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  a{color:var(--blue);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+         padding:14px 20px;border-bottom:1px solid var(--line);background:var(--panel2);
+         position:sticky;top:0;z-index:10}
+  .brand{font-weight:700;letter-spacing:.5px}
+  .brand .spark{color:var(--violet)}
+  .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;
+         border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+  .badge.ok{color:var(--green);border-color:#1e3a2a;background:#0f1c14}
+  .badge.warn{color:var(--amber);border-color:#3a2f12;background:#1c160a}
+  .badge.bad{color:var(--red);border-color:#3a1a1a;background:#1c0f0f}
+  .badge.info{color:var(--blue);border-color:#16263a;background:#0c1622}
+  .grow{flex:1}
+  .live{display:flex;align-items:center;gap:7px;color:var(--dim);font-size:12px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--faint)}
+  .dot.ok{background:var(--green);box-shadow:0 0 8px var(--green)}
+  .dot.warn{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+  .dot.bad{background:var(--red)}
+
+  main{padding:18px 20px;max-width:1320px;margin:0 auto;
+       display:grid;gap:16px;grid-template-columns:repeat(12,1fr)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .card h2{margin:0 0 12px;font-size:12px;font-weight:600;letter-spacing:.6px;
+           text-transform:uppercase;color:var(--dim)}
+  .col-12{grid-column:span 12}.col-8{grid-column:span 8}.col-6{grid-column:span 6}
+  .col-4{grid-column:span 4}
+  @media(max-width:900px){.col-8,.col-6,.col-4{grid-column:span 12}}
+
+  .kpis{grid-column:span 12;display:grid;gap:12px;grid-template-columns:repeat(6,1fr)}
+  @media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .kpi .lbl{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px}
+  .kpi .val{font-size:23px;font-weight:600;margin-top:6px;font-family:var(--mono)}
+  .kpi .sub{font-size:12px;color:var(--faint);margin-top:3px;font-family:var(--mono)}
+  .pos{color:var(--green)}.neg{color:var(--red)}.mut{color:var(--dim)}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--dim);font-weight:600;font-size:11px;
+     text-transform:uppercase;letter-spacing:.4px;padding:6px 8px;border-bottom:1px solid var(--line)}
+  td{padding:7px 8px;border-bottom:1px solid var(--panel2);font-family:var(--mono)}
+  tr:last-child td{border-bottom:none}
+  .right{text-align:right}
+  .tag{font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;font-family:var(--sans)}
+  .tag.LONG{color:var(--green);background:#0f1c14}
+  .tag.SHORT{color:var(--red);background:#1c0f0f}
+  .tag.HOLD{color:var(--dim);background:#131a24}
+  .src{font-size:10px;color:var(--faint);text-transform:uppercase}
+  .reason{color:var(--dim)}
+  .empty{color:var(--faint);font-size:13px;padding:14px 4px;text-align:center}
+
+  .chartwrap{position:relative}
+  svg{display:block;width:100%;height:230px}
+  .axis{fill:var(--faint);font-size:10px;font-family:var(--mono)}
+  .scorebar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;width:60px;display:inline-block;vertical-align:middle}
+  .scorebar > i{display:block;height:100%}
+  footer{color:var(--faint);font-size:11px;text-align:center;padding:18px}
+  .offline{background:var(--red);color:#fff;text-align:center;padding:6px;font-size:12px;display:none}
+</style>
+</head>
+<body>
+<div class="offline" id="offline">Sin conexión con el servidor del dashboard…</div>
+<header>
+  <span class="brand">IA&nbsp;TRADING <span class="spark">◆</span></span>
+  <span class="badge info" id="mode">—</span>
+  <span class="badge" id="net">—</span>
+  <span class="badge" id="syms">—</span>
+  <span class="grow"></span>
+  <span class="badge bad" id="kill" style="display:none">KILL-SWITCH</span>
+  <span class="live"><span class="dot" id="dot"></span><span id="liveTxt">conectando…</span></span>
+</header>
+
+<main>
+  <div class="kpis">
+    <div class="kpi"><div class="lbl">Equity</div><div class="val num" id="k_equity">—</div><div class="sub" id="k_equity_sub">&nbsp;</div></div>
+    <div class="kpi"><div class="lbl">Wallet</div><div class="val num" id="k_wallet">—</div><div class="sub">colateral</div></div>
+    <div class="kpi"><div class="lbl">uPnL</div><div class="val num" id="k_upnl">—</div><div class="sub">no realizado</div></div>
+    <div class="kpi"><div class="lbl">PnL del día</div><div class="val num" id="k_day">—</div><div class="sub" id="k_day_sub">&nbsp;</div></div>
+    <div class="kpi"><div class="lbl">Drawdown</div><div class="val num" id="k_dd">—</div><div class="sub" id="k_dd_sub">desde el pico</div></div>
+    <div class="kpi"><div class="lbl">Posiciones</div><div class="val num" id="k_pos">—</div><div class="sub" id="k_pos_sub">abiertas</div></div>
+  </div>
+
+  <div class="card col-8 chartwrap">
+    <h2>Curva de capital (equity)</h2>
+    <svg id="chart" viewBox="0 0 800 230" preserveAspectRatio="none"></svg>
+  </div>
+
+  <div class="card col-4">
+    <h2>Posiciones abiertas</h2>
+    <div id="positions"></div>
+  </div>
+
+  <div class="card col-6">
+    <h2>Decisiones — ¿por qué (no) operó?</h2>
+    <div id="decisions"></div>
+  </div>
+
+  <div class="card col-6">
+    <h2>Órdenes recientes</h2>
+    <div id="orders"></div>
+  </div>
+
+  <div class="card col-12">
+    <h2>Noticias &amp; sentimiento</h2>
+    <div id="news"></div>
+  </div>
+</main>
+<footer>Dashboard read-only · jamás envía órdenes · lee SQLite en modo <code>ro</code></footer>
+
+<script>
+const $ = id => document.getElementById(id);
+let timer = null;
+
+function fmtUsd(x){ if(x==null) return "—"; const s=x<0?"-":""; return s+"$"+Math.abs(x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtPct(x){ if(x==null) return "—"; return (x>=0?"+":"")+x.toFixed(2)+"%"; }
+function fmtNum(x,d=4){ if(x==null) return "—"; return x.toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d}); }
+function cls(x){ if(x==null) return "mut"; return x>0?"pos":(x<0?"neg":"mut"); }
+function sign(x){ return x>0?"+":""; }
+function ago(ms){ if(ms==null) return "—"; const s=Math.max(0,Math.round(ms)); if(s<60) return "hace "+s+"s"; const m=Math.floor(s/60); if(m<60) return "hace "+m+"m"; return "hace "+Math.floor(m/60)+"h"+(m%60)+"m"; }
+function tsTime(ms){ const d=new Date(ms); return d.toLocaleTimeString("es",{hour:"2-digit",minute:"2-digit"}); }
+function esc(s){ return (s==null?"":""+s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+function render(s){
+  const m=s.meta, k=s.kpis;
+  $("mode").textContent = m.mode;
+  $("syms").textContent = m.symbols.join(" · ")+" · "+m.timeframe;
+  const net=$("net");
+  if(m.testnet===true){ net.textContent="TESTNET"; net.className="badge ok"; }
+  else if(m.testnet===false){ net.textContent="MAINNET"; net.className="badge bad"; }
+  else { net.textContent="—"; net.className="badge"; }
+  $("kill").style.display = k.kill_switch ? "" : "none";
+
+  // liveness
+  const dot=$("dot"), lt=$("liveTxt");
+  if(!m.has_data){ dot.className="dot"; lt.textContent="esperando datos del bot…"; }
+  else if(m.stale){ dot.className="dot warn"; lt.textContent="datos obsoletos · "+ago(m.age_seconds*1000); }
+  else { dot.className="dot ok"; lt.textContent="en vivo · "+ago(m.age_seconds*1000); }
+
+  // KPIs
+  $("k_equity").textContent=fmtUsd(k.equity);
+  const peakTxt = k.peak_wallet!=null ? ("pico "+fmtUsd(k.peak_wallet)) : " ";
+  $("k_equity_sub").textContent=peakTxt;
+  $("k_wallet").textContent=fmtUsd(k.wallet);
+  const up=$("k_upnl"); up.textContent=fmtUsd(k.upnl); up.className="val num "+cls(k.upnl);
+  const day=$("k_day"); day.textContent=k.day_pnl==null?"—":fmtUsd(k.day_pnl); day.className="val num "+cls(k.day_pnl);
+  $("k_day_sub").textContent=k.day_pnl_pct==null?" ":fmtPct(k.day_pnl_pct);
+  const dd=$("k_dd"); dd.textContent=k.drawdown_pct==null?"—":("-"+k.drawdown_pct.toFixed(2)+"%");
+  dd.className="val num "+(k.drawdown_pct>0?"neg":"mut");
+  $("k_pos").textContent=k.open_positions;
+
+  drawChart(s.equity, k.day_start_wallet);
+  renderPositions(s.positions);
+  renderDecisions(s.decisions);
+  renderOrders(s.orders);
+  renderNews(s.news, m.symbols);
+}
+
+function drawChart(pts, baseline){
+  const svg=$("chart"); const W=800,H=230,pad=34;
+  if(!pts || pts.length<2){ svg.innerHTML='<text x="400" y="115" text-anchor="middle" class="axis">sin datos de equity todavía</text>'; return; }
+  const vals=pts.map(p=>p.equity);
+  let lo=Math.min(...vals), hi=Math.max(...vals);
+  if(baseline!=null){ lo=Math.min(lo,baseline); hi=Math.max(hi,baseline); }
+  if(hi===lo){ hi+=1; lo-=1; }
+  const padv=(hi-lo)*0.08; lo-=padv; hi+=padv;
+  const x=i=>pad+(W-pad-6)*(i/(pts.length-1));
+  const y=v=>pad/2+(H-pad-pad/2)*(1-(v-lo)/(hi-lo));
+  const up = vals[vals.length-1] >= vals[0];
+  const col = up ? "var(--green)" : "var(--red)";
+  let line="", area="";
+  pts.forEach((p,i)=>{ const X=x(i).toFixed(1),Y=y(p.equity).toFixed(1); line+=(i?"L":"M")+X+" "+Y+" "; });
+  area = line + "L"+x(pts.length-1).toFixed(1)+" "+(H-pad/2)+" L"+x(0).toFixed(1)+" "+(H-pad/2)+" Z";
+  const gid="g"+(up?"u":"d");
+  let grid="";
+  for(let g=0;g<=3;g++){ const gv=lo+(hi-lo)*g/3; const Y=y(gv).toFixed(1);
+    grid+=`<line x1="${pad}" y1="${Y}" x2="${W-6}" y2="${Y}" stroke="var(--line)" stroke-width="1"/>`;
+    grid+=`<text x="4" y="${(+Y+3).toFixed(1)}" class="axis">${gv.toFixed(0)}</text>`; }
+  let base="";
+  if(baseline!=null){ const Y=y(baseline).toFixed(1);
+    base=`<line x1="${pad}" y1="${Y}" x2="${W-6}" y2="${Y}" stroke="var(--faint)" stroke-dasharray="4 4" stroke-width="1"/>`; }
+  const lastX=x(pts.length-1).toFixed(1), lastY=y(vals[vals.length-1]).toFixed(1);
+  svg.innerHTML=`
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${col}" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
+    ${grid}${base}
+    <path d="${area}" fill="url(#${gid})"/>
+    <path d="${line}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="${lastX}" cy="${lastY}" r="3.5" fill="${col}"/>
+    <text x="${(+lastX-4).toFixed(1)}" y="${(+lastY-8).toFixed(1)}" text-anchor="end" class="axis" fill="${col}">${fmtUsd(vals[vals.length-1])}</text>`;
+}
+
+function renderPositions(rows){
+  const box=$("positions");
+  if(!rows || !rows.length){ box.innerHTML='<div class="empty">Sin posiciones abiertas</div>'; return; }
+  let h='<table><tr><th>Símbolo</th><th>Lado</th><th class="right">Qty</th><th class="right">Entrada</th><th class="right">uPnL</th></tr>';
+  rows.forEach(p=>{ h+=`<tr><td>${esc(p.symbol)}</td><td><span class="tag ${p.side}">${p.side}</span></td>
+    <td class="right">${fmtNum(p.qty,4)}</td><td class="right">${fmtUsd(p.entry_price)}</td>
+    <td class="right ${cls(p.upnl)}">${fmtUsd(p.upnl)}</td></tr>`; });
+  box.innerHTML=h+"</table>";
+}
+
+function renderDecisions(rows){
+  const box=$("decisions");
+  if(!rows || !rows.length){ box.innerHTML='<div class="empty">El bot aún no ha decidido nada</div>'; return; }
+  let h='<table><tr><th>Hora</th><th>Símbolo</th><th>Acción</th><th>Motivo</th><th class="right">rég/sent</th><th class="right">size</th></tr>';
+  rows.forEach(d=>{ h+=`<tr><td class="mut">${tsTime(d.ts)}</td><td>${esc(d.symbol)}</td>
+    <td><span class="tag ${d.action}">${d.action}</span> <span class="src">${esc(d.source)}</span></td>
+    <td class="reason">${esc(d.reason)}</td>
+    <td class="right">${d.quant_score.toFixed(2)} / ${d.sentiment_score.toFixed(2)}</td>
+    <td class="right">${(d.size_factor*100).toFixed(0)}%</td></tr>`; });
+  box.innerHTML=h+"</table>";
+}
+
+function renderOrders(rows){
+  const box=$("orders");
+  if(!rows || !rows.length){ box.innerHTML='<div class="empty">Sin órdenes registradas</div>'; return; }
+  let h='<table><tr><th>Hora</th><th>Símbolo</th><th>Tipo</th><th class="right">Qty</th><th class="right">Precio</th><th>Estado</th></tr>';
+  rows.forEach(o=>{ const side=o.position_side==="SHORT"?"SHORT":(o.position_side==="LONG"?"LONG":"HOLD");
+    h+=`<tr><td class="mut">${tsTime(o.ts)}</td><td>${esc(o.symbol)} <span class="tag ${side}">${esc(o.side)}</span></td>
+    <td class="mut">${esc(o.type)}</td><td class="right">${o.quantity==null?"—":fmtNum(o.quantity,4)}</td>
+    <td class="right">${o.price==null?"—":fmtUsd(o.price)}</td>
+    <td class="mut">${esc(o.status)}</td></tr>`; });
+  box.innerHTML=h+"</table>";
+}
+
+function renderNews(rows){
+  const box=$("news");
+  if(!rows || !rows.length){ box.innerHTML='<div class="empty">Sin noticias ingeridas</div>'; return; }
+  let h='<table><tr><th>Hora</th><th>Titular</th><th>Fuente</th><th>Scope</th><th class="right">Score</th></tr>';
+  rows.forEach(n=>{ const sc=n.score;
+    let bar="—";
+    if(sc!=null){ const w=Math.round(Math.abs(sc)*100); const c=sc>0?"var(--green)":(sc<0?"var(--red)":"var(--dim)");
+      bar=`<span class="scorebar"><i style="width:${w}%;background:${c}"></i></span> <span class="${cls(sc)}">${sign(sc)}${sc.toFixed(2)}</span>`; }
+    const scope = Array.isArray(n.symbol_scope)?n.symbol_scope.join(","):"";
+    const title = n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.title)}</a>` : esc(n.title);
+    h+=`<tr><td class="mut">${tsTime(n.ts)}</td><td style="font-family:var(--sans);max-width:520px">${title}</td>
+      <td class="mut">${esc(n.source)}</td><td class="mut">${esc(scope)}</td><td class="right">${bar}</td></tr>`; });
+  box.innerHTML=h+"</table>";
+}
+
+async function tick(){
+  try{
+    const r=await fetch("/api/snapshot",{cache:"no-store"});
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const s=await r.json();
+    $("offline").style.display="none";
+    render(s);
+    const ms=Math.max(1,(s.meta.refresh_seconds||5))*1000;
+    clearTimeout(timer); timer=setTimeout(tick, ms);
+  }catch(e){
+    $("offline").style.display="block";
+    $("dot").className="dot bad"; $("liveTxt").textContent="desconectado";
+    clearTimeout(timer); timer=setTimeout(tick, 4000);
+  }
+}
+tick();
+</script>
+</body>
+</html>

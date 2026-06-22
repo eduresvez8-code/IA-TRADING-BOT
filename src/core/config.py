@@ -439,6 +439,34 @@ class StorageConfig(BaseModel):
     universe_dir: str
 
 
+class DashboardConfig(BaseModel):
+    """Dashboard de observabilidad en tiempo real (proceso READ-ONLY aparte).
+
+    Lee la misma SQLite que escribe el engine (en modo `ro`), nunca envía órdenes
+    ni toca el exchange. Por eso `host` por defecto es loopback: el dashboard no se
+    expone a la red. Cero Hardcoding: intervalos y tamaños de página viven aquí.
+    """
+
+    host: str
+    # Puerto del servidor local. ge=1024 evita los puertos privilegiados; le=65535
+    # es el máximo válido.
+    port: int = Field(ge=1024, le=65535)
+    # Cada cuánto repolla el navegador /api/snapshot. gt=0; le=60 (más lento ya no
+    # es "tiempo real"). No martillea: es una sola lectura SQLite por refresco.
+    refresh_seconds: float = Field(gt=0.0, le=60.0)
+    # Puntos de la curva de capital a servir. ge=10 (una curva con sentido); le=5000
+    # ataja un payload desmedido.
+    equity_points: int = Field(ge=10, le=5000)
+    # Filas del feed de decisiones / tabla de órdenes / panel de noticias.
+    decisions_rows: int = Field(ge=1, le=1000)
+    orders_rows: int = Field(ge=1, le=1000)
+    news_rows: int = Field(ge=1, le=1000)
+    # Múltiplo del intervalo de vela tras el cual el último snapshot se considera
+    # OBSOLETO (señal de liveness: el bot probablemente está caído/halted). ge=1
+    # (al menos una vela de gracia); le=20 ataja un typo que nunca avisaría.
+    stale_after_intervals: float = Field(ge=1.0, le=20.0)
+
+
 class QuantMatrixConfig(BaseModel):
     """Matriz de research del Slow Path (backtest/run_quant_matrix.py).
 
@@ -571,6 +599,7 @@ class Settings(BaseModel):
     orchestrator: OrchestratorConfig
     event: EventConfig
     storage: StorageConfig
+    dashboard: DashboardConfig
     quant_matrix: QuantMatrixConfig
 
 

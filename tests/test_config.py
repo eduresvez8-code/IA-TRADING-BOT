@@ -753,6 +753,44 @@ def test_regime_htf_bars_por_debajo_del_minimo_del_quant_es_rechazado():
         OrchestratorConfig(warmup_candles=60, reconcile_grace_cycles=3, regime_htf_bars=34)
 
 
+# ------------------------- DashboardConfig (visor read-only) -------------------------
+
+
+def _valid_dashboard_kwargs(**overrides):
+    base = dict(host="127.0.0.1", port=8787, refresh_seconds=5.0, equity_points=500,
+                decisions_rows=60, orders_rows=40, news_rows=25, stale_after_intervals=3.0)
+    base.update(overrides)
+    return base
+
+
+def test_settings_yaml_dashboard_valido():
+    s = load_settings()
+    assert s.dashboard.host == "127.0.0.1"
+    assert 1024 <= s.dashboard.port <= 65535
+    assert s.dashboard.refresh_seconds > 0
+    assert s.dashboard.equity_points >= 10
+
+
+def test_dashboard_puerto_privilegiado_rechazado():
+    # ge=1024: no permitir puertos privilegiados (requieren root, mala práctica).
+    from src.core.config import DashboardConfig
+    with pytest.raises(ValidationError):
+        DashboardConfig(**_valid_dashboard_kwargs(port=80))
+
+
+def test_dashboard_refresh_no_positivo_rechazado():
+    from src.core.config import DashboardConfig
+    with pytest.raises(ValidationError):
+        DashboardConfig(**_valid_dashboard_kwargs(refresh_seconds=0))
+
+
+def test_dashboard_stale_intervals_minimo():
+    # ge=1.0: al menos una vela de gracia antes de marcar el feed obsoleto.
+    from src.core.config import DashboardConfig
+    with pytest.raises(ValidationError):
+        DashboardConfig(**_valid_dashboard_kwargs(stale_after_intervals=0.5))
+
+
 # ------------------------- EventConfig (Plan V2 Fase 2.1) -------------------------
 
 

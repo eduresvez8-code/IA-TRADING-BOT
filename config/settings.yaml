@@ -232,6 +232,18 @@ storage:
   funding_dir: "data/funding"
   universe_dir: "data/universe"
 
+# --- Dashboard de observabilidad en tiempo real (proceso READ-ONLY aparte) ---
+# Lee la misma SQLite que escribe el engine (modo `ro`); jamás envía órdenes.
+dashboard:
+  host: "127.0.0.1"           # solo loopback: el dashboard NO se expone a la red
+  port: 8787                  # http://127.0.0.1:8787
+  refresh_seconds: 5          # cada cuánto el navegador repolla /api/snapshot
+  equity_points: 500          # puntos de la curva de capital a servir
+  decisions_rows: 60          # filas del feed de decisiones (incluye HOLD)
+  orders_rows: 40             # filas de la tabla de órdenes
+  news_rows: 25               # filas del panel de noticias/sentimiento
+  stale_after_intervals: 3    # snapshot más viejo que 3 velas → liveness en rojo
+
 quant_matrix:
   taker_commission_pct: 0.05          # VIP0 conservador (aislado de backtest.commission_pct)
   carry_capital_multiplier: 2.0       # delta-neutral inmoviliza spot + margen perp 1x

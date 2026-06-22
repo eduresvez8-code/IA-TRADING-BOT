@@ -66,36 +66,42 @@ Con ambos en false, `--live` opera con **señal quant pura** (línea base de pap
 
 ---
 
-## C. Preparación del dashboard (próxima sesión)
+## C. Dashboard de observabilidad — CONSTRUIDO (2026-06-21)
 
-**Objetivo:** ver operaciones, posiciones, PnL y señales en tiempo real.
+**Objetivo cumplido:** ver equity, posiciones, PnL, decisiones y noticias en tiempo real.
 
-**Datos que YA existen (leer de `data/trading.db` + Binance):**
-- `orders` — toda orden enviada (entrada + SL/TP), con `decision_reason`, status, ts.
-- `sentiment_scores` + `news` — qué noticias se analizaron y con qué score/scope.
-- `session_state` — peak wallet, day-start wallet, kill-switch (estado puntual).
-- En vivo desde Binance: saldo, posiciones abiertas, **uPnL** (`acct.positions`).
+```bash
+uv run python -m src.main --dashboard      # http://127.0.0.1:8787 (Ctrl-C para parar)
+```
 
-**GAP identificado (lo que el dashboard tendrá que añadir):**
-1. **No hay serie temporal de equity/PnL.** `session_state` es una sola fila. Para una
-   curva de capital hay que (a) añadir una tabla `equity_snapshots(ts, wallet, upnl)` que
-   el `_cycle` del engine escriba cada N, o (b) reconstruirla desde el income history de
-   Binance (`futures_income_history`).
-2. **No hay PnL realizado por trade.** `orders` guarda envíos, no resultados. Para una
-   tabla "operaciones cerradas con resultado" hay que cruzar con fills/income de Binance
-   o registrar el realized_pnl al cerrar.
-3. **No hay registro de señales que NO cuajaron.** Solo se guardan órdenes enviadas; las
-   decisiones `decide()` que quedaron en HOLD no se persisten. Útil para depurar "por qué
-   no operó".
+Se puede correr en paralelo a `--live` (otra terminal) o sobre una BD ya existente.
 
-**Arquitectura sugerida (a decidir la próxima sesión):**
-- Backend ligero (FastAPI) que sirve JSON desde `Storage` + un cliente Binance read-only,
-  con polling o WebSocket al frontend. Mantiene la regla async/httpx/aiosqlite del repo.
-- O un dashboard de terminal (rich/textual) si se quiere $0 infra y sin navegador.
-- Cero Hardcoding: cualquier umbral/intervalo del dashboard → `settings.yaml`.
-- El dashboard es **read-only**: nunca envía órdenes (la regla de que toda orden pasa por
-  `risk/manager.py` → `execution/` se mantiene; el dashboard solo observa).
+**Arquitectura (READ-ONLY, $0):** proceso APARTE del trading. Stdlib `http.server` +
+`sqlite3` en modo `ro` (`file:...?mode=ro`) → físicamente incapaz de escribir o enviar
+órdenes. Cero dependencias nuevas (no FastAPI/uvicorn). Solo GET (`/` y `/api/snapshot`),
+enlazado a loopback (no se expone a la red). El frontend (`src/dashboard/index.html`) es una
+página única autocontenida (vanilla JS + SVG, sin CDN) que repolla `/api/snapshot` cada
+`dashboard.refresh_seconds`.
 
-**Primer paso recomendado para el dashboard:** añadir la tabla `equity_snapshots` y que el
-engine la escriba en cada ciclo — sin eso no hay curva de capital, que es lo primero que
-se quiere ver. Es un cambio pequeño y aislado (Vía B para el intervalo).
+**Archivos:** `src/dashboard/{queries.py,server.py,index.html}`; config en
+`DashboardConfig` (`config.py` + `settings.yaml` sección `dashboard`); comando `--dashboard`
+en `main.py`. Tests: `tests/dashboard/test_queries.py` + `tests/data/test_storage.py`
+(tablas nuevas) + `tests/test_config.py` (DashboardConfig). 627 tests verdes.
+
+**GAPs resueltos (tablas nuevas que el engine ya escribe):**
+1. ✅ **Serie temporal de equity** → tabla `equity_snapshots(ts, wallet, equity, upnl,
+   positions)`, escrita por `Orchestrator._record_equity` cada ciclo (desde el `get_account`
+   del propio ciclo, sin llamadas extra al exchange). De aquí salen la curva, el uPnL, las
+   posiciones y el PnL del día.
+2. ✅ **Registro de señales en HOLD** → tabla `decisions(ts, symbol, action, reason,
+   quant_score, sentiment_score, size_factor, source)`, escrita por
+   `Orchestrator._record_decision` en CADA decisión (Slow y Fast Path). Alimenta el panel
+   "¿por qué (no) operó?".
+3. ⏳ **PnL realizado por trade** — sigue pendiente (no bloqueante): `orders` guarda envíos,
+   no resultados. El PnL del día se deriva de `equity − day_start_wallet`, que es suficiente
+   para paper trading. Para "operaciones cerradas con resultado" habría que cruzar con
+   `futures_income_history` de Binance o registrar `realized_pnl` al cerrar. Mejora futura.
+
+**Liveness:** el dashboard es un proceso aparte, no ve `halted` en memoria; deriva la salud
+del último `equity_snapshots.ts` (obsoleto si > `stale_after_intervals` velas → el bot
+probablemente está caído/halted). Robusto sin acoplar procesos.
