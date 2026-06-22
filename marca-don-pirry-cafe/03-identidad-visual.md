@@ -46,15 +46,91 @@
   Hay que sostenerlo con el nombre fuerte.
 
 ### 🔎 Mi recomendación de sistema
-**Ruta 1 como logo principal** (el alma, el homenaje, la cara) + **la firma de la
-Ruta 2 como sello de autenticidad** secundario (en el cierre de la bolsa: "firmado,
-Don Pirry") + **guiños de la Ruta 3 en la iconografía** (sellos de "fermentación de
-autor"). Así no eliges *una sola* idea: las pones a trabajar en jerarquía. Pero la
-**cara principal** la decides tú.
+**Ruta 1 como logo principal** + **la firma (2) como sello** + **guiños de ciencia
+(3) en iconografía**. Pero la **cara principal** la decides tú — y abajo amplío con
+criterios de evaluación y **3 rutas nuevas (4, 5, 6)**.
 
 ---
 
-## 2. Paletas de color (3 opciones, lado a lado en el widget)
+## 1·bis — Cómo juzgar un logo + 3 rutas nuevas
+
+### 📏 Los 7 criterios de un buen logo (tu herramienta para decidir)
+
+Un logo no es "el dibujo más bonito"; es el que **mejor trabaja**. Estos son los
+criterios que usa la industria (Paul Rand y cía.) + uno tuyo (costo):
+
+1. **Simple** — se reconoce de un vistazo. Lo complejo no se recuerda.
+2. **Memorable** — se queda en la cabeza.
+3. **Atemporal** — sirve 20 años, no pasa de moda en 2.
+4. **Versátil** — funciona en **1 color**, en blanco y negro, **gigante y diminuto**
+   (un aviso y el ícono de Instagram), bordado o en un sello.
+5. **Apropiado** — dice **lo correcto** para tu marca (aquí: homenaje + oficio).
+6. **Distintivo / ownable** — no se confunde con otros y es **defendible legalmente**.
+7. **Costo de impresión** — cuántas tintas necesita (te importa, y con razón).
+
+> 💡 Truco honesto: un logo que **solo funciona a todo color y en grande** es un mal
+> logo, por bonito que sea. Por eso el retrato ultradetallado (Ruta 1 clásica)
+> tiene un punto débil real: no escala a ícono pequeño ni a 1 tinta sin perderse.
+
+### 🅳 Ruta 4 — "Monograma / Sello DP" (atelier)
+- **Qué es:** las iniciales **DP** entrelazadas dentro de un **sello** simple (tipo
+  lacre o estampilla de tostador), con "CAFÉ ESPECIAL · PUEBLO RICO" alrededor.
+- **Bueno:** elegantísimo, atemporal, **escala perfecto** (de la bolsa al ícono de
+  IG), **1 tinta**, se ve serio y premium → ideal también para **HoReCa**.
+- **Malo:** "DP" es más **abstracto** (menos homenaje explícito que una cara) y dos
+  iniciales solas son menos distintivas → necesita el sello para volverse ownable.
+
+### 🅴 Ruta 5 — "Retrato de una línea" (line-art) ⭐ *mi nueva recomendación*
+- **Qué es:** la cara de Don Pirry —con sus gafas— trazada con un **estilo de línea
+  continua, minimalista y editorial**. Su rostro, pero moderno.
+- **Bueno:** **resuelve el dilema** de las dos primeras rutas → mantiene el
+  **homenaje (es su cara)** *y* es **moderno, barato (1 tinta) y escala** como ícono.
+  Conecta con **jóvenes/tercera ola** sin perder el alma. Atemporal y distintivo.
+- **Malo:** depende de un buen ilustrador que logre el parecido con **pocos trazos**
+  (es un arte); con foto real de tu papá, se clava.
+
+### 🅵 Ruta 6 — "La Taza-Rostro" (ícono ingenioso)
+- **Qué es:** una **taza de café que, mirada bien, es la cara de Don Pirry**: las
+  gafas + el bigote sobre el café, el vapor como su gesto. Dos lecturas en una.
+- **Bueno:** **muy memorable** y distintivo, simpático, perfecto para **redes** y
+  para el público joven. Une "café" + "persona" en un solo símbolo.
+- **Malo:** lo ingenioso puede volverse **caricaturesco** o "logo de cafetería de
+  centro comercial" si no se ejecuta con gusto. Menos solemne para HoReCa premium.
+
+### 📊 Las 6 rutas contra los criterios
+
+| Ruta | Simple | Memorable | Atemporal | Versátil | Homenaje | Distintivo | Costo bajo |
+|------|:------:|:---------:|:---------:|:--------:|:--------:|:----------:|:----------:|
+| 1 · Emblema retrato | ◐ | ✓ | ✓ | ◐ | ✓✓ | ✓ | ✗ |
+| 2 · Firma | ✓ | ◐ | ✓ | ✓ | ◐ | ✓ | ✓✓ |
+| 3 · Ciencia/grano | ✓ | ✓ | ◐ | ✓ | ✗ | ✓ | ✓ |
+| 4 · Monograma DP | ✓ | ◐ | ✓ | ✓✓ | ◐ | ◐ | ✓✓ |
+| **5 · Retrato 1 línea** | **✓** | **✓** | **✓** | **✓** | **✓✓** | **✓** | **✓** |
+| 6 · Taza-rostro | ✓ | ✓✓ | ◐ | ✓ | ✓ | ✓✓ | ✓ |
+
+*(✓✓ excelente · ✓ bien · ◐ regular · ✗ flojo)*
+
+### 🔎 Mi recomendación (con permiso para recomendar, que me diste)
+
+**Sistema liderado por la Ruta 5 (Retrato de una línea):**
+- **Logo principal:** Ruta 5 — la cara de Don Pirry en una línea + "DON PIRRY CAFÉ"
+  en Fraunces. *(Es el único que saca buena nota en CASI todos los criterios.)*
+- **Ícono / sello:** Ruta 4 (monograma **DP**) para el perfil de IG, el sello del
+  grano y la tapa.
+- **Firma** (Ruta 2) en el cierre de la bolsa: *"firmado, Don Pirry"*.
+- **Toques de ciencia** (gota/burbuja de la Ruta 3) en los **sellos de proceso**.
+
+Así no eliges una sola idea: armas una **familia** coherente. Si prefieres algo más
+**tradicional**, la Ruta 1; más **lúdico/joven**, la Ruta 6; más **sobrio/premium**,
+la Ruta 4. Cualquiera de esas cuatro puede ser la cara — las comparamos abajo.
+
+---
+
+## 2. Paletas de color — ✅ DECIDIDA: **Paleta B (Etiqueta de autor)**
+
+> **DECISIÓN (2026-06-22):** Crema `#F2E8D8` · Espresso `#2A1B12` · Dorado
+> `#C9A24B` · Cobre tostado `#B0552F`. (Las otras quedan archivadas abajo como
+> referencia.)
 
 > Recordá tu criterio (que **apruebo**): **pocos colores, suaves, barato de
 > imprimir**. Las tres respetan eso (2–3 tintas + base). Tu **dorado** sobrevive en
