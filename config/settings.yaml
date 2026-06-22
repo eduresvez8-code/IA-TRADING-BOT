@@ -65,7 +65,7 @@ confluence:
   sentiment_ttl_seconds: 300
 
 sentiment:
-  enabled: false               # gate de seguridad: overlay de noticias OFF (quant puro)
+  enabled: true                # Slow Path ON (Opción 2): noticias originan, régimen 1h confirma — validación testnet 2026-06-21
   rss_feeds:
     - "https://www.coindesk.com/arc/outboundfeeds/rss/"
     - "https://cointelegraph.com/rss"
