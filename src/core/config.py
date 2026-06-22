@@ -103,7 +103,18 @@ class RiskConfig(BaseModel):
 
 
 class ConfluenceConfig(BaseModel):
-    quant_strong_threshold: float = Field(gt=0, lt=1)
+    # Régimen (tendencia HTF) con DOS umbrales asimétricos, porque el régimen
+    # gobierna dos funciones de riesgo OPUESTO y un solo número no puede servir a
+    # ambas (el score 1h vive comprimido en ~[-0.3,+0.3], el viejo 0.5 nunca se
+    # cruzaba → veto y confirm quedaban muertos):
+    #   - quant_veto_threshold (DEFENSIVO): si |régimen| ≥ esto y va OPUESTO a la
+    #     noticia → VETO. Umbral BAJO (sensible): basta una tendencia 1h moderada
+    #     en contra para no pelearla. Calibrado a ~p50 de |score| histórico (3 años).
+    #   - quant_confirm_threshold (OFENSIVO): si |régimen| ≥ esto y va A FAVOR →
+    #     tamaño PLENO. Umbral ALTO (exigente): solo subimos exposición con tendencia
+    #     1h genuinamente fuerte. Calibrado a ~p82 de |score|. Debe ser ≥ veto.
+    quant_veto_threshold: float = Field(gt=0, lt=1)
+    quant_confirm_threshold: float = Field(gt=0, lt=1)
     sentiment_confirm_threshold: float = Field(gt=0, lt=1)
     reduced_size_factor: float = Field(gt=0, le=1)
     # Spot no permite ABRIR cortos; en vivo va en false. El backtest usa su
@@ -116,6 +127,18 @@ class ConfluenceConfig(BaseModel):
     # usaría); le=86400 ataja un typo (más de un día no es "noticia fresca"). NO
     # afecta al backtest, que caduca a escala de horas vía max_news_age_hours.
     sentiment_ttl_seconds: int = Field(ge=1, le=86400)
+
+    @model_validator(mode="after")
+    def _confirm_ge_veto(self) -> "ConfluenceConfig":
+        # El confirm (ofensivo, sube tamaño) debe ser MÁS exigente que el veto
+        # (defensivo). Si se invirtieran, un régimen débil-alineado subiría a
+        # tamaño pleno mientras uno fuerte-opuesto no vetaría: incoherente.
+        if self.quant_confirm_threshold < self.quant_veto_threshold:
+            raise ValueError(
+                "quant_confirm_threshold debe ser >= quant_veto_threshold "
+                f"(confirm={self.quant_confirm_threshold}, veto={self.quant_veto_threshold})"
+            )
+        return self
 
 
 class SentimentConfig(BaseModel):

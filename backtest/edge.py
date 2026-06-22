@@ -197,8 +197,8 @@ def analyze_edge(
 
     No ejecuta trades ni toca riesgo/ejecución: solo correlaciona la señal con el
     retorno futuro. Los horizontes y los cuantiles vienen de config (`edge.*`); el
-    umbral de "señal fuerte" se reutiliza de `confluence.quant_strong_threshold`
-    (el mismo que decide aperturas en vivo) y el régimen de `quant.ema_slow_period`.
+    umbral de "señal fuerte" se reutiliza de `confluence.quant_confirm_threshold`
+    (el de convicción plena en vivo) y el régimen de `quant.ema_slow_period`.
     """
     settings = settings or load_settings()
     df = df.reset_index(drop=True)
@@ -206,7 +206,7 @@ def analyze_edge(
     signal = compute_signal_series(df)
     ema_slow = ema(close, settings.quant.ema_slow_period)
     regime_up = close > ema_slow
-    threshold = settings.confluence.quant_strong_threshold
+    threshold = settings.confluence.quant_confirm_threshold
     nq = settings.edge.n_quantiles
 
     return [

@@ -41,8 +41,8 @@ como **🔎 Mi lectura honesta**.
 | Finca / vereda | **La Manuelita**, vereda **El Recreo** | Nombres reales para trazabilidad y etiqueta |
 | Altura | **1.600 msnm** | Trazabilidad (NO usar como bandera "altura" — legal) |
 | Referente geográfico | **Cerro Tatamá** cerca | Solo contexto poético ("vivimos en un paraíso"), no ícono |
-| Variedades | **Castillo Rosario** (Clásico) y **Borbón Rosado** (Reserva) | Borbón Rosado = Pink Bourbon, varietal de moda en specialty |
-| Procesos | Lavado / **Honey** / Natural — fermentaciones inoculadas | **Estrella: Borbón Rosado Honey.** Diferenciador real, ownable |
+| Variedades | **Castillo Rosario** (Clásico) y **Bourbon Rosado** (Reserva) | Bourbon Rosado = Pink Bourbon, varietal de moda en specialty |
+| Procesos | Lavado / **Honey** / Natural — fermentaciones inoculadas | **Estrella: Bourbon Rosado Honey.** Diferenciador real, ownable |
 | Calidad de taza | **Hasta 89 puntos SCA** | 80+ = especial; 85+ = excelente; **89 = sobresaliente** |
 
 **🔎 Mi lectura honesta:** este es tu activo más fuerte y lo estabas

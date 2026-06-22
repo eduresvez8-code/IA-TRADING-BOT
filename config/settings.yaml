@@ -50,8 +50,11 @@ risk:
   vol_expansion_cap: 2.0
 
 confluence:
-  quant_strong_threshold: 0.5      # |señal quant| para considerarla "fuerte"
-  sentiment_confirm_threshold: 0.3 # |sentimiento| mínimo para confirmar
+  # Régimen 1h: dos umbrales asimétricos (ver ConfluenceConfig). El score 1h vive
+  # comprimido en ~[-0.3,+0.3]; calibrados sobre |score| histórico de 3 años.
+  quant_veto_threshold: 0.15       # |régimen|≥esto y OPUESTO → veta (defensivo, ~p50)
+  quant_confirm_threshold: 0.35    # |régimen|≥esto y A FAVOR → tamaño pleno (ofensivo, ~p82)
+  sentiment_confirm_threshold: 0.3 # |sentimiento| mínimo para originar la dirección
   reduced_size_factor: 0.5         # tamaño al operar sin confirmación de sentimiento
   # Binance Futuros USD-M: los cortos son nativos. En vivo va en true → el bot
   # opera de forma simétrica (LONG y SHORT). El gate sigue siendo config: poner

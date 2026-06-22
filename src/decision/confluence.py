@@ -117,17 +117,23 @@ def decide(
     # Régimen = lectura de tendencia del quant en el timeframe superior (HTF). Ya
     # NO origina; solo modula el TAMAÑO de la apuesta de la noticia.
     regime_aligned = _sign(quant) == _sign(sent)
-    regime_strong = abs(quant) >= cfg.quant_strong_threshold
 
-    # (3) Régimen FUERTE y OPUESTO a la noticia → no peleamos una tendencia 1h
-    #     marcada por un titular puntual (catch-a-falling-knife). Veto = HOLD.
-    #     Espejo simétrico del viejo "sentiment_conflict", con los roles cambiados.
-    if regime_strong and not regime_aligned:
+    # Dos umbrales ASIMÉTRICOS (no uno): el veto y el confirm tienen riesgo opuesto.
+    # El veto QUITA exposición (barato, defensivo) → umbral BAJO/sensible. El confirm
+    # SUBE a tamaño pleno (caro, ofensivo) → umbral ALTO/exigente. Con un único umbral,
+    # bajarlo para resucitar el veto inflaba también el confirm sobre una señal sin
+    # edge probado; calibrados por percentil de |score| 1h histórico (3 años).
+    regime_opposes = abs(quant) >= cfg.quant_veto_threshold and not regime_aligned
+    regime_confirms = abs(quant) >= cfg.quant_confirm_threshold and regime_aligned
+
+    # (3) Régimen (incluso moderado) OPUESTO a la noticia → no peleamos una tendencia
+    #     1h marcada por un titular puntual (catch-a-falling-knife). Veto = HOLD.
+    if regime_opposes:
         return _decision(Action.HOLD, 0.0, "regime_conflict")
 
     # (4) Régimen FUERTE y a favor → la tendencia HTF respalda la noticia →
-    #     convicción plena.
-    if regime_strong and regime_aligned:
+    #     convicción plena (tamaño pleno).
+    if regime_confirms:
         return _decision(direction, 1.0, "regime_confirms")
 
     # (5) Régimen débil/neutro → operamos la noticia con tamaño reducido: hay

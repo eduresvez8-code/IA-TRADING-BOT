@@ -98,11 +98,29 @@ def test_sentiment_max_news_age_cero_es_rechazado():
 
 def _valid_confluence_kwargs(**overrides):
     base = dict(
-        quant_strong_threshold=0.5, sentiment_confirm_threshold=0.3,
+        quant_veto_threshold=0.15, quant_confirm_threshold=0.35,
+        sentiment_confirm_threshold=0.3,
         reduced_size_factor=0.5, allow_short=True, sentiment_ttl_seconds=300,
     )
     base.update(overrides)
     return base
+
+
+def test_confluence_confirm_debe_ser_ge_veto():
+    # El confirm (ofensivo) no puede ser más laxo que el veto (defensivo): si se
+    # invierte, un régimen débil subiría a tamaño pleno y uno fuerte no vetaría.
+    from src.core.config import ConfluenceConfig
+    with pytest.raises(ValidationError):
+        ConfluenceConfig(**_valid_confluence_kwargs(
+            quant_veto_threshold=0.40, quant_confirm_threshold=0.20))
+
+
+def test_confluence_confirm_igual_a_veto_es_valido():
+    # Frontera: confirm == veto es válido (umbral simétrico clásico, sin zona muerta).
+    from src.core.config import ConfluenceConfig
+    cfg = ConfluenceConfig(**_valid_confluence_kwargs(
+        quant_veto_threshold=0.3, quant_confirm_threshold=0.3))
+    assert cfg.quant_confirm_threshold == cfg.quant_veto_threshold
 
 
 def _valid_quant_matrix_kwargs(**overrides):
@@ -263,7 +281,9 @@ def test_confluence_ttl_absurdo_es_rechazado():
 
 def test_settings_yaml_confluence():
     s = load_settings()
-    assert 0.0 < s.confluence.quant_strong_threshold < 1.0
+    assert 0.0 < s.confluence.quant_veto_threshold < 1.0
+    assert 0.0 < s.confluence.quant_confirm_threshold < 1.0
+    assert s.confluence.quant_confirm_threshold >= s.confluence.quant_veto_threshold
     assert s.confluence.allow_short is True
     assert 1 <= s.confluence.sentiment_ttl_seconds <= 86400
 

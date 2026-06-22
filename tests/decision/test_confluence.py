@@ -122,9 +122,29 @@ def test_sin_quant_pero_con_noticia_opera_reducido():
 
 
 def test_regimen_debil_opuesto_no_veta():
-    # Tendencia HTF bajista pero DÉBIL (−0.2, bajo umbral) contra noticia alcista:
-    # no es lo bastante fuerte para vetar → opera reducido, no HOLD.
+    # Tendencia HTF bajista pero DÉBIL (−0.1, bajo el umbral de veto 0.15) contra
+    # noticia alcista: el régimen casi no opina → opera reducido, no veta.
+    d = decide(make_signal(-0.1), make_sentiment(0.6), CFG)
+    assert d.action == Action.LONG
+    assert d.size_factor == CFG.confluence.reduced_size_factor
+    assert d.reason == "regime_neutral"
+
+
+def test_regimen_moderado_opuesto_si_veta():
+    # Asimetría del veto (sensible): una tendencia HTF solo MODERADA (−0.2, entre
+    # veto 0.15 y confirm 0.35) opuesta a la noticia YA veta. Defensa barata: no
+    # peleamos ni siquiera tendencias moderadas en contra.
     d = decide(make_signal(-0.2), make_sentiment(0.6), CFG)
+    assert d.action == Action.HOLD
+    assert d.reason == "regime_conflict"
+
+
+def test_regimen_moderado_alineado_no_confirma_a_pleno():
+    # Asimetría del confirm (exigente): una tendencia MODERADA (0.2, entre veto y
+    # confirm) ALINEADA con la noticia NO sube a tamaño pleno — hace falta régimen
+    # genuinamente fuerte (≥0.35). Zona muerta: opera reducido. Este es el núcleo
+    # del arreglo: bajar el veto NO infla el tamaño de los trades alineados.
+    d = decide(make_signal(0.2), make_sentiment(0.6), CFG)
     assert d.action == Action.LONG
     assert d.size_factor == CFG.confluence.reduced_size_factor
     assert d.reason == "regime_neutral"
@@ -167,12 +187,21 @@ def test_short_gate_tiene_prioridad_sobre_regimen():
 
 # ---- Bordes y auditoría ----
 
-def test_regimen_justo_en_el_umbral_es_fuerte():
-    thr = CFG.confluence.quant_strong_threshold
+def test_regimen_justo_en_el_umbral_de_confirm_es_pleno():
+    # Borde inferior del confirm: |régimen| == quant_confirm_threshold ya es "fuerte".
+    thr = CFG.confluence.quant_confirm_threshold
     d = decide(make_signal(thr), make_sentiment(0.6), CFG)
     assert d.action == Action.LONG
     assert d.size_factor == 1.0
     assert d.reason == "regime_confirms"
+
+
+def test_regimen_justo_en_el_umbral_de_veto_ya_veta():
+    # Borde inferior del veto: |régimen| == quant_veto_threshold y opuesto → veta.
+    thr = CFG.confluence.quant_veto_threshold
+    d = decide(make_signal(-thr), make_sentiment(0.6), CFG)
+    assert d.action == Action.HOLD
+    assert d.reason == "regime_conflict"
 
 
 def test_decision_registra_scores_para_auditoria():

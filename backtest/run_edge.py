@@ -60,7 +60,7 @@ def _format_symbol(
 def main(*, htf: bool) -> int:
     cfg = load_settings()
     tf = cfg.market.htf_timeframe if htf else cfg.market.timeframe
-    threshold = cfg.confluence.quant_strong_threshold
+    threshold = cfg.confluence.quant_confirm_threshold
 
     print("Edge test de la señal quant — diagnóstico puro (no ejecuta trades).")
     print("IC = corr(señal, retorno futuro). ~0 ⇒ sin poder predictivo. "

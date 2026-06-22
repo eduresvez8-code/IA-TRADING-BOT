@@ -16,8 +16,8 @@ se entrega como archivo, se revisa y **no se avanza hasta aprobación de Eduardo
 |------|-----------|--------|
 | 0 | `00-brief.md` — Brief y diagnóstico | ✅ Aprobada (gama y público decididos) |
 | 1 | `01-estrategia.md` — Estrategia de marca | ✅ Aprobada (propósito B + arquetipo A) |
-| 2 | `02-identidad-verbal.md` — Voz, historia, naming | ✅ Historia real lista — falta tu OK + taglines |
-| 3 | `03-identidad-visual.md` + `paleta.md` + mockups | ⏳ |
+| 2 | `02-identidad-verbal.md` — Voz, historia, naming | ✅ Aprobada (historia A · grafía Bourbon) |
+| 3 | `03-identidad-visual.md` + `paleta.md` + mockups | 🟡 Borrador para revisión (3 rutas + 3 paletas) |
 | 4 | `04-empaque.md` — Bolsa y etiqueta | ⏳ |
 | 5 | `05-brand-book.md` — Manual de marca | ⏳ |
 | 6 | `06-digital.md` — Web + redes (+ prompt para la web) | ⏳ |

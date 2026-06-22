@@ -29,8 +29,9 @@ def check() -> int:
     o = settings.orchestrator
     print(f"✓ confluencia (Opción 2: noticia origina, quant=régimen) — "
           f"noticia origina ≥{c.sentiment_confirm_threshold} | "
-          f"régimen fuerte ≥{c.quant_strong_threshold} ({o.regime_htf_bars} velas "
-          f"{settings.market.htf_timeframe}) | tamaño reducido ×{c.reduced_size_factor} | "
+          f"régimen veta ≥{c.quant_veto_threshold} / confirma ≥{c.quant_confirm_threshold} "
+          f"({o.regime_htf_bars} velas {settings.market.htf_timeframe}) | "
+          f"tamaño reducido ×{c.reduced_size_factor} | "
           f"cortos {'ON (simétrico)' if c.allow_short else 'OFF'}")
     print(f"✓ risk manager (Futuros USD-M) — máx {settings.risk.max_open_positions} "
           f"posiciones | TP {settings.risk.take_profit_rr}×SL | "

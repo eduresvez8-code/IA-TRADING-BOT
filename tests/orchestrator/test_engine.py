@@ -450,7 +450,7 @@ async def test_regime_signal_lee_tendencia_real_en_htf():
     orch.buffers[SYMBOL] = _downtrend_buffer(orch._buffer_target())
     regime = orch._regime_signal(SYMBOL)
     assert regime is not None
-    assert regime.score <= -CFG.confluence.quant_strong_threshold
+    assert regime.score <= -CFG.confluence.quant_confirm_threshold
 
 
 async def test_regimen_fuerte_opuesto_veta_la_noticia_end_to_end():
