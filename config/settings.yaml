@@ -3,14 +3,14 @@
 # Cambiar un parámetro de trading nunca debe requerir tocar código.
 
 market:
-  symbols: ["BTCUSDT", "ETHUSDT"]
+  symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT", "DOGEUSDT"]
   timeframe: "5m"            # vela base de trabajo
   htf_timeframe: "1h"        # timeframe superior para contexto/tendencia
   quote_assets: ["USDT"]     # quotes para derivar el activo base (BTCUSDT→BTC) al resolver scope de noticias
 
 risk:
   risk_per_trade_pct: 1.0    # % del capital arriesgado por operación
-  max_open_positions: 3
+  max_open_positions: 5      # 6 símbolos en el universo; tope simultáneo conservador
   max_daily_loss_pct: 3.0    # al tocarlo, el bot se detiene hasta el día siguiente
   max_drawdown_pct: 10.0     # kill switch: requiere reinicio manual
   atr_stop_multiplier: 1.5   # SL = entrada -/+ 1.5 * ATR(14)
@@ -165,6 +165,9 @@ orchestrator:
   # edge de EMA-cross en velas DIARIAS/horarias, nunca en 5m → el régimen vive en
   # el HTF, no en la vela base de entrada.
   regime_htf_bars: 50
+  # Sondeo del PnL realizado por símbolo (income history Binance) para el dashboard.
+  # Solo observabilidad, en tarea aparte; no afecta el trading. 60s es de sobra.
+  realized_pnl_poll_seconds: 60
 
 # --- Fast Path: originación de trades por evento (Plan V2 Fase 2) ---
 # Gobierna CUÁNDO un shock (hack/ETF/depeg…) cuaja en una orden. La lógica

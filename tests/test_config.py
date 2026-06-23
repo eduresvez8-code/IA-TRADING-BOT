@@ -750,6 +750,23 @@ def test_settings_yaml_orchestrator():
     assert 1 <= s.orchestrator.reconcile_grace_cycles <= 20
     # Régimen HTF (Opción 2): debe cubrir el mínimo del quant (ema_slow + rsi).
     assert s.orchestrator.regime_htf_bars >= s.quant.ema_slow_period + s.quant.rsi_period
+    # Sondeo de PnL realizado (observabilidad del dashboard).
+    assert 10 <= s.orchestrator.realized_pnl_poll_seconds <= 3600
+
+
+def test_realized_pnl_poll_fuera_de_rango_es_rechazado():
+    from src.core.config import OrchestratorConfig
+    with pytest.raises(ValidationError):
+        OrchestratorConfig(warmup_candles=60, reconcile_grace_cycles=3,
+                           regime_htf_bars=50, realized_pnl_poll_seconds=5)
+
+
+def test_settings_yaml_universo_de_seis_simbolos():
+    # Universo ampliado (2026-06-23): 6 perps USD-M; tope de posiciones acorde.
+    s = load_settings()
+    assert len(s.market.symbols) == 6
+    assert {"SOLUSDT", "XRPUSDT", "BNBUSDT", "DOGEUSDT"} <= set(s.market.symbols)
+    assert s.risk.max_open_positions <= len(s.market.symbols)
 
 
 def test_warmup_demasiado_corto_es_rechazado():

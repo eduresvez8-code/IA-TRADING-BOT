@@ -87,6 +87,10 @@ class FakeFuturesExchange:
             positions=visible,
         )
 
+    async def get_realized_pnl(self, since_ms: int) -> dict[str, float]:
+        # El fake no simula income history; devuelve vacío (solo observabilidad).
+        return {}
+
     async def get_open_orders(self, symbol: str) -> list[OrderResult]:
         return list(self.resting.get(symbol, []))
 

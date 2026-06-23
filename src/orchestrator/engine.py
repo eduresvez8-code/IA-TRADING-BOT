@@ -120,6 +120,11 @@ class Orchestrator:
         # fuente del impulso (antes: vela 5m cerrada, ventana pre-noticia).
         self._markprice: dict[str, deque[tuple[datetime, float]]] = {}
 
+        # Inicio de la sesión en vivo (epoch ms): frontera del PnL realizado por
+        # símbolo que muestra el dashboard. Lo fija run(); aquí se inicializa
+        # defensivamente por si _realized_pnl_loop se invoca fuera de run() (tests).
+        self._session_start_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+
     # ------------------------------ arranque ------------------------------
 
     async def startup(self) -> "Orchestrator":
@@ -720,6 +725,8 @@ class Orchestrator:
         """
         if self._backfill_fn is None:
             self._backfill_fn = self._make_rest_backfill(data_client)
+        # Frontera del PnL realizado por símbolo del dashboard: ESTA corrida.
+        self._session_start_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
         await self.startup()
         for sym in self.cfg.market.symbols:
             await self.warmup(sym)
@@ -733,6 +740,10 @@ class Orchestrator:
             for sym in self.cfg.market.symbols
         ]
         tasks.append(self._supervise(self._watchdog_loop, name="watchdog"))
+        # Observabilidad: PnL realizado por símbolo para el dashboard. Tarea aparte,
+        # solo si hay storage; un fallo suyo nunca toca el lazo de trading.
+        if self.executor.storage is not None:
+            tasks.append(self._supervise(self._realized_pnl_loop, name="realized_pnl"))
         # Slow Path: overlay de sentimiento de noticias. Gate de seguridad de
         # presupuesto (sentiment.enabled, default false): con el flag apagado NO se
         # arranca el loop → cero llamadas a Claude y la señal quant queda PURA. Mismo
@@ -800,3 +811,28 @@ class Orchestrator:
         while True:
             self.sentiment_store.update(await fetch())
             await asyncio.sleep(self.cfg.sentiment.poll_interval_seconds)
+
+    async def _realized_pnl_loop(self) -> None:
+        """Sondea el PnL REALIZADO por símbolo (income history) para el dashboard.
+
+        Tarea APARTE del trading: si el fetch falla, NO sobrescribe la tabla (mantiene
+        los últimos valores buenos) y reintenta al siguiente sondeo; un fallo fatal lo
+        recoge `_supervise`. Mide desde `self._session_start_ms`, así el panel refleja
+        cómo va CADA moneda en la corrida actual (excluye sesiones previas). Refresca
+        TODOS los símbolos del universo (incluso 0) para no dejar valores rancios.
+        """
+        storage = self.executor.storage
+        if storage is None:
+            return
+        while True:
+            try:
+                realized = await self.executor.exchange.get_realized_pnl(
+                    self._session_start_ms)
+                full = {sym: realized.get(sym, 0.0) for sym in self.cfg.market.symbols}
+                await storage.save_realized_pnl(
+                    realized=full,
+                    ts_ms=int(datetime.now(timezone.utc).timestamp() * 1000))
+            except Exception:
+                logger.warning("sondeo de PnL realizado falló; se reintenta",
+                               exc_info=True)
+            await asyncio.sleep(self.cfg.orchestrator.realized_pnl_poll_seconds)

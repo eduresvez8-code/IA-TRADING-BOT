@@ -92,6 +92,7 @@ def build_snapshot(
                  "day_start_wallet": None, "drawdown_pct": None, "day_pnl": None,
                  "day_pnl_pct": None, "kill_switch": False, "open_positions": 0},
         "equity": [], "positions": [], "decisions": [], "orders": [], "news": [],
+        "pnl_by_symbol": [],
     }
 
     conn = _connect(settings.storage.db_path)
@@ -131,6 +132,9 @@ def build_snapshot(
         latest = _rows(
             conn, "SELECT ts, wallet, equity, upnl, positions FROM equity_snapshots"
             " ORDER BY ts DESC LIMIT 1",
+        )
+        realized_rows = _rows(
+            conn, "SELECT symbol, realized FROM realized_pnl",
         )
     finally:
         conn.close()
@@ -174,7 +178,34 @@ def build_snapshot(
         kpis = dict(empty["kpis"], kill_switch=kill, peak_wallet=peak,
                     day_start_wallet=day_start)
 
+    pnl_by_symbol = _pnl_by_symbol(
+        list(settings.market.symbols), realized_rows, positions)
+
     return {
         "meta": meta, "kpis": kpis, "equity": equity, "positions": positions,
         "decisions": decisions, "orders": orders, "news": news,
+        "pnl_by_symbol": pnl_by_symbol,
     }
+
+
+def _pnl_by_symbol(symbols: list[str], realized_rows: list[dict],
+                   positions: list[dict]) -> list[dict]:
+    """Fusiona PnL realizado (tabla) + no realizado (posiciones abiertas) por símbolo.
+
+    Incluye TODOS los símbolos del universo (incluso planos, en 0) más cualquiera con
+    datos fuera del universo (defensivo). Ordena por total descendente: el frontend
+    ve de un vistazo qué moneda gana y cuál pierde. `total = realizado + no_realizado`.
+    """
+    realized: dict[str, float] = {r["symbol"]: r["realized"] for r in realized_rows}
+    unrealized: dict[str, float] = {}
+    for p in positions:
+        unrealized[p["symbol"]] = unrealized.get(p["symbol"], 0.0) + (p.get("upnl") or 0.0)
+
+    universe = list(dict.fromkeys([*symbols, *realized.keys(), *unrealized.keys()]))
+    out = []
+    for sym in universe:
+        r = realized.get(sym, 0.0)
+        u = unrealized.get(sym, 0.0)
+        out.append({"symbol": sym, "realized": r, "unrealized": u, "total": r + u})
+    out.sort(key=lambda x: x["total"], reverse=True)
+    return out

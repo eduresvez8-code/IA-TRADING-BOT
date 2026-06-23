@@ -123,6 +123,19 @@ CREATE TABLE IF NOT EXISTS decisions (
 """
 
 
+# PnL REALIZADO acumulado por símbolo (panel "P&L por símbolo" del dashboard). Una
+# fila por símbolo, sobrescrita cada sondeo con el total de la SESIÓN en vivo (suma
+# del income history REALIZED_PNL desde que arrancó el bot). `updated_ms` data la
+# última actualización para diagnóstico.
+REALIZED_SCHEMA = """
+CREATE TABLE IF NOT EXISTS realized_pnl (
+    symbol     TEXT    PRIMARY KEY,
+    realized   REAL    NOT NULL,      -- PnL realizado acumulado de la sesión (USDT)
+    updated_ms INTEGER NOT NULL       -- epoch ms UTC de la última actualización
+)
+"""
+
+
 class Storage:
     def __init__(self, db_path: str | Path, candles_dir: str | Path):
         self.db_path = Path(db_path)
@@ -140,6 +153,7 @@ class Storage:
         await self._db.execute(SCORES_SCHEMA)
         await self._db.execute(EQUITY_SCHEMA)
         await self._db.execute(DECISIONS_SCHEMA)
+        await self._db.execute(REALIZED_SCHEMA)
         await self._db.commit()
         return self
 
@@ -335,6 +349,27 @@ class Storage:
             "SELECT ts, symbol, action, reason, quant_score, sentiment_score,"
             " size_factor, source FROM decisions ORDER BY ts DESC LIMIT ?",
             (limit,),
+        )
+        cols = [c[0] for c in cur.description]
+        rows = await cur.fetchall()
+        return [dict(zip(cols, r)) for r in rows]
+
+    # ---------- SQLite: PnL realizado por símbolo (panel del dashboard) ----------
+
+    async def save_realized_pnl(self, *, realized: dict[str, float], ts_ms: int) -> None:
+        """Sobrescribe (upsert) el PnL realizado acumulado de cada símbolo dado."""
+        for symbol, value in realized.items():
+            await self._db.execute(
+                "INSERT OR REPLACE INTO realized_pnl VALUES (?, ?, ?)",
+                (symbol, float(value), ts_ms),
+            )
+        await self._db.commit()
+
+    async def get_realized_pnl(self) -> list[dict]:
+        """PnL realizado por símbolo (todas las filas), de mayor a menor."""
+        cur = await self._db.execute(
+            "SELECT symbol, realized, updated_ms FROM realized_pnl"
+            " ORDER BY realized DESC",
         )
         cols = [c[0] for c in cur.description]
         rows = await cur.fetchall()

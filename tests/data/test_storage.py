@@ -166,6 +166,23 @@ async def test_decisions_idempotente_por_symbol_ts(storage):
     assert len(out) == 1 and out[0]["action"] == "LONG"  # (symbol, ts) reemplaza
 
 
+async def test_realized_pnl_roundtrip_y_orden(storage):
+    await storage.save_realized_pnl(
+        realized={"BTCUSDT": -5.0, "ETHUSDT": 12.5, "SOLUSDT": 0.0}, ts_ms=1000)
+    out = await storage.get_realized_pnl()
+    assert len(out) == 3
+    assert out[0]["symbol"] == "ETHUSDT" and out[0]["realized"] == 12.5  # mayor primero
+    assert out[-1]["symbol"] == "BTCUSDT"                                 # menor último
+    assert out[0]["updated_ms"] == 1000
+
+
+async def test_realized_pnl_upsert_por_simbolo(storage):
+    await storage.save_realized_pnl(realized={"BTCUSDT": -5.0}, ts_ms=1)
+    await storage.save_realized_pnl(realized={"BTCUSDT": 7.0}, ts_ms=2)  # sobrescribe
+    out = await storage.get_realized_pnl()
+    assert len(out) == 1 and out[0]["realized"] == 7.0 and out[0]["updated_ms"] == 2
+
+
 def test_parquet_roundtrip(tmp_path):
     s = Storage(tmp_path / "test.db", tmp_path / "candles")
     df = pd.DataFrame({

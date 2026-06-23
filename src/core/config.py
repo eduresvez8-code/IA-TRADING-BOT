@@ -314,6 +314,12 @@ class OrchestratorConfig(BaseModel):
     # quant exige ema_slow_period + rsi_period velas (35 con 21+14), así que ge=35
     # garantiza que el régimen tenga datos; le=500 ataja un buffer desmedido.
     regime_htf_bars: int = Field(ge=35, le=500)
+    # Cada cuánto el engine sondea el PnL REALIZADO por símbolo (income history de
+    # Binance) para el panel del dashboard. Es SOLO observabilidad: corre en una
+    # tarea aparte, no toca el camino de trading. ge=10 evita martillar la API;
+    # le=3600 ataja un typo. El realizado cambia solo al cerrar trades, así que un
+    # sondeo de ~60s es de sobra.
+    realized_pnl_poll_seconds: int = Field(default=60, ge=10, le=3600)
 
 
 class EventConfig(BaseModel):

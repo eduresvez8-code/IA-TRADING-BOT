@@ -137,6 +137,26 @@ class BinanceFuturesExchange:
             positions=positions,
         )
 
+    async def get_realized_pnl(self, since_ms: int) -> dict[str, float]:
+        """PnL REALIZADO por símbolo desde `since_ms` (income history de Binance).
+
+        Suma el `income` de los registros REALIZED_PNL (el PnL al cerrar/reducir una
+        posición; positivo gana, negativo pierde). Es la fuente AUTORITATIVA del
+        exchange — no una reconstrucción frágil desde las órdenes. Solo lectura,
+        para el panel del dashboard; nunca opera. limit=1000 cubre de sobra una
+        sesión de paper trading.
+        """
+        rows = await retry_with_backoff(
+            lambda: self.client.futures_income_history(
+                incomeType="REALIZED_PNL", startTime=since_ms, limit=1000)
+        )
+        agg: dict[str, float] = {}
+        for r in rows:
+            sym = r.get("symbol")
+            if sym:
+                agg[sym] = agg.get(sym, 0.0) + float(r.get("income", 0.0))
+        return agg
+
     # ---------- órdenes ----------
 
     async def place_order(self, req: OrderRequest) -> OrderResult:

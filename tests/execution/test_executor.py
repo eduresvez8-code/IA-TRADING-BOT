@@ -16,7 +16,10 @@ from src.execution.exchange import ExchangePosition
 from src.execution.executor import Executor, ExecutionStartupError
 from src.execution.fake_exchange import FakeFuturesExchange
 
-CFG = load_settings()
+# Scope a los símbolos que el fake conoce (filtros/precios abajo): estos tests son
+# del Executor sobre BTC/ETH, no del universo de producción. Desacopla de settings.yaml.
+CFG = load_settings().model_copy(deep=True)
+CFG.market.symbols = ["BTCUSDT", "ETHUSDT"]
 NOW = datetime(2026, 6, 14, 12, 0, tzinfo=timezone.utc)
 LEV = CFG.risk.max_leverage  # 3
 

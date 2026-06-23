@@ -44,6 +44,8 @@ async def populated(tmp_path):
                         side="BUY", position_side="LONG", type="MARKET",
                         quantity=0.1, price=50000.0, status="FILLED",
                         exchange_order_id="1", decision_reason="regime_confirms")
+    # PnL realizado por símbolo: BTC perdió, ETH ganó (sin posición abierta).
+    await st.save_realized_pnl(realized={"BTCUSDT": -8.0, "ETHUSDT": 15.0}, ts_ms=base)
     await st.close()
     return settings
 
@@ -73,6 +75,22 @@ async def test_snapshot_curva_ascendente_y_paneles(populated):
     assert snap["positions"][0]["symbol"] == "BTCUSDT"
     assert snap["decisions"][0]["reason"] == "regime_confirms"
     assert snap["orders"][0]["client_order_id"] == "c1"
+
+
+async def test_pnl_por_simbolo_fusiona_realizado_y_no_realizado(populated):
+    snap = build_snapshot(populated, now=NOW, testnet=True)
+    by = {r["symbol"]: r for r in snap["pnl_by_symbol"]}
+    # BTC: realizado -8 + no realizado (uPnL posición) +20 = total 12.
+    assert by["BTCUSDT"]["realized"] == pytest.approx(-8.0)
+    assert by["BTCUSDT"]["unrealized"] == pytest.approx(20.0)
+    assert by["BTCUSDT"]["total"] == pytest.approx(12.0)
+    # ETH: realizado +15, sin posición → total 15.
+    assert by["ETHUSDT"]["total"] == pytest.approx(15.0)
+    # Todos los símbolos del universo aparecen (incluso planos en 0).
+    assert set(by) >= set(populated.market.symbols)
+    # Orden: por total descendente (ETH 15 antes que BTC 12).
+    syms = [r["symbol"] for r in snap["pnl_by_symbol"]]
+    assert syms.index("ETHUSDT") < syms.index("BTCUSDT")
 
 
 async def test_liveness_fresco_vs_obsoleto(populated):

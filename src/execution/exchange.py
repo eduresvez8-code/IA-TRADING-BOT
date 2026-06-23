@@ -95,6 +95,10 @@ class FuturesExchange(Protocol):
         """Saldos y posiciones actuales."""
         ...
 
+    async def get_realized_pnl(self, since_ms: int) -> dict[str, float]:
+        """PnL realizado por símbolo desde `since_ms` (solo lectura, dashboard)."""
+        ...
+
     async def place_order(self, req: OrderRequest) -> OrderResult:
         """Envía una orden y devuelve su resultado."""
         ...
