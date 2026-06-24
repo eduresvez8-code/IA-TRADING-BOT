@@ -1,6 +1,6 @@
 # 04 · Identidad visual — Rutas de logotipo (KALYX)
 
-> Estado: **Ruta 1 elegida (marca tipográfica / wordmark).** Se presentaron 6 rutas de logo (tablero SVG en chat /
+> Estado: **Símbolo principal = monograma KX (en elección); el wordmark pasa a logotipo horizontal secundario.** Se presentaron 6 rutas de logo (tablero SVG en chat /
 > `mockups/`). Eduardo elige una (o una mezcla) y luego se refina el arte final +
 > paleta + tipografías + specs de vectorización.
 >
@@ -72,3 +72,24 @@ green (#1E8A57), the letters A, L, Y in charcoal near-black (#161A20)"*.
 ### Siguiente paso
 Elegir fuente → Claude entrega `mockups/kalyx-logo.svg` (vector limpio) en sus
 versiones (positivo, negativo, monocromo) + paleta final + tipografías + specs.
+
+---
+
+## 🔁 GIRO: el wordmark es muy ancho ("panel") → símbolo compacto KX
+
+Al ver el wordmark generado, Eduardo notó que funciona como cabecera pero **no como
+logo compacto** (avatar/favicon/sello). Decisión: el **símbolo principal** será un
+**monograma KX** (solo K y X, compacto); el **wordmark** queda como **logotipo
+horizontal** para cabeceras. Se tienen ambos.
+
+### 6 monogramas KX presentados (tablero SVG en chat)
+1. **Ligadura KX** — K y X fundidas en trazo continuo, comparten vértices.
+2. **Ligadura KX · acento** ⭐ — igual, con la X en verde (brote/crecimiento).
+3. **K↔X simétrico** — dos K en espejo que forman una X central.
+4. **Ícono de app** — la ligadura en negativo dentro de un sello oscuro + punto verde.
+5. **KX en círculo** — monograma encerrado, tipo sello/moneda.
+6. **KX + brote** — monograma con punto-flor arriba (guiño al cáliz).
+
+**Recomendación de Claude:** símbolo = #2 (ligadura con acento) + ícono de app = #4.
+**Pendiente:** que Eduardo elija → entregar `mockups/kalyx-logo.svg` (positivo,
+negativo, monocromo, color), ícono de app y lockup símbolo+wordmark, + paleta y tipos.
