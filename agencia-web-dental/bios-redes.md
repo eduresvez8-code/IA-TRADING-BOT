@@ -1,16 +1,19 @@
 # Bios para redes sociales — KALYX
 
 > Primer activo de la **Fase 3 (identidad verbal)**. Voz: artesano experto, cercano y
-> honesto. Foco: clínicas/consultorios dentales. Metáfora ancla: *tu clínica es la
-> flor; nosotros, la estructura (el cáliz) que la sostiene.*
+> honesto. **Sin emojis** y **sin mencionar nicho** (marca neutra/expandible).
+> Metáfora ancla: *tu negocio es la flor; nosotros, la estructura (el cáliz) que lo sostiene.*
 > Regla: escribir **siempre KALYX** (mayúsculas, con K y Y).
+>
+> Nota: la marca madre va neutra. Para campañas o landing pages dirigidas a un nicho
+> (p. ej. dental), existe una versión específica que convierte mejor — pedir aparte.
 
 ## Línea de marca (para usar transversalmente)
 
-- **Tagline principal:** *La estructura que sostiene tu clínica en internet.*
-- **Promesa (alterna):** *Más pacientes en tu agenda, sin complicarte.*
-- **Frase poética (para "about"):** *Tu clínica es la flor; nosotros, el cáliz que la sostiene.*
-- **Cierre/CTA:** *¿Hacemos florecer tu clínica?*
+- **Tagline principal:** La estructura que sostiene tu negocio en internet.
+- **Promesa (alterna):** Más clientes, sin complicarte.
+- **Frase poética (para "about"):** Tu negocio es la flor; nosotros, la estructura que lo sostiene.
+- **Cierre/CTA:** ¿Hacemos crecer tu negocio?
 
 ---
 
@@ -18,73 +21,67 @@
 
 **Opción A**
 ```
-🦷 Webs para clínicas dentales
-🌱 El sitio que llena tu agenda + mantenimiento
-✨ Tu clínica florece; nosotros la sostenemos
-📩 Cotiza 👇
+Diseño y desarrollo web hecho con oficio
+El sitio que hace crecer tu negocio, y lo mantenemos por ti
+Cotiza aquí
 ```
 
-**Opción B (más corta)**
+**Opción B (con la metáfora)**
 ```
-🦷🌱 Webs que llenan la agenda de tu clínica dental
-Diseño con oficio + mantenimiento
-📩 Escríbenos 👇
+La estructura que sostiene tu negocio en internet
+Diseño y desarrollo web con oficio + mantenimiento
+Escríbenos
 ```
 
 ## TikTok (máx. ~80 caracteres)
 ```
-🦷 Webs para dentistas que llenan la agenda 🌱 Diseño + mantenimiento
+Diseño y desarrollo web que hace crecer tu negocio. Con oficio y mantenimiento.
 ```
 
 ## X / Twitter (máx. 160 caracteres)
 ```
-Estudio de diseño y desarrollo web para clínicas dentales 🦷 Creamos el sitio que te llena la agenda y lo mantenemos por ti. Tu clínica florece, nosotros la sostenemos 🌱
+Estudio de diseño y desarrollo web. Creamos el sitio que hace crecer tu negocio y lo mantenemos por ti. Tu negocio florece; nosotros lo sostenemos.
 ```
 
 ## LinkedIn — eslogan de la página (máx. 120 caracteres)
 ```
-Diseño y desarrollo web para clínicas dentales. Creamos el sitio que llena tu agenda y lo mantenemos por ti.
+Diseño y desarrollo web. Creamos el sitio que hace crecer tu negocio y lo mantenemos por ti.
 ```
 
 ## LinkedIn — Descripción general / About
 ```
-KALYX es un estudio de diseño y desarrollo web especializado en clínicas y consultorios dentales.
+KALYX es un estudio de diseño y desarrollo web.
 
-En botánica, el cáliz (calyx) es la estructura que sostiene, protege y da base a la flor antes de que abra. Así trabajamos: tu clínica es la flor —lo visible, lo que enamora al paciente— y nosotros somos la estructura que la sostiene en internet: código limpio, hosting robusto y un sitio pensado para una sola cosa, llenar tu agenda.
+En botánica, el cáliz (calyx) es la estructura que sostiene, protege y da base a la flor antes de que abra. Así trabajamos: tu negocio es la flor —lo visible, lo que enamora a tu cliente— y nosotros somos la estructura que lo sostiene en internet: código limpio, hosting robusto y un sitio pensado para una sola cosa, hacerte crecer.
 
 Qué hacemos:
-• Diseñamos y desarrollamos tu sitio web, hecho con oficio (nada de plantillas genéricas).
-• Lo optimizamos para convertir visitantes en citas.
-• Lo mantenemos por ti, mes a mes, para que nunca se caiga ni se quede atrás.
+- Diseñamos y desarrollamos tu sitio web, hecho con oficio (nada de plantillas genéricas).
+- Lo optimizamos para convertir visitantes en clientes.
+- Lo mantenemos por ti, mes a mes, para que nunca se caiga ni se quede atrás.
 
-Para quién: odontólogos y clínicas que quieren más pacientes y menos complicaciones.
+Para quién: negocios que quieren una presencia profesional que venda, sin complicaciones.
 
-Sin la impredecibilidad de un freelance, sin el costo de una agencia grande: especialistas, a un precio justo.
+Sin la impredecibilidad de un freelance, sin el costo de una agencia grande: oficio y criterio, a un precio justo.
 
-📩 ¿Hacemos florecer tu clínica? Escríbenos.
+¿Hacemos crecer tu negocio? Escríbenos.
 ```
 
 ## Facebook — biografía corta (máx. ~101 caracteres)
 ```
-Webs para clínicas dentales que llenan la agenda. Diseño con oficio + mantenimiento. 🦷🌱
+Diseño y desarrollo web con oficio. El sitio que hace crecer tu negocio, y lo mantenemos por ti.
 ```
 
-## Google Business Profile — descripción (máx. 750 caracteres) ⭐ clave para SEO local
+## Google Business Profile — descripción (máx. 750 caracteres) — clave para SEO
 ```
-KALYX es un estudio de diseño y desarrollo web especializado en clínicas y consultorios dentales en Colombia. Creamos sitios web profesionales para odontólogos, pensados para una sola cosa: convertir visitantes en pacientes y llenar tu agenda. Diseño hecho con oficio (sin plantillas genéricas), optimización para Google y mantenimiento mensual para que tu web nunca se caiga ni se quede atrás. Tu clínica es la flor; nosotros, la estructura que la sostiene en internet. Especialistas en el sector dental, a un precio justo: sin la impredecibilidad de un freelance ni el costo de una agencia grande. Servicios: diseño web para clínicas dentales, páginas para odontólogos, mantenimiento web y presencia en Google. Escríbenos y hacemos florecer tu clínica.
+KALYX es un estudio de diseño y desarrollo web en Colombia. Creamos sitios web profesionales pensados para una sola cosa: convertir visitantes en clientes y hacer crecer tu negocio. Diseño hecho con oficio (sin plantillas genéricas), optimización para Google y mantenimiento mensual para que tu web nunca se caiga ni se quede atrás. Tu negocio es la flor; nosotros, la estructura que lo sostiene en internet. Oficio y criterio, a un precio justo: sin la impredecibilidad de un freelance ni el costo de una agencia grande. Servicios: diseño web, desarrollo de páginas web, mantenimiento web y presencia en Google. Escríbenos y hacemos crecer tu negocio.
 ```
 
 ## WhatsApp Business — descripción (máx. 139 caracteres)
 ```
-Diseño y desarrollo web para clínicas dentales 🦷 Llena tu agenda con un sitio hecho con oficio + mantenimiento. Escríbenos 🌱
+Diseño y desarrollo web hecho con oficio. Hacemos crecer tu negocio con un sitio profesional y mantenimiento. Escríbenos.
 ```
 
 ---
-
-## Variante expandible (cuando crezcan más allá de lo dental)
-```
-KALYX — la estructura que sostiene tu negocio en internet. Diseño y desarrollo web hecho con oficio, optimizado para crecer, y mantenido por nosotros.
-```
 
 ## Sugerencia de @handles (a verificar disponibilidad)
 Mismo handle en todas las redes para coherencia. Si `@kalyx` está tomado:
