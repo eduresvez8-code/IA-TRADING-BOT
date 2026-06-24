@@ -1,33 +1,49 @@
 # 02 · Naming
 
-## ✅ NOMBRE ELEGIDO: **KODA**
+## ✅ NOMBRE ELEGIDO: **KALYX**
 
-Eduardo eligió **KODA** (no salió de la longlist; decisión propia). Verificación preliminar:
+Eduardo eligió **KALYX** (decisión propia; ya hizo una consulta preliminar en SIPI con
+buenas chances). Verificación de Claude:
 
 | Check | Resultado | Veredicto |
 |---|---|---|
-| Tipo de signo | **Arbitrario** para servicios web (no descriptivo) | 🟢 Registrable en principio |
-| Significado | Sioux (lakota/dakota) = **"amigo/compañero"**; también "coda" musical | 🟢 Gran historia de marca |
-| Spelling | KO-da claro en español; riesgo de que escriban "Coda" con C | 🟡 Estilizar siempre **KODA** |
-| `koda.com` | Tomado (KODA Enterprises Group, EE.UU.) | 🔴 No disponible |
-| `koda.design` / `koda.agency` | Otras agencias de diseño/branding (internacionales) | 🟡 Saturación moderada (global) |
-| `koda.co` | Sin sitio activo (título vacío) | ⚪ Confirmar en Hostinger |
-| Antecedentes SIPI (Col/CAN, cl. 42/35) | No verificado en vivo (Chrome falló al leer) | ⚪ **Pendiente oficial** |
+| Tipo de signo | **Arbitrario / de fantasía** para servicios web (no describe el servicio) | 🟢 Registrable y **fuerte** |
+| Significado | "Calyx / cáliz" botánico = los **sépalos que protegen y sostienen el capullo** del que brota la flor | 🟢 Historia de marca preciosa (crecimiento/florecer) |
+| Pronunciación ES | "KA-lix", clara | 🟡 Riesgo de que escriban Calyx/Caliz/Kalix → estilizar siempre **KALYX** |
+| Connotación | Fonéticamente roza "cáliz" (copa religiosa / "cáliz amargo") | 🟡 Leve; la grafía **K+Y** lo aleja y lo vuelve moderno/botánico |
+| `kalyx.com` | Tomado (Kalyx Naturals — hierbas/suplementos, EE.UU.) | 🔴 No disponible |
+| Homónimos globales | KALYX Creative (Tokio, IA creativa) · Calyx Digital (marketing, con C) · Kalyx Technologies (ropa) | 🟡 Saturación moderada global, **ninguno** en web dental en Colombia |
+| `kalyx.co` | No respondió (timeout) | ⚪ Confirmar en Hostinger |
+| Antecedentes SIPI (Col/CAN, cl. 42/35) | Eduardo consultó → "bastantes chances de que dé bien" | 🟢 Preliminar OK; confirmar oficial |
 
-**Veredicto:** 🟢 luz verde, con 2 tareas pendientes:
-1. **Dominio** — koda.com no está. Recomendado: **`koda.co`** (TLD de Colombia, juega a favor). Alternativas: holakoda.com, somoskoda.com, koda.com.co, kodastudio.com. Confirmar disponibilidad en Hostinger.
-2. **SIPI** — consulta oficial Clase 42 (y 35) en sipi.sic.gov.co.
+**Veredicto:** 🟢 **Luz verde — el mejor candidato de todos.** Arbitrario (marca
+fuerte y registrable), distintivo, expandible y con una historia de marca hermosa.
+La marca es **territorial**: los "Kalyx/Calyx" extranjeros **no** bloquean un registro
+colombiano en Clase 42 (no son notorios ni andinos). Tareas pendientes:
 
-**Historia de marca (de regalo):** KODA = "amigo/compañero" → *"el compañero digital de tu clínica"*. Alimenta F3 (verbal) y un posible tagline.
+1. **Dominio** — `kalyx.com` no está (hierbas). Recomendado: **`kalyx.co`** (TLD de
+   Colombia, juega a favor). Alternativas: `kalyx.com.co`, `kalyxstudio.com`,
+   `getkalyx.com`, `holakalyx.com`, `kalyx.agency`. Confirmar en Hostinger.
+2. **SIPI** — confirmar consulta **oficial** Clase 42 **y** 35 y guardar evidencia.
+   Como existen "Kalyx/Calyx" en campos afines en otros países, conviene **registrar
+   pronto** en Colombia para asegurar prioridad (ver F11).
+3. **Defensa de grafía** — si son baratos, asegurar handles/variantes (calyx, kalix);
+   presentar **siempre** la marca como **KALYX**.
 
-**Estilo:** siempre en mayúsculas **KODA** (la K, más distintiva y ownable que "Coda" con C, que está saturado).
+**Historia de marca (de regalo):** el **cáliz** es la base que **protege y sostiene** a
+la flor antes de florecer. KALYX = *la base que sostiene el crecimiento de tu clínica*
+→ **"Hacemos florecer tu clínica."** Alimenta F3 (verbal), un posible tagline y hasta
+la forma del logo (cáliz/flor) en F4.
+
+**Estilo:** siempre en mayúsculas **KALYX** (con K y Y — la grafía es lo que la hace
+distintiva y poseíble frente a "Calyx" con C, que está más usado).
 
 ---
 
 ## Anexo — Lista larga explorada (territorio "Craft/oficio")
 
 > Material de respaldo. Se generó a partir del gusto de Eduardo por "WebCraft"
-> (oficio + digital) antes de que eligiera KODA. Se conserva por si se necesita.
+> (oficio + digital) antes de que eligiera KALYX. Se conserva por si se necesita.
 
 ## Semáforo
 
