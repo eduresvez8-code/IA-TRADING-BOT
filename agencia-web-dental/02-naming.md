@@ -1,8 +1,33 @@
-# 02 · Naming — Lista larga (en el espíritu de "WebCraft")
+# 02 · Naming
 
-> Estado: **trabajo en progreso.** Esta es la *longlist* generada a partir del gusto
-> de Eduardo por "WebCraft" (oficio + digital). El siguiente paso es que Eduardo
-> marque favoritos y yo verifique los finalistas (dominio, handles, SIPI/Clase 42).
+## ✅ NOMBRE ELEGIDO: **KODA**
+
+Eduardo eligió **KODA** (no salió de la longlist; decisión propia). Verificación preliminar:
+
+| Check | Resultado | Veredicto |
+|---|---|---|
+| Tipo de signo | **Arbitrario** para servicios web (no descriptivo) | 🟢 Registrable en principio |
+| Significado | Sioux (lakota/dakota) = **"amigo/compañero"**; también "coda" musical | 🟢 Gran historia de marca |
+| Spelling | KO-da claro en español; riesgo de que escriban "Coda" con C | 🟡 Estilizar siempre **KODA** |
+| `koda.com` | Tomado (KODA Enterprises Group, EE.UU.) | 🔴 No disponible |
+| `koda.design` / `koda.agency` | Otras agencias de diseño/branding (internacionales) | 🟡 Saturación moderada (global) |
+| `koda.co` | Sin sitio activo (título vacío) | ⚪ Confirmar en Hostinger |
+| Antecedentes SIPI (Col/CAN, cl. 42/35) | No verificado en vivo (Chrome falló al leer) | ⚪ **Pendiente oficial** |
+
+**Veredicto:** 🟢 luz verde, con 2 tareas pendientes:
+1. **Dominio** — koda.com no está. Recomendado: **`koda.co`** (TLD de Colombia, juega a favor). Alternativas: holakoda.com, somoskoda.com, koda.com.co, kodastudio.com. Confirmar disponibilidad en Hostinger.
+2. **SIPI** — consulta oficial Clase 42 (y 35) en sipi.sic.gov.co.
+
+**Historia de marca (de regalo):** KODA = "amigo/compañero" → *"el compañero digital de tu clínica"*. Alimenta F3 (verbal) y un posible tagline.
+
+**Estilo:** siempre en mayúsculas **KODA** (la K, más distintiva y ownable que "Coda" con C, que está saturado).
+
+---
+
+## Anexo — Lista larga explorada (territorio "Craft/oficio")
+
+> Material de respaldo. Se generó a partir del gusto de Eduardo por "WebCraft"
+> (oficio + digital) antes de que eligiera KODA. Se conserva por si se necesita.
 
 ## Semáforo
 

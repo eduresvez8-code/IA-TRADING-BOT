@@ -41,6 +41,7 @@ Nuestra propuesta de valor **vive en ese hueco**.
 |----------|-----------|
 | **Naming — especificidad** | Nombre **abstracto y expandible** (no atado a "dental"). El gancho dental lo harán tagline, web y casos. |
 | **Naming — territorio** | Conservar el **espíritu "Craft / oficio"** (lo que enamoró de "WebCraft") y buscar en F2 un nombre **ownable, registrable y expandible**. NO usar "WebCraft" literal (saturado, descriptivo, `.com` tomado, riesgo SIC alto). |
+| **Nombre elegido (F2)** | **KODA** (arbitrario → registrable; significa "amigo/compañero" en sioux). Pendiente: dominio (rec. `koda.co`) + consulta SIPI Clase 42/35. Ver `02-naming.md`. |
 | **Autoría** | Marca **corporativa, independiente de los socios** (robusta ante cambios de sociedad). |
 | **Alcance del servicio** | Diseño + desarrollo web **por proyecto** + **mantenimiento mensual**. |
 | **Modelo de producción** | **Híbrido honesto**: tier accesible producido rápido con IA/Hostinger + criterio de diseño + know-how dental + mantenimiento; **sitio propio y tier alto** a nivel claramente superior (la vitrina y la prueba). |
