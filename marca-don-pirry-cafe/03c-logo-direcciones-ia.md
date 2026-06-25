@@ -156,6 +156,52 @@ final** (encuadre, nivel de detalle, con/sin texto). Si quieres, también puedo
 
 ---
 
+## Ronda 3 — dirección de Eduardo + Don Piry (¡la buena!)
+
+Eduardo trajo **referencia** (silueta con taza en un **círculo INTERRUMPIDO/abierto**,
+con granos y hojas/laurel) y **dos ideas propias** = por fin su gusto real. A Don
+Piry le encantan los **emblemas con el círculo interrumpido**.
+
+> 🚩 **NOMBRE POR CONFIRMAR:** Eduardo escribió **"Don Piry" (una sola R)**; todo el
+> proyecto y el borrador SIC venían con **"DON PIRRY" (doble R)**. **Fijar la grafía
+> oficial** antes de vectorizar firma/logo y antes de radicar la marca.
+
+### Opción 1 — Firma + mano de Don Piry, en círculo interrumpido ✅ RECOMENDADA
+- La **firma manuscrita** de Don Piry + **su mano** firmando, dentro de un **círculo
+  interrumpido**, con hojas/granos de café (estilo de la referencia).
+- **Encaja PERFECTO con la estrategia:** es literal el mensaje que ya teníamos —
+  *"cada bolsa lleva su nombre porque lleva su palabra; no es un logo, es su firma"*.
+  La mano añade **oficio y calidez** (homenaje sin retrato realista).
+- **Legal:** fortísimo — la **firma/nombre** es el elemento distintivo y *ownable*.
+- **Atemporal, escalable, 1–2 tintas**; el círculo interrumpido lo hace moderno.
+- 💡 **Ideal: usar la FIRMA REAL de tu papá** (escaneada/vectorizada): auténtica e
+  imposible de copiar. La IA puede deformar las letras de una firma.
+
+### Opción 2 — Don Piry mirando a cámara + Cerro Tatamá al fondo ⚠️
+- Hermosa… **pero como FOTO de marca, no como logo.** Dos razones honestas:
+  1. **Legal:** el **Cerro Tatamá = montaña** — justo lo que evitamos para
+     diferenciarnos de **"PIRINEOS café de altura"** en la SIC. En el LOGO, debilita
+     tu registro.
+  2. **Práctico:** una escena fotográfica (retrato + paisaje) **no funciona como
+     logo**: no escala a ícono, no va en 1 tinta, no es versátil.
+- ✅ **Sí sirve como IMAGEN DE MARCA:** Don Piry en su finca con el Tatamá detrás →
+  ideal para **portada web, "sobre nosotros" y redes**. Ahí la montaña es *foto*, no
+  marca registrada.
+
+### 🤖 Prompt Nano Banana 2 — Opción 1
+```
+Elegant flat vector logo emblem for a specialty coffee brand. An open / interrupted
+circular frame (the ring is broken on the sides), formed by coffee leaves and a few
+coffee beans. In the center, a hand holding a fountain pen signing a handwritten
+signature. Elegant silhouette style. Single dark espresso color (#2A1B12) with
+subtle gold (#C9A24B) accents on a cream background (#F2E8D8). Clean, premium,
+artisan, iconic, centered. No photorealism, no gradient, NO mountain.
+```
+> La firma/nombre se monta con la **firma REAL de Don Piry** vectorizada (o en
+> tipografía Fraunces). No dejar que la IA invente las letras.
+
+---
+
 ## ✅ Ronda 3 — DIRECCIÓN ELEGIDA: "Don Pirry recogiendo café"
 
 Eduardo eligió un nuevo rumbo: el logo es **su papá recogiendo café**, generado por
