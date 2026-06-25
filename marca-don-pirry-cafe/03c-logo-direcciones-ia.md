@@ -4,6 +4,10 @@
 **Cambio:** el retrato de una línea (Ruta 5) **queda descartado** por decisión de
 Eduardo. Buscamos un **símbolo** que la IA pueda generar bien.
 
+> ⚠️ **ACTUALIZACIÓN 2026-06-22:** **Don Pirry NO usa gafas** (yo lo había asumido —
+> error mío). Eso **descarta el oso de anteojos (Dir. 2)** y todo retrato con gafas.
+> Ninguna de las 5 primeras convenció a Eduardo → ver **"Ronda 2"** al final.
+
 ---
 
 ## Qué dice el mercado (para fundamentar, no inventar)
@@ -119,3 +123,33 @@ coffee bag and a small app icon.
 Eliges **una dirección** (o dos para comparar) y **afinamos juntos el prompt
 final** (encuadre, nivel de detalle, con/sin texto). Si quieres, también puedo
 **generar yo unos conceptos** para que compares antes de irte a Gemini.
+
+---
+
+## Ronda 2 — más direcciones (sin gafas), por familias
+
+> Don Pirry **no usa gafas** → fuera el oso de anteojos y los retratos. Ninguna de
+> las 5 anteriores convenció. Estas exploran **territorios distintos** para
+> triangular el gusto. *(Atajo: si Eduardo manda 1–2 logos que le gusten, acierto
+> mucho más rápido.)*
+
+### Familia A — De la finca (naturaleza / origen)
+- **6 · Cereza de café:** una rama con cerezas maduras + hoja. El fruto real, de
+  origen, color cobre/rojo de la paleta, **poco usado** y elegante. ⭐ *mi favorita.*
+- **7 · Gallito de roca andino:** ave **endémica** del Tatamá, naranja vibrante, con
+  su cresta en disco. Fauna única y espectacular (sin gafas).
+
+### Familia B — Del producto y la ciencia (símbolo minimal)
+- **8 · Gota de Honey:** una gota dorada (café + miel) → tu producto estrella
+  (Bourbon Rosado **Honey**) y tu fermentación. Minimal y moderno.
+- **9 · Frasco de fermentación:** una vasija/tarro con burbujas → tu método
+  científico. Muy ownable; casi nadie lo usa.
+
+### Familia C — Del ritual y el nombre (cálido / tipográfico)
+- **10 · Taza del primer café:** una taza humeante minimal → "vivimos en un
+  paraíso". Cálida y universal.
+- **11 · Wordmark "DON PIRRY":** el **nombre** como logo, en Fraunces con un pequeño
+  remate. Lo más **seguro legalmente**, atemporal y barato.
+
+**Recomendación ronda 2:** la **Cereza de café**, con la **Gota de Honey** y el
+**Wordmark** como co-finalistas según el rumbo (finca / producto / nombre).

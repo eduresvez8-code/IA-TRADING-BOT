@@ -1,5 +1,9 @@
 # Brief para el ilustrador — Logo DON PIRRY CAFÉ
 
+> ⛔ **OBSOLETO (2026-06-22):** este brief era para el **retrato de una línea
+> (Ruta 5)**, que Eduardo **descartó** — y además **Don Pirry no usa gafas**. No
+> usar. La dirección de logo se está redefiniendo en `03c-logo-direcciones-ia.md`.
+
 **Objetivo:** producir el logo y el sistema visual de la marca, a partir de las
 decisiones de la Fase 3. Este documento es autosuficiente: se le puede entregar a
 un ilustrador/diseñador **o** usarse como guía para generar conceptos con una IA de
