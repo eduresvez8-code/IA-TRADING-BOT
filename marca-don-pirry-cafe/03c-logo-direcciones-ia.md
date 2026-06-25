@@ -153,3 +153,13 @@ final** (encuadre, nivel de detalle, con/sin texto). Si quieres, también puedo
 
 **Recomendación ronda 2:** la **Cereza de café**, con la **Gota de Honey** y el
 **Wordmark** como co-finalistas según el rumbo (finca / producto / nombre).
+
+---
+
+## ✅ Ronda 3 — DIRECCIÓN ELEGIDA: "Don Pirry recogiendo café"
+
+Eduardo eligió un nuevo rumbo: el logo es **su papá recogiendo café**, generado por
+IA con una **foto real** (image-to-image en Gemini/Nano Banana). Reúne homenaje +
+finca + la cereza viva en sus manos, y sin gafas. **Prompts detallados →
+`03d-prompt-gemini-logo-papa.md`.** Pendiente: versión simplificada (silueta /
+cereza / monograma) para el ícono pequeño.
