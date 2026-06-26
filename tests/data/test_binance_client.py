@@ -4,12 +4,14 @@ La lógica de reintentos y cursor se testea inyectando fakes: un `sleep` que
 solo registra las esperas y un cliente que devuelve páginas preparadas.
 """
 
+import time
 from types import SimpleNamespace
 
 import pytest
 from binance.exceptions import BinanceAPIException
 
 from src.data.binance_client import (
+    CLOCK_AHEAD_CODE,
     download_history,
     interval_to_ms,
     rest_kline_to_candle,
@@ -25,6 +27,39 @@ def make_api_exc(status_code: int, retry_after: float | None = None):
     response = SimpleNamespace(headers=headers, text="")
     return BinanceAPIException(response, status_code,
                                '{"code": -1003, "msg": "too many requests"}')
+
+
+def make_clock_exc():
+    # -1021: timestamp adelantado. status_code HTTP 400, code de negocio -1021.
+    response = SimpleNamespace(headers={}, text="")
+    return BinanceAPIException(
+        response, 400,
+        '{"code": -1021, "msg": "Timestamp for this request was 1000ms ahead '
+        'of the server time."}')
+
+
+class FakeSignedClient:
+    """Cliente firmado falso. El servidor va `skew_ms` ATRÁS del reloj local real
+    (≡ reloj local adelantado, la causa del -1021). El offset solo se cura cuando
+    retry_with_backoff llama a get_server_time. Usa time.time() real igual que
+    resync_clock_offset en producción, para que offset y firma sean coherentes."""
+
+    def __init__(self, *, skew_ms: int):
+        self.server_ms = int(time.time() * 1000) - skew_ms
+        self.timestamp_offset = 0
+        self.server_time_calls = 0
+
+    async def get_server_time(self):
+        self.server_time_calls += 1
+        return {"serverTime": self.server_ms}
+
+    async def signed_call(self):
+        # Ventana de Binance: timestamp = local + offset debe caer dentro de
+        # server + 1000ms. Con el reloj adelantado y offset 0, falla con -1021.
+        sent = int(time.time() * 1000) + self.timestamp_offset
+        if sent > self.server_ms + 1000:
+            raise make_clock_exc()
+        return "ok"
 
 
 # ---------- retry_with_backoff ----------
@@ -89,6 +124,54 @@ async def test_se_rinde_tras_max_retries():
 
     with pytest.raises(BinanceAPIException):
         await retry_with_backoff(always_limited, max_retries=2, sleep=fake_sleep)
+
+
+# ---------- -1021: reloj desincronizado ----------
+
+async def test_clock_skew_recalibra_offset_y_reintenta():
+    # Reloj local 5s adelantado: el primer intento da -1021; retry recalibra el
+    # offset contra el servidor (≈ -5000ms) y el reintento pasa.
+    client = FakeSignedClient(skew_ms=5000)
+    result = await retry_with_backoff(client.signed_call, client=client,
+                                      sleep=lambda s: None)
+    assert result == "ok"
+    assert client.server_time_calls == 1            # una sola resync
+    # offset ≈ server - local = -skew (con holgura de ms por el time.time() real)
+    assert -5100 < client.timestamp_offset < -4900
+
+
+async def test_clock_skew_sin_client_se_propaga():
+    # Sin client inyectado no hay forma de recalibrar → el -1021 se propaga sin
+    # reintentar (no se queda en bucle infinito).
+    attempts = 0
+
+    async def always_skewed():
+        nonlocal attempts
+        attempts += 1
+        raise make_clock_exc()
+
+    with pytest.raises(BinanceAPIException) as ei:
+        await retry_with_backoff(always_skewed, sleep=lambda s: None)
+    assert ei.value.code == CLOCK_AHEAD_CODE
+    assert attempts == 1
+
+
+async def test_clock_skew_persistente_se_propaga_tras_resync():
+    # Si tras recalibrar el offset el -1021 sigue (reloj imposible de cuadrar),
+    # se agota clock_resync_retries y se propaga en vez de spinnear infinito.
+    class StuckClient(FakeSignedClient):
+        async def get_server_time(self):
+            self.server_time_calls += 1
+            return {"serverTime": self.server_ms}
+
+        async def signed_call(self):
+            raise make_clock_exc()  # nunca se cura
+
+    client = StuckClient(skew_ms=5000)
+    with pytest.raises(BinanceAPIException):
+        await retry_with_backoff(client.signed_call, client=client,
+                                 clock_resync_retries=1, sleep=lambda s: None)
+    assert client.server_time_calls == 1  # una resync, luego se rinde
 
 
 # ---------- download_history ----------

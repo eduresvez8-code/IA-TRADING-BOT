@@ -9,6 +9,7 @@ que no existe.
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 from functools import partial
 from typing import Awaitable, Callable
@@ -24,8 +25,32 @@ logger = logging.getLogger(__name__)
 PAGE_LIMIT = 1000     # máximo de velas por petición en /api/v3/klines
 REQUEST_PAUSE = 0.25  # seg entre páginas: ~8 weight/s, lejos del límite por minuto
 
+# Código de negocio de Binance para "Timestamp for this request was N ms ahead of
+# the server time": el reloj local va adelantado respecto al servidor (típico al
+# despertar el Mac, antes de que macOS re-sincronice por NTP). No es un umbral de
+# trading sino una constante del PROTOCOLO de la API, en la misma línea que los
+# códigos -4059/-4084 que ya viven en binance_futures.py. Por eso es un literal con
+# nombre y no un parámetro de config.
+CLOCK_AHEAD_CODE = -1021
+
 _UNIT_MS = {"m": 60_000, "h": 3_600_000, "d": 86_400_000}
 _DAY_MS = 86_400_000
+
+
+async def resync_clock_offset(client) -> int:
+    """Recalibra `client.timestamp_offset` contra el reloj del servidor de Binance.
+
+    python-binance firma cada request con `int(time.time()*1000) + timestamp_offset`.
+    Si el reloj local va `Δ` ms adelantado, Binance rechaza con -1021. El offset que
+    lo corrige es `server - local = -Δ`: al sumarlo, el timestamp enviado vuelve a
+    caer dentro de la ventana de recepción. Devuelve el offset aplicado (para log).
+    """
+    server = await client.get_server_time()
+    server_ms = int(server["serverTime"])
+    local_ms = int(time.time() * 1000)
+    offset = server_ms - local_ms
+    client.timestamp_offset = offset
+    return offset
 
 
 def interval_to_ms(timeframe: str) -> int:
@@ -38,6 +63,7 @@ def interval_to_ms(timeframe: str) -> int:
 
 async def retry_with_backoff(call: Callable[[], Awaitable], *,
                              max_retries: int = 6, base_delay: float = 1.0,
+                             client=None, clock_resync_retries: int = 1,
                              sleep=asyncio.sleep):
     """Ejecuta `call` reintentando solo ante HTTP 429 (rate limit) y 418 (ban).
 
@@ -45,12 +71,28 @@ async def retry_with_backoff(call: Callable[[], Awaitable], *,
     Retry-After si Binance lo envía: insistir antes de ese plazo alarga el
     castigo. Cualquier otro error se propaga de inmediato — reintentar un 400
     (parámetros inválidos) solo ocultaría un bug.
+
+    Caso especial `-1021` (reloj local adelantado, típico al despertar el Mac): NO
+    se reintenta a ciegas (el reloj seguiría adelantado → fallo infinito que congela
+    el bot). Si se inyecta `client`, se recalibra su `timestamp_offset` contra el
+    servidor (`resync_clock_offset`) y se reintenta hasta `clock_resync_retries`
+    veces. Si persiste tras el reajuste, se propaga. `clock_resync_retries` es un
+    contador de mecánica de reintento, hermano de `max_retries`/`base_delay`: vive
+    como default de la capa de datos, no es un umbral de trading.
     """
     attempt = 0
+    clock_resyncs = 0
     while True:
         try:
             return await call()
         except BinanceAPIException as e:
+            if (e.code == CLOCK_AHEAD_CODE and client is not None
+                    and clock_resyncs < clock_resync_retries):
+                offset = await resync_clock_offset(client)
+                logger.warning("reloj desincronizado (-1021), ajustando offset a "
+                               "%d ms; reintento %d", offset, clock_resyncs + 1)
+                clock_resyncs += 1
+                continue
             if e.status_code not in (429, 418) or attempt >= max_retries:
                 raise
             headers = getattr(e.response, "headers", None) or {}

@@ -53,6 +53,17 @@ class BinanceFuturesExchange:
         self._filters_cache: dict[str, SymbolFilters] = {}
         self._dual: bool = True  # se fija en connect() con el modo real de la cuenta
 
+    async def _retry(self, call):
+        """`retry_with_backoff` con el client cableado.
+
+        Pasar `client` activa la cura del -1021: si Binance rechaza por reloj
+        adelantado (típico al despertar el Mac), recalibra el `timestamp_offset`
+        del cliente y reintenta, en vez de propagar al primer intento. Como el
+        offset es sticky en la instancia, una sola petición que se cure deja
+        sanas a todas las demás llamadas firmadas que comparten este `client`.
+        """
+        return await retry_with_backoff(call, client=self.client)
+
     @classmethod
     async def connect(cls, api_key: str, api_secret: str,
                       testnet: bool = True) -> "BinanceFuturesExchange":
@@ -67,13 +78,13 @@ class BinanceFuturesExchange:
     # ---------- modo de posición ----------
 
     async def get_position_mode(self) -> bool:
-        res = await retry_with_backoff(self.client.futures_get_position_mode)
+        res = await self._retry(self.client.futures_get_position_mode)
         self._dual = bool(res["dualSidePosition"])
         return self._dual
 
     async def set_position_mode(self, dual: bool) -> None:
         try:
-            await retry_with_backoff(lambda: self.client.futures_change_position_mode(
+            await self._retry(lambda: self.client.futures_change_position_mode(
                 dualSidePosition="true" if dual else "false"))
             self._dual = dual
         except BinanceAPIException as e:
@@ -91,7 +102,7 @@ class BinanceFuturesExchange:
 
     async def get_symbol_filters(self, symbol: str) -> SymbolFilters:
         if not self._filters_cache:
-            info = await retry_with_backoff(self.client.futures_exchange_info)
+            info = await self._retry(self.client.futures_exchange_info)
             for s in info["symbols"]:
                 # Algunos símbolos del testnet traen filtros degenerados
                 # (p.ej. tickSize='0' en pares delistados) que no validan. Se
@@ -103,13 +114,13 @@ class BinanceFuturesExchange:
         return self._filters_cache[symbol]
 
     async def set_leverage(self, symbol: str, leverage: int) -> None:
-        await retry_with_backoff(lambda: self.client.futures_change_leverage(
+        await self._retry(lambda: self.client.futures_change_leverage(
             symbol=symbol, leverage=leverage))
 
     # ---------- cuenta ----------
 
     async def get_account(self) -> AccountSnapshot:
-        acct = await retry_with_backoff(self.client.futures_account)
+        acct = await self._retry(self.client.futures_account)
         positions = []
         for p in acct.get("positions", []):
             amt = float(p["positionAmt"])
@@ -146,7 +157,7 @@ class BinanceFuturesExchange:
         para el panel del dashboard; nunca opera. limit=1000 cubre de sobra una
         sesión de paper trading.
         """
-        rows = await retry_with_backoff(
+        rows = await self._retry(
             lambda: self.client.futures_income_history(
                 incomeType="REALIZED_PNL", startTime=since_ms, limit=1000)
         )
@@ -185,7 +196,7 @@ class BinanceFuturesExchange:
             params["closePosition"] = "true"
             params["workingType"] = req.working_type
 
-        resp = await retry_with_backoff(lambda: self.client.futures_create_order(**params))
+        resp = await self._retry(lambda: self.client.futures_create_order(**params))
         # Binance enruta las órdenes condicionales con closePosition como órdenes
         # ALGO: el esquema de respuesta cambia (algoId/algoStatus en vez de
         # orderId/status). Parseamos defensivamente ambos esquemas.
@@ -205,7 +216,7 @@ class BinanceFuturesExchange:
         )
 
     async def get_open_orders(self, symbol: str) -> list[OrderResult]:
-        raw = await retry_with_backoff(lambda: self.client.futures_get_open_orders(
+        raw = await self._retry(lambda: self.client.futures_get_open_orders(
             symbol=symbol))
         out = []
         for o in raw:
@@ -220,7 +231,7 @@ class BinanceFuturesExchange:
         return out
 
     async def cancel_all(self, symbol: str) -> None:
-        await retry_with_backoff(lambda: self.client.futures_cancel_all_open_orders(
+        await self._retry(lambda: self.client.futures_cancel_all_open_orders(
             symbol=symbol))
 
 

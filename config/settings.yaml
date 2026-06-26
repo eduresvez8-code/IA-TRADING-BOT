@@ -168,6 +168,10 @@ orchestrator:
   # Sondeo del PnL realizado por símbolo (income history Binance) para el dashboard.
   # Solo observabilidad, en tarea aparte; no afecta el trading. 60s es de sobra.
   realized_pnl_poll_seconds: 60
+  # Espera tras un -1021 (reloj adelantado tras despertar el Mac) en el sondeo de
+  # PnL antes de reintentar: da tiempo a que macOS re-sincronice por NTP en vez de
+  # martillar la API. El offset del reloj ya se recalibra en retry_with_backoff.
+  clock_retry_delay_seconds: 30
 
 # --- Fast Path: originación de trades por evento (Plan V2 Fase 2) ---
 # Gobierna CUÁNDO un shock (hack/ETF/depeg…) cuaja en una orden. La lógica

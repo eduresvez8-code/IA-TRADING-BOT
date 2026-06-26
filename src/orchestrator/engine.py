@@ -34,6 +34,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Awaitable, Callable
 
 import pandas as pd
+from binance.exceptions import BinanceAPIException
 
 from src.core.config import Settings, load_settings
 from src.core.scope import resolve_scope
@@ -47,6 +48,7 @@ from src.core.models import (
     Signal,
 )
 from src.data.binance_client import (
+    CLOCK_AHEAD_CODE,
     interval_to_ms,
     rest_kline_to_candle,
     retry_with_backoff,
@@ -832,6 +834,21 @@ class Orchestrator:
                 await storage.save_realized_pnl(
                     realized=full,
                     ts_ms=int(datetime.now(timezone.utc).timestamp() * 1000))
+            except BinanceAPIException as e:
+                # -1021: reloj local adelantado (típico al despertar el Mac).
+                # retry_with_backoff dentro de get_realized_pnl ya recalibró el
+                # offset; aun así, aquí lo tratamos aparte para NO spinnear: si el
+                # primer reajuste no bastó (macOS aún re-sincronizando por NTP),
+                # esperamos un delay corto y dejamos que el siguiente ciclo reintente
+                # con el reloj ya corregido, en vez de martillar la API.
+                if e.code == CLOCK_AHEAD_CODE:
+                    delay = self.cfg.orchestrator.clock_retry_delay_seconds
+                    logger.warning("reloj desincronizado (-1021), ajustando offset; "
+                                   "reintento en %.0fs", delay)
+                    await asyncio.sleep(delay)
+                    continue
+                logger.warning("sondeo de PnL realizado falló; se reintenta",
+                               exc_info=True)
             except Exception:
                 logger.warning("sondeo de PnL realizado falló; se reintenta",
                                exc_info=True)

@@ -144,7 +144,7 @@ function fmtPct(x){ if(x==null) return "—"; return (x>=0?"+":"")+x.toFixed(2)+
 function fmtNum(x,d=4){ if(x==null) return "—"; return x.toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d}); }
 function cls(x){ if(x==null) return "mut"; return x>0?"pos":(x<0?"neg":"mut"); }
 function sign(x){ return x>0?"+":""; }
-function ago(ms){ if(ms==null) return "—"; const s=Math.max(0,Math.round(ms)); if(s<60) return "hace "+s+"s"; const m=Math.floor(s/60); if(m<60) return "hace "+m+"m"; return "hace "+Math.floor(m/60)+"h"+(m%60)+"m"; }
+function ago(ms){ if(ms==null) return "—"; const s=Math.max(0,Math.round(ms/1000)); if(s<60) return "hace "+s+"s"; const m=Math.floor(s/60); if(m<60) return "hace "+m+"m"; return "hace "+Math.floor(m/60)+"h"+(m%60)+"m"; }
 function tsTime(ms){ const d=new Date(ms); return d.toLocaleTimeString("es",{hour:"2-digit",minute:"2-digit"}); }
 function esc(s){ return (s==null?"":""+s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
 

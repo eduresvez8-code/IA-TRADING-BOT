@@ -16,10 +16,31 @@ MARK="$HOME/.iatrading_last_start"   # epoch (s) del último arranque del bot
 LOG="$HOME/.iatrading_watchdog.log"
 STALE_MIN=15      # > 3 ciclos de 5m sin snapshot = congelado
 INTERVAL=300      # revisa cada 5 min
+CLOCK_SKEW_MS=900 # deriva (ms) vs Binance a partir de la cual se avisa (-1021 salta a >1000ms)
 
 log(){ echo "$(date '+%Y-%m-%d %H:%M:%S')  $1" >> "$LOG"; }
 
+# Aviso de reloj: tras despertar el Mac, el reloj local suele quedar adelantado
+# y Binance rechaza los requests firmados con -1021. El bot YA se auto-cura en
+# caliente (retry_with_backoff recalibra timestamp_offset), pero dejamos constancia
+# de la deriva en el log y, si es grande, recordamos el arreglo manual del SO.
+# Solo lectura: consulta la hora del servidor de Binance, no requiere sudo.
+clock_note(){
+  local server_ms local_ms drift
+  server_ms=$(curl -s --max-time 5 https://api.binance.com/api/v3/time \
+              | sed -n 's/.*"serverTime":\([0-9]*\).*/\1/p')
+  [[ -z "$server_ms" ]] && { log "aviso de reloj: no se pudo leer serverTime de Binance"; return; }
+  local_ms=$(( $(date +%s) * 1000 ))
+  drift=$(( local_ms - server_ms ))   # >0 = reloj local ADELANTADO (causa del -1021)
+  if (( drift > CLOCK_SKEW_MS || drift < -CLOCK_SKEW_MS )); then
+    log "aviso de reloj: deriva ${drift}ms vs Binance (el bot recalibra solo; si el -1021 persiste corre: sudo sntp -sS time.apple.com)"
+  else
+    log "reloj OK (deriva ${drift}ms vs Binance)"
+  fi
+}
+
 start_live(){
+  clock_note          # deja constancia del estado del reloj en cada arranque
   date +%s > "$MARK"   # marca el arranque → activa la gracia de warmup
   printf '===== ARRANQUE (watchdog) %s =====\n' "$(date '+%F %T')" >> /tmp/ia_live.log
   ( cd "$PROJECT" && nohup uv run python -m src.main --live >> /tmp/ia_live.log 2>&1 & )

@@ -761,6 +761,19 @@ def test_realized_pnl_poll_fuera_de_rango_es_rechazado():
                            regime_htf_bars=50, realized_pnl_poll_seconds=5)
 
 
+def test_clock_retry_delay_en_settings_y_en_rango():
+    # Espera tras -1021 (reloj desincronizado) en el sondeo de PnL.
+    s = load_settings()
+    assert 0 < s.orchestrator.clock_retry_delay_seconds <= 300
+
+
+def test_clock_retry_delay_fuera_de_rango_es_rechazado():
+    from src.core.config import OrchestratorConfig
+    with pytest.raises(ValidationError):
+        OrchestratorConfig(warmup_candles=60, reconcile_grace_cycles=3,
+                           regime_htf_bars=50, clock_retry_delay_seconds=0)
+
+
 def test_settings_yaml_universo_de_seis_simbolos():
     # Universo ampliado (2026-06-23): 6 perps USD-M; tope de posiciones acorde.
     s = load_settings()

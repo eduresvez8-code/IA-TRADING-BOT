@@ -320,6 +320,13 @@ class OrchestratorConfig(BaseModel):
     # le=3600 ataja un typo. El realizado cambia solo al cerrar trades, así que un
     # sondeo de ~60s es de sobra.
     realized_pnl_poll_seconds: int = Field(default=60, ge=10, le=3600)
+    # Espera tras un -1021 (reloj local adelantado vs Binance, típico al despertar el
+    # Mac) en el sondeo de PnL realizado antes de reintentar. retry_with_backoff ya
+    # recalibra el offset del reloj y reintenta; este delay evita que el loop
+    # spinnee martillando la API mientras macOS termina de re-sincronizar por NTP.
+    # gt=0 (un 0 reintentaría en bucle cerrado); le=300 ataja un typo (más de 5 min
+    # dejaría el panel de PnL rancio sin necesidad).
+    clock_retry_delay_seconds: float = Field(default=30.0, gt=0.0, le=300.0)
 
 
 class EventConfig(BaseModel):
