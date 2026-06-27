@@ -134,6 +134,10 @@ class Orchestrator:
         await self.executor.startup()
         await self._load_session()
         await self._adopt_positions()
+        # Snapshot inicial: el dashboard muestra datos frescos desde el primer segundo
+        # sin tener que esperar el próximo cierre de vela (hasta 5 min de espera).
+        acct = await self.executor.exchange.get_account()
+        await self._record_equity(acct, datetime.now(timezone.utc))
         return self
 
     async def _load_session(self) -> None:
