@@ -156,6 +156,9 @@
 <script>
 const $ = id => document.getElementById(id);
 let timer = null;
+let lastUpdateMs = null;   // ts del último equity_snapshot (ms epoch)
+let hasData = false;
+let dataStale = false;
 
 function fmtUsd(x){ if(x==null) return "—"; const s=x<0?"-":""; return s+"$"+Math.abs(x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmtPct(x){ if(x==null) return "—"; return (x>=0?"+":"")+x.toFixed(2)+"%"; }
@@ -178,11 +181,11 @@ function render(s){
   else { net.textContent="—"; net.className="badge"; }
   $("kill").style.display = k.kill_switch ? "" : "none";
 
-  // liveness
-  const dot=$("dot"), lt=$("liveTxt");
-  if(!m.has_data){ dot.className="dot"; lt.textContent="esperando datos del bot…"; }
-  else if(m.stale){ dot.className="dot warn"; lt.textContent="datos obsoletos · "+ago(m.age_seconds*1000); }
-  else { dot.className="dot ok"; lt.textContent="en vivo · "+ago(m.age_seconds*1000); }
+  // liveness — solo almacena estado; updateLiveness() lo pinta cada segundo
+  hasData = m.has_data;
+  lastUpdateMs = m.last_update_ms;
+  dataStale = m.stale;
+  updateLiveness();
 
   // KPIs
   $("k_equity").textContent=fmtUsd(k.equity);
@@ -312,10 +315,24 @@ function renderNews(rows){
   box.innerHTML=h+"</tbody></table>";
 }
 
+function updateLiveness(){
+  const dot=$("dot"), lt=$("liveTxt");
+  if(!hasData || lastUpdateMs==null){
+    dot.className="dot"; lt.textContent="esperando datos del bot…"; return;
+  }
+  const ageMs = Math.max(0, Date.now() - lastUpdateMs);
+  if(dataStale){
+    dot.className="dot warn"; lt.textContent="datos obsoletos · "+ago(ageMs);
+  } else {
+    dot.className="dot ok"; lt.textContent="en vivo · "+ago(ageMs);
+  }
+}
+
 function updateClock(){
   const d=new Date();
   $("clock").textContent = d.toLocaleTimeString("es",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
   try{ $("tz").textContent = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; }catch(e){}
+  updateLiveness();
 }
 setInterval(updateClock, 1000); updateClock();
 
