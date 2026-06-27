@@ -35,6 +35,9 @@ CFG.orchestrator.warmup_candles = 2  # tests cortos
 # lo largo de varias velas; no deben verse afectados por la caducidad. Los tests
 # dedicados al TTL usan un CFG propio con un TTL realista (ver _cfg_ttl).
 CFG.confluence.sentiment_ttl_seconds = 10_000
+# El repo en vivo tiene el quant apagado (news_only); estos tests del engine ejercen
+# el veto/confirm de régimen, que solo existe con el quant encendido.
+CFG.confluence.quant_regime_enabled = True
 GRACE = CFG.orchestrator.reconcile_grace_cycles  # 3
 
 T0 = datetime(2026, 6, 14, 0, 0, tzinfo=timezone.utc)

@@ -3,7 +3,7 @@
 # Cambiar un parámetro de trading nunca debe requerir tocar código.
 
 market:
-  symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT", "DOGEUSDT"]
+  symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT"]   # DOGE fuera (2026-06-26): meme de cola gorda + peor fricción, nunca validado en la matriz quant
   timeframe: "5m"            # vela base de trabajo
   htf_timeframe: "1h"        # timeframe superior para contexto/tendencia
   quote_assets: ["USDT"]     # quotes para derivar el activo base (BTCUSDT→BTC) al resolver scope de noticias
@@ -66,6 +66,11 @@ confluence:
   # Fast Path (Plan V2 Fase 2) es quien explota noticias sub-vela; este TTL solo
   # corta el bug de "reusar el último score para siempre" del Slow Path.
   sentiment_ttl_seconds: 300
+  # Interruptor del quant como RÉGIMEN. 2026-06-26: APAGADO (false) → la noticia
+  # opera sola, a tamaño pleno, sin que la tendencia 1h vete ni reduzca (reason
+  # `news_only`). Modo "solo noticias" para aislar el edge event-driven en testnet.
+  # Poner true restaura el veto/confirm/sizing por régimen sin tocar código.
+  quant_regime_enabled: false
 
 sentiment:
   enabled: true                # Slow Path ON (Opción 2): noticias originan, régimen 1h confirma — validación testnet 2026-06-21

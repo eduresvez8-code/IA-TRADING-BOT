@@ -114,6 +114,15 @@ def decide(
     if direction == Action.SHORT and not cfg.allow_short:
         return _decision(Action.HOLD, 0.0, "short_disabled")
 
+    # (2.5) QUANT APAGADO (config): la noticia opera sola, a tamaño pleno, sin que la
+    #       tendencia 1h vete ni reduzca. Modo "solo noticias" (decisión de Eduardo
+    #       2026-06-26: aislar el edge event-driven en testnet sin la pata quant que
+    #       perdía dinero). El Risk Manager sigue dimensionando por riesgo (ATR/%):
+    #       size_factor=1.0 solo significa "sin reducción por régimen". Reversible:
+    #       quant_regime_enabled=true restaura el bloque de régimen de abajo.
+    if not cfg.quant_regime_enabled:
+        return _decision(direction, 1.0, "news_only")
+
     # Régimen = lectura de tendencia del quant en el timeframe superior (HTF). Ya
     # NO origina; solo modula el TAMAÑO de la apuesta de la noticia.
     regime_aligned = _sign(quant) == _sign(sent)

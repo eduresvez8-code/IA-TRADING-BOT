@@ -15,7 +15,10 @@ from backtest.confluence import (
     walk_forward,
 )
 
-CFG = load_settings()
+# El repo en vivo tiene el quant apagado (news_only); estos tests del backtest
+# ejercen el régimen (veta/confirma), que solo existe con el quant encendido.
+CFG = load_settings().model_copy(deep=True)
+CFG.confluence.quant_regime_enabled = True
 T0 = datetime(2025, 6, 1, 0, 0, tzinfo=timezone.utc)
 
 

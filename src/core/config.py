@@ -127,6 +127,15 @@ class ConfluenceConfig(BaseModel):
     # usaría); le=86400 ataja un typo (más de un día no es "noticia fresca"). NO
     # afecta al backtest, que caduca a escala de horas vía max_news_age_hours.
     sentiment_ttl_seconds: int = Field(ge=1, le=86400)
+    # Interruptor maestro del quant como RÉGIMEN en el Slow Path en vivo. Con `true`
+    # (histórico) la tendencia 1h veta/confirma/dimensiona la apuesta de la noticia.
+    # Con `false` el quant se APAGA: la noticia opera sola, a tamaño pleno, sin veto
+    # ni reducción por régimen (reason `news_only`). Decisión de Eduardo (2026-06-26):
+    # aislar el edge event-driven en testnet, sin la pata quant que perdía dinero
+    # (ver finding-quant-production-loses). Es config, no hardcode: ponerlo en `true`
+    # restaura el régimen sin tocar código. NO afecta al circuit breaker de
+    # volatilidad del Risk Manager (ATR), que es gestión de riesgo, no señal quant.
+    quant_regime_enabled: bool
 
     @model_validator(mode="after")
     def _confirm_ge_veto(self) -> "ConfluenceConfig":

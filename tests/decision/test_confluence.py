@@ -12,7 +12,18 @@ from src.core.models import Action, SentimentScore, Signal
 from src.decision.confluence import decide, decide_event
 
 NOW = datetime(2026, 6, 13, 12, 0, tzinfo=timezone.utc)
-CFG = load_settings()  # repo real: allow_short=true (Futuros)
+# El repo en vivo tiene quant_regime_enabled=false (modo "solo noticias"). Estos
+# tests ejercen la LÓGICA DE RÉGIMEN, que solo existe con el quant encendido, así
+# que CFG lo fuerza a true. El modo apagado se prueba aparte con `cfg_news_only()`.
+CFG = load_settings().model_copy(deep=True)
+CFG.confluence.quant_regime_enabled = True
+
+
+def cfg_news_only():
+    """Copia con el quant como régimen APAGADO (modo 'solo noticias', repo en vivo)."""
+    s = CFG.model_copy(deep=True)
+    s.confluence.quant_regime_enabled = False
+    return s
 
 
 def cfg_sin_cortos():
@@ -183,6 +194,41 @@ def test_short_gate_tiene_prioridad_sobre_regimen():
     d = decide(make_signal(0.8), make_sentiment(-0.6), cfg_sin_cortos())
     assert d.action == Action.HOLD
     assert d.reason == "short_disabled"
+
+
+# ---- Modo "solo noticias" (quant_regime_enabled=false, repo en vivo) ----
+
+def test_news_only_opera_a_tamano_pleno_sin_regimen():
+    # Quant apagado: noticia significativa → opera plena, reason news_only, sin mirar
+    # el régimen. Aquí el régimen iría EN CONTRA (quant<0, sent>0) y aun así NO veta.
+    d = decide(make_signal(-0.9), make_sentiment(0.6), cfg_news_only())
+    assert d.action == Action.LONG
+    assert d.size_factor == 1.0
+    assert d.reason == "news_only"
+
+
+def test_news_only_sin_noticia_sigue_sin_originar():
+    # El quant apagado NO origina por sí solo: sin sentimiento significativo, HOLD.
+    d = decide(make_signal(0.9), make_sentiment(0.1), cfg_news_only())
+    assert d.action == Action.HOLD
+    assert d.reason == "no_news_origination"
+
+
+def test_news_only_respeta_el_gate_de_cortos():
+    # El gate de cortos (venue) tiene prioridad sobre el modo news_only.
+    s = cfg_news_only()
+    s.confluence.allow_short = False
+    d = decide(make_signal(0.0), make_sentiment(-0.6), s)
+    assert d.action == Action.HOLD
+    assert d.reason == "short_disabled"
+
+
+def test_news_only_respeta_el_bloqueo_macro_programado():
+    # Un macro scheduled (FOMC/CPI) sigue bloqueando incluso con el quant apagado.
+    d = decide(make_signal(0.0), make_sentiment(0.8, event_kind="scheduled"),
+               cfg_news_only())
+    assert d.action == Action.HOLD
+    assert d.reason == "scheduled_macro_block"
 
 
 # ---- Bordes y auditoría ----

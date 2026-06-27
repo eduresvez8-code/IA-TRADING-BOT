@@ -23,7 +23,10 @@ from src.core.models import (
 from src.risk.manager import PortfolioState, RiskManager
 
 NOW = datetime(2026, 6, 13, 12, 0, tzinfo=timezone.utc)
-CFG = load_settings()
+# El repo en vivo tiene el quant apagado (news_only); este test ejercita el pipeline
+# confluencia→orden con el régimen confirmando, que requiere el quant encendido.
+CFG = load_settings().model_copy(deep=True)
+CFG.confluence.quant_regime_enabled = True
 L = CFG.risk.max_leverage  # 3
 
 # Filtros "sin fricción": paso/tick finísimos y sin mínimos → aíslan el sizing.

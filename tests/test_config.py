@@ -101,6 +101,7 @@ def _valid_confluence_kwargs(**overrides):
         quant_veto_threshold=0.15, quant_confirm_threshold=0.35,
         sentiment_confirm_threshold=0.3,
         reduced_size_factor=0.5, allow_short=True, sentiment_ttl_seconds=300,
+        quant_regime_enabled=True,
     )
     base.update(overrides)
     return base
@@ -774,12 +775,19 @@ def test_clock_retry_delay_fuera_de_rango_es_rechazado():
                            regime_htf_bars=50, clock_retry_delay_seconds=0)
 
 
-def test_settings_yaml_universo_de_seis_simbolos():
-    # Universo ampliado (2026-06-23): 6 perps USD-M; tope de posiciones acorde.
+def test_settings_yaml_universo_sin_doge():
+    # Universo (2026-06-26): DOGE retirado (meme de cola gorda, peor fricción, nunca
+    # validado en la matriz quant). Quedan 5 perps USD-M; tope de posiciones acorde.
     s = load_settings()
-    assert len(s.market.symbols) == 6
-    assert {"SOLUSDT", "XRPUSDT", "BNBUSDT", "DOGEUSDT"} <= set(s.market.symbols)
+    assert "DOGEUSDT" not in s.market.symbols
+    assert {"BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT"} == set(s.market.symbols)
     assert s.risk.max_open_positions <= len(s.market.symbols)
+
+
+def test_settings_yaml_quant_regime_apagado():
+    # 2026-06-26: el quant como régimen está APAGADO en vivo → modo "solo noticias".
+    s = load_settings()
+    assert s.confluence.quant_regime_enabled is False
 
 
 def test_warmup_demasiado_corto_es_rechazado():
