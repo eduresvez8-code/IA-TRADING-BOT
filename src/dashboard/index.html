@@ -198,7 +198,7 @@ function render(s){
   drawChart(s.equity, k.day_start_wallet);
   renderPositions(s.positions);
   renderPnlBySymbol(s.pnl_by_symbol);
-  renderDecisions(s.decisions);
+  renderDecisions(s.decisions, s.meta.quant_regime_enabled);
   renderOrders(s.orders);
   renderNews(s.news);
 }
@@ -259,15 +259,28 @@ function renderPnlBySymbol(rows){
   box.innerHTML=h+"</tbody></table>";
 }
 
-function renderDecisions(rows){
+function renderDecisions(rows, quantEnabled){
   const box=$("decisions"); count("dec_n", rows && rows.length);
   if(!rows || !rows.length){ box.innerHTML='<div class="empty">El bot aún no ha decidido nada</div>'; return; }
-  let h='<table><thead><tr><th>Hora</th><th>Símbolo</th><th>Acción</th><th>Motivo</th><th class="right">quant/sent</th><th class="right">size</th></tr></thead><tbody>';
-  rows.forEach(d=>{ const sf=(d.size_factor==null?0:d.size_factor)*100;
+  const qLabel = quantEnabled ? "quant / sent" : '<span style="color:var(--faint)">quant(ref)</span> / sent';
+  let h=`<table><thead><tr><th>Hora</th><th>Símbolo</th><th>Acción</th><th>Motivo</th><th class="right">${qLabel}</th><th class="right">size</th></tr></thead><tbody>`;
+  rows.forEach(d=>{
+    const sf=(d.size_factor==null?0:d.size_factor)*100;
+    const qCell = quantEnabled
+      ? fmt2(d.quant_score)
+      : `<span style="color:var(--faint)">${fmt2(d.quant_score)}</span>`;
+    const sScore = d.sentiment_score;
+    let sCell;
+    if(sScore==null||isNaN(sScore)||sScore===0){
+      sCell=`<span style="color:var(--faint)">—</span>`;
+    } else {
+      const c=sScore>0?"var(--green)":(sScore<0?"var(--red)":"var(--dim)");
+      sCell=`<span style="color:${c}">${sign(sScore)}${sScore.toFixed(2)}</span>`;
+    }
     h+=`<tr><td class="mut">${tsTime(d.ts)}</td><td>${esc(d.symbol)}</td>
     <td><span class="tag ${d.action}">${esc(d.action)}</span> <span class="src">${esc(d.source)}</span></td>
     <td class="reason">${esc(d.reason)}</td>
-    <td class="right">${fmt2(d.quant_score)} / ${fmt2(d.sentiment_score)}</td>
+    <td class="right">${qCell} / ${sCell}</td>
     <td class="right">${sf.toFixed(0)}%</td></tr>`; });
   box.innerHTML=h+"</tbody></table>";
 }

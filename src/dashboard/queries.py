@@ -84,6 +84,7 @@ def build_snapshot(
                             settings.confluence.quant_regime_enabled),
         "event_enabled": settings.event.enabled,
         "sentiment_enabled": settings.sentiment.enabled,
+        "quant_regime_enabled": settings.confluence.quant_regime_enabled,
         "testnet": testnet,
         "refresh_seconds": d.refresh_seconds,
         "last_update_ms": None,
