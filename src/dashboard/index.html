@@ -6,7 +6,7 @@
 <title>IA TRADING — Dashboard</title>
 <style>
   :root{
-    --bg:#0a0e14; --panel:#111722; --panel2:#0d131c; --line:#1d2733;
+    --bg:#0a0e14; --panel:#111722; --panel2:#0d131c; --line:#1d2733; --hover:#162132;
     --txt:#d7e0ea; --dim:#7b8794; --faint:#4a5564;
     --green:#22c55e; --red:#ef4444; --amber:#f59e0b; --blue:#3b82f6; --violet:#8b5cf6;
     --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
@@ -21,7 +21,7 @@
 
   header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
          padding:14px 20px;border-bottom:1px solid var(--line);background:var(--panel2);
-         position:sticky;top:0;z-index:10}
+         position:sticky;top:0;z-index:20}
   .brand{font-weight:700;letter-spacing:.5px}
   .brand .spark{color:var(--violet)}
   .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;
@@ -42,9 +42,14 @@
 
   main{padding:18px 20px;max-width:1320px;margin:0 auto;
        display:grid;gap:16px;grid-template-columns:repeat(12,1fr)}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
-  .card h2{margin:0 0 12px;font-size:12px;font-weight:600;letter-spacing:.6px;
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+        padding:16px;min-width:0}
+  .ch{display:flex;align-items:baseline;gap:9px;margin-bottom:12px}
+  .card h2{margin:0;font-size:12px;font-weight:600;letter-spacing:.6px;
            text-transform:uppercase;color:var(--dim)}
+  .count{font-family:var(--mono);font-size:11px;color:var(--faint);
+         background:var(--panel2);border:1px solid var(--line);border-radius:999px;
+         padding:1px 8px;margin-left:auto}
   .col-12{grid-column:span 12}.col-8{grid-column:span 8}.col-6{grid-column:span 6}
   .col-4{grid-column:span 4}
   @media(max-width:900px){.col-8,.col-6,.col-4{grid-column:span 12}}
@@ -57,11 +62,24 @@
   .kpi .sub{font-size:12px;color:var(--faint);margin-top:3px;font-family:var(--mono)}
   .pos{color:var(--green)}.neg{color:var(--red)}.mut{color:var(--dim)}
 
+  /* Caja con scroll PROPIO: la sección crece hasta un tope y luego rueda sola,
+     sin obligar a bajar toda la página. La cabecera de la tabla queda fija. */
+  .scrollbox{max-height:340px;overflow-y:auto;overflow-x:auto;
+             scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+  .scrollbox::-webkit-scrollbar{width:10px;height:10px}
+  .scrollbox::-webkit-scrollbar-track{background:transparent}
+  .scrollbox::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px;
+             border:2px solid var(--panel);background-clip:padding-box}
+  .scrollbox::-webkit-scrollbar-thumb:hover{background:#324559;background-clip:padding-box}
+
   table{width:100%;border-collapse:collapse;font-size:13px}
-  th{text-align:left;color:var(--dim);font-weight:600;font-size:11px;
-     text-transform:uppercase;letter-spacing:.4px;padding:6px 8px;border-bottom:1px solid var(--line)}
+  thead th{text-align:left;color:var(--dim);font-weight:600;font-size:11px;
+     text-transform:uppercase;letter-spacing:.4px;padding:6px 8px;
+     box-shadow:inset 0 -1px 0 var(--line)}
+  .scrollbox thead th{position:sticky;top:0;background:var(--panel);z-index:2}
   td{padding:7px 8px;border-bottom:1px solid var(--panel2);font-family:var(--mono)}
-  tr:last-child td{border-bottom:none}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover td{background:var(--hover)}
   .right{text-align:right}
   .tag{font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;font-family:var(--sans)}
   .tag.LONG{color:var(--green);background:#0f1c14}
@@ -69,7 +87,7 @@
   .tag.HOLD{color:var(--dim);background:#131a24}
   .src{font-size:10px;color:var(--faint);text-transform:uppercase}
   .reason{color:var(--dim)}
-  .empty{color:var(--faint);font-size:13px;padding:14px 4px;text-align:center}
+  .empty{color:var(--faint);font-size:13px;padding:18px 4px;text-align:center}
 
   .chartwrap{position:relative}
   svg{display:block;width:100%;height:230px}
@@ -100,37 +118,37 @@
     <div class="kpi"><div class="lbl">uPnL</div><div class="val num" id="k_upnl">—</div><div class="sub">no realizado</div></div>
     <div class="kpi"><div class="lbl">PnL del día</div><div class="val num" id="k_day">—</div><div class="sub" id="k_day_sub">&nbsp;</div></div>
     <div class="kpi"><div class="lbl">Drawdown</div><div class="val num" id="k_dd">—</div><div class="sub" id="k_dd_sub">desde el pico</div></div>
-    <div class="kpi"><div class="lbl">Posiciones</div><div class="val num" id="k_pos">—</div><div class="sub" id="k_pos_sub">abiertas</div></div>
+    <div class="kpi"><div class="lbl">Posiciones</div><div class="val num" id="k_pos">—</div><div class="sub">abiertas</div></div>
   </div>
 
   <div class="card col-8 chartwrap">
-    <h2>Curva de capital (equity)</h2>
+    <div class="ch"><h2>Curva de capital (equity)</h2></div>
     <svg id="chart" viewBox="0 0 800 230" preserveAspectRatio="none"></svg>
   </div>
 
   <div class="card col-4">
-    <h2>Posiciones abiertas</h2>
+    <div class="ch"><h2>Posiciones abiertas</h2><span class="count" id="pos_n"></span></div>
     <div id="positions"></div>
   </div>
 
   <div class="card col-4">
-    <h2>P&amp;L por símbolo</h2>
+    <div class="ch"><h2>P&amp;L por símbolo</h2><span class="count" id="pnl_n"></span></div>
     <div id="pnlsym"></div>
   </div>
 
   <div class="card col-8">
-    <h2>Decisiones — ¿por qué (no) operó?</h2>
-    <div id="decisions"></div>
+    <div class="ch"><h2>Decisiones — ¿por qué (no) operó?</h2><span class="count" id="dec_n"></span></div>
+    <div id="decisions" class="scrollbox"></div>
   </div>
 
   <div class="card col-12">
-    <h2>Órdenes recientes</h2>
-    <div id="orders"></div>
+    <div class="ch"><h2>Órdenes recientes</h2><span class="count" id="ord_n"></span></div>
+    <div id="orders" class="scrollbox"></div>
   </div>
 
   <div class="card col-12">
-    <h2>Noticias &amp; sentimiento</h2>
-    <div id="news"></div>
+    <div class="ch"><h2>Noticias &amp; sentimiento</h2><span class="count" id="news_n"></span></div>
+    <div id="news" class="scrollbox"></div>
   </div>
 </main>
 <footer>Dashboard read-only · jamás envía órdenes · lee SQLite en modo <code>ro</code></footer>
@@ -142,16 +160,18 @@ let timer = null;
 function fmtUsd(x){ if(x==null) return "—"; const s=x<0?"-":""; return s+"$"+Math.abs(x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmtPct(x){ if(x==null) return "—"; return (x>=0?"+":"")+x.toFixed(2)+"%"; }
 function fmtNum(x,d=4){ if(x==null) return "—"; return x.toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d}); }
+function fmt2(x){ return (x==null||isNaN(x)) ? "—" : x.toFixed(2); }   // null-safe (debug)
 function cls(x){ if(x==null) return "mut"; return x>0?"pos":(x<0?"neg":"mut"); }
 function sign(x){ return x>0?"+":""; }
 function ago(ms){ if(ms==null) return "—"; const s=Math.max(0,Math.round(ms/1000)); if(s<60) return "hace "+s+"s"; const m=Math.floor(s/60); if(m<60) return "hace "+m+"m"; return "hace "+Math.floor(m/60)+"h"+(m%60)+"m"; }
 function tsTime(ms){ const d=new Date(ms); return d.toLocaleTimeString("es",{hour:"2-digit",minute:"2-digit"}); }
 function esc(s){ return (s==null?"":""+s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+function count(id,n){ const el=$(id); if(el) el.textContent = n ? String(n) : ""; }
 
 function render(s){
   const m=s.meta, k=s.kpis;
   $("mode").textContent = m.mode;
-  $("syms").textContent = m.symbols.join(" · ")+" · "+m.timeframe;
+  $("syms").textContent = (m.symbols||[]).join(" · ")+" · "+m.timeframe;
   const net=$("net");
   if(m.testnet===true){ net.textContent="TESTNET"; net.className="badge ok"; }
   else if(m.testnet===false){ net.textContent="MAINNET"; net.className="badge bad"; }
@@ -166,12 +186,11 @@ function render(s){
 
   // KPIs
   $("k_equity").textContent=fmtUsd(k.equity);
-  const peakTxt = k.peak_wallet!=null ? ("pico "+fmtUsd(k.peak_wallet)) : " ";
-  $("k_equity_sub").textContent=peakTxt;
+  $("k_equity_sub").textContent = k.peak_wallet!=null ? ("pico "+fmtUsd(k.peak_wallet)) : " ";
   $("k_wallet").textContent=fmtUsd(k.wallet);
   const up=$("k_upnl"); up.textContent=fmtUsd(k.upnl); up.className="val num "+cls(k.upnl);
   const day=$("k_day"); day.textContent=k.day_pnl==null?"—":fmtUsd(k.day_pnl); day.className="val num "+cls(k.day_pnl);
-  $("k_day_sub").textContent=k.day_pnl_pct==null?" ":fmtPct(k.day_pnl_pct);
+  $("k_day_sub").textContent=k.day_pnl_pct==null?" ":fmtPct(k.day_pnl_pct);
   const dd=$("k_dd"); dd.textContent=k.drawdown_pct==null?"—":("-"+k.drawdown_pct.toFixed(2)+"%");
   dd.className="val num "+(k.drawdown_pct>0?"neg":"mut");
   $("k_pos").textContent=k.open_positions;
@@ -181,7 +200,7 @@ function render(s){
   renderPnlBySymbol(s.pnl_by_symbol);
   renderDecisions(s.decisions);
   renderOrders(s.orders);
-  renderNews(s.news, m.symbols);
+  renderNews(s.news);
 }
 
 function drawChart(pts, baseline){
@@ -220,54 +239,55 @@ function drawChart(pts, baseline){
 }
 
 function renderPositions(rows){
-  const box=$("positions");
+  const box=$("positions"); count("pos_n", rows && rows.length);
   if(!rows || !rows.length){ box.innerHTML='<div class="empty">Sin posiciones abiertas</div>'; return; }
-  let h='<table><tr><th>Símbolo</th><th>Lado</th><th class="right">Qty</th><th class="right">Entrada</th><th class="right">uPnL</th></tr>';
-  rows.forEach(p=>{ h+=`<tr><td>${esc(p.symbol)}</td><td><span class="tag ${p.side}">${p.side}</span></td>
+  let h='<table><thead><tr><th>Símbolo</th><th>Lado</th><th class="right">Qty</th><th class="right">Entrada</th><th class="right">uPnL</th></tr></thead><tbody>';
+  rows.forEach(p=>{ h+=`<tr><td>${esc(p.symbol)}</td><td><span class="tag ${p.side}">${esc(p.side)}</span></td>
     <td class="right">${fmtNum(p.qty,4)}</td><td class="right">${fmtUsd(p.entry_price)}</td>
     <td class="right ${cls(p.upnl)}">${fmtUsd(p.upnl)}</td></tr>`; });
-  box.innerHTML=h+"</table>";
+  box.innerHTML=h+"</tbody></table>";
 }
 
 function renderPnlBySymbol(rows){
-  const box=$("pnlsym");
+  const box=$("pnlsym"); count("pnl_n", rows && rows.length);
   if(!rows || !rows.length){ box.innerHTML='<div class="empty">Sin datos de P&amp;L todavía</div>'; return; }
-  let h='<table><tr><th>Símbolo</th><th class="right">Realiz.</th><th class="right">No realiz.</th><th class="right">Total</th></tr>';
+  let h='<table><thead><tr><th>Símbolo</th><th class="right">Realiz.</th><th class="right">No realiz.</th><th class="right">Total</th></tr></thead><tbody>';
   rows.forEach(p=>{ h+=`<tr><td>${esc(p.symbol)}</td>
     <td class="right ${cls(p.realized)}">${fmtUsd(p.realized)}</td>
     <td class="right ${cls(p.unrealized)}">${fmtUsd(p.unrealized)}</td>
     <td class="right ${cls(p.total)}" style="font-weight:700">${fmtUsd(p.total)}</td></tr>`; });
-  box.innerHTML=h+"</table>";
+  box.innerHTML=h+"</tbody></table>";
 }
 
 function renderDecisions(rows){
-  const box=$("decisions");
+  const box=$("decisions"); count("dec_n", rows && rows.length);
   if(!rows || !rows.length){ box.innerHTML='<div class="empty">El bot aún no ha decidido nada</div>'; return; }
-  let h='<table><tr><th>Hora</th><th>Símbolo</th><th>Acción</th><th>Motivo</th><th class="right">rég/sent</th><th class="right">size</th></tr>';
-  rows.forEach(d=>{ h+=`<tr><td class="mut">${tsTime(d.ts)}</td><td>${esc(d.symbol)}</td>
-    <td><span class="tag ${d.action}">${d.action}</span> <span class="src">${esc(d.source)}</span></td>
+  let h='<table><thead><tr><th>Hora</th><th>Símbolo</th><th>Acción</th><th>Motivo</th><th class="right">quant/sent</th><th class="right">size</th></tr></thead><tbody>';
+  rows.forEach(d=>{ const sf=(d.size_factor==null?0:d.size_factor)*100;
+    h+=`<tr><td class="mut">${tsTime(d.ts)}</td><td>${esc(d.symbol)}</td>
+    <td><span class="tag ${d.action}">${esc(d.action)}</span> <span class="src">${esc(d.source)}</span></td>
     <td class="reason">${esc(d.reason)}</td>
-    <td class="right">${d.quant_score.toFixed(2)} / ${d.sentiment_score.toFixed(2)}</td>
-    <td class="right">${(d.size_factor*100).toFixed(0)}%</td></tr>`; });
-  box.innerHTML=h+"</table>";
+    <td class="right">${fmt2(d.quant_score)} / ${fmt2(d.sentiment_score)}</td>
+    <td class="right">${sf.toFixed(0)}%</td></tr>`; });
+  box.innerHTML=h+"</tbody></table>";
 }
 
 function renderOrders(rows){
-  const box=$("orders");
+  const box=$("orders"); count("ord_n", rows && rows.length);
   if(!rows || !rows.length){ box.innerHTML='<div class="empty">Sin órdenes registradas</div>'; return; }
-  let h='<table><tr><th>Hora</th><th>Símbolo</th><th>Tipo</th><th class="right">Qty</th><th class="right">Precio</th><th>Estado</th></tr>';
+  let h='<table><thead><tr><th>Hora</th><th>Símbolo</th><th>Tipo</th><th class="right">Qty</th><th class="right">Precio</th><th>Estado</th></tr></thead><tbody>';
   rows.forEach(o=>{ const side=o.position_side==="SHORT"?"SHORT":(o.position_side==="LONG"?"LONG":"HOLD");
     h+=`<tr><td class="mut">${tsTime(o.ts)}</td><td>${esc(o.symbol)} <span class="tag ${side}">${esc(o.side)}</span></td>
     <td class="mut">${esc(o.type)}</td><td class="right">${o.quantity==null?"—":fmtNum(o.quantity,4)}</td>
     <td class="right">${o.price==null?"—":fmtUsd(o.price)}</td>
     <td class="mut">${esc(o.status)}</td></tr>`; });
-  box.innerHTML=h+"</table>";
+  box.innerHTML=h+"</tbody></table>";
 }
 
 function renderNews(rows){
-  const box=$("news");
+  const box=$("news"); count("news_n", rows && rows.length);
   if(!rows || !rows.length){ box.innerHTML='<div class="empty">Sin noticias ingeridas</div>'; return; }
-  let h='<table><tr><th>Hora</th><th>Titular</th><th>Fuente</th><th>Scope</th><th class="right">Score</th></tr>';
+  let h='<table><thead><tr><th>Hora</th><th>Titular</th><th>Fuente</th><th>Scope</th><th class="right">Score</th></tr></thead><tbody>';
   rows.forEach(n=>{ const sc=n.score;
     let bar="—";
     if(sc!=null){ const w=Math.round(Math.abs(sc)*100); const c=sc>0?"var(--green)":(sc<0?"var(--red)":"var(--dim)");
@@ -276,7 +296,7 @@ function renderNews(rows){
     const title = n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.title)}</a>` : esc(n.title);
     h+=`<tr><td class="mut">${tsTime(n.ts)}</td><td style="font-family:var(--sans);max-width:520px">${title}</td>
       <td class="mut">${esc(n.source)}</td><td class="mut">${esc(scope)}</td><td class="right">${bar}</td></tr>`; });
-  box.innerHTML=h+"</table>";
+  box.innerHTML=h+"</tbody></table>";
 }
 
 function updateClock(){

@@ -93,6 +93,30 @@ async def test_pnl_por_simbolo_fusiona_realizado_y_no_realizado(populated):
     assert syms.index("ETHUSDT") < syms.index("BTCUSDT")
 
 
+async def test_pnl_por_simbolo_excluye_fuera_del_universo(tmp_path):
+    # Un símbolo retirado del universo (p.ej. DOGE) con PnL viejo en la tabla NO debe
+    # aparecer en el panel: se filtra al universo activo sin borrar el historial.
+    settings = _settings(tmp_path)
+    st = await Storage(settings.storage.db_path, tmp_path / "candles").init()
+    base = int(NOW.timestamp() * 1000)
+    await st.save_equity_snapshot(ts_ms=base, wallet=100.0, equity=100.0, upnl=0.0,
+                                  positions=[])
+    await st.save_realized_pnl(
+        realized={"BTCUSDT": 5.0, "DOGEUSDT": 99.0}, ts_ms=base)  # DOGE ya no en universo
+    await st.close()
+    snap = build_snapshot(settings, now=NOW, testnet=True)
+    syms = {r["symbol"] for r in snap["pnl_by_symbol"]}
+    assert "DOGEUSDT" not in syms
+    assert syms == set(settings.market.symbols)
+
+
+async def test_modo_refleja_quant_apagado(populated):
+    # El badge de modo debe decir la verdad: con quant_regime_enabled=false → "quant OFF".
+    populated.confluence.quant_regime_enabled = False
+    snap = build_snapshot(populated, now=NOW, testnet=True)
+    assert "quant OFF" in snap["meta"]["mode"]
+
+
 async def test_liveness_fresco_vs_obsoleto(populated):
     fresh = build_snapshot(populated, now=NOW + timedelta(seconds=100), testnet=True)
     assert fresh["meta"]["stale"] is False        # 100s < 3×300s

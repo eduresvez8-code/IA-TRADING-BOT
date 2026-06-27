@@ -47,11 +47,15 @@ def _rows(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list[dict]:
     return [dict(r) for r in cur.fetchall()]
 
 
-def _mode_label(event_enabled: bool, sentiment_enabled: bool) -> str:
+def _mode_label(event_enabled: bool, sentiment_enabled: bool,
+                quant_regime_enabled: bool = True) -> str:
     if event_enabled and sentiment_enabled:
         return "Híbrido (Opción 2): noticias + régimen"
     if sentiment_enabled:
-        return "Slow Path: noticias confirmadas por régimen"
+        # Refleja el flag del quant: si está apagado (modo news_only), el régimen
+        # ya no confirma/veta → decirlo honestamente en el badge del dashboard.
+        return ("Slow Path: solo noticias (quant OFF)" if not quant_regime_enabled
+                else "Slow Path: noticias confirmadas por régimen")
     if event_enabled:
         return "Fast Path: originación por shocks"
     return "Gates OFF — sin originación por noticias"
@@ -76,7 +80,8 @@ def build_snapshot(
         "symbols": list(settings.market.symbols),
         "timeframe": settings.market.timeframe,
         "htf_timeframe": settings.market.htf_timeframe,
-        "mode": _mode_label(settings.event.enabled, settings.sentiment.enabled),
+        "mode": _mode_label(settings.event.enabled, settings.sentiment.enabled,
+                            settings.confluence.quant_regime_enabled),
         "event_enabled": settings.event.enabled,
         "sentiment_enabled": settings.sentiment.enabled,
         "testnet": testnet,
@@ -192,18 +197,20 @@ def _pnl_by_symbol(symbols: list[str], realized_rows: list[dict],
                    positions: list[dict]) -> list[dict]:
     """Fusiona PnL realizado (tabla) + no realizado (posiciones abiertas) por símbolo.
 
-    Incluye TODOS los símbolos del universo (incluso planos, en 0) más cualquiera con
-    datos fuera del universo (defensivo). Ordena por total descendente: el frontend
-    ve de un vistazo qué moneda gana y cuál pierde. `total = realizado + no_realizado`.
+    SOLO los símbolos del UNIVERSO ACTIVO (`market.symbols`), incluso planos en 0.
+    Antes se añadían además los símbolos con datos en la tabla `realized_pnl` aunque
+    ya no se operaran ("defensivo"); pero al retirar un símbolo del universo (p.ej.
+    DOGE, 2026-06-26) su fila vieja seguía colándose en el panel. Filtrar al universo
+    activo lo arregla SIN borrar el historial de la BD. Ordena por total descendente:
+    el frontend ve de un vistazo qué moneda gana y cuál pierde. total = realiz + noReal.
     """
     realized: dict[str, float] = {r["symbol"]: r["realized"] for r in realized_rows}
     unrealized: dict[str, float] = {}
     for p in positions:
         unrealized[p["symbol"]] = unrealized.get(p["symbol"], 0.0) + (p.get("upnl") or 0.0)
 
-    universe = list(dict.fromkeys([*symbols, *realized.keys(), *unrealized.keys()]))
     out = []
-    for sym in universe:
+    for sym in symbols:
         r = realized.get(sym, 0.0)
         u = unrealized.get(sym, 0.0)
         out.append({"symbol": sym, "realized": r, "unrealized": u, "total": r + u})
