@@ -13,6 +13,7 @@ from src.core.config import (
     ExecutionConfig,
     FundingEdgeConfig,
     MeanReversionConfig,
+    QuantHypothesesConfig,
     QuantMatrixConfig,
     RiskConfig,
     ScanConfig,
@@ -168,6 +169,68 @@ def test_quant_matrix_pf_debe_superar_uno():
     # Un PF de corte ≤ 1 no exigiría rentabilidad (gt=1.0).
     with pytest.raises(ValidationError):
         QuantMatrixConfig(**_valid_quant_matrix_kwargs(golden_min_profit_factor=1.0))
+
+
+def _valid_quant_hyp_kwargs(**overrides):
+    base = dict(
+        atr_stop_mult=2.0,
+        tsmom_lookback_days_grid=[126, 252],
+        funding_extreme_neg_ann_pct=-20.0,
+        funding_extreme_pos_ann_pct=40.0,
+        funding_normal_low_ann_pct=-5.0,
+        funding_normal_high_ann_pct=10.0,
+        funding_trend_ma_days=200,
+        donchian_entry_period=20,
+        donchian_exit_ema=10,
+        donchian_funding_min_8h_pct=0.01,
+        donchian_funding_max_8h_pct=0.05,
+        donchian_take_profit_rr=3.0,
+        donchian_max_hold_bars=30,
+    )
+    base.update(overrides)
+    return base
+
+
+def test_quant_hypotheses_config_del_repo_es_valido():
+    qh = load_settings().quant_hypotheses
+    assert qh.atr_stop_mult == 2.0
+    # Grid de robustez: no vacío y dentro del rango válido (el contenido exacto puede
+    # variar al explorar; lo importante es que cargue y respete los límites).
+    assert len(qh.tsmom_lookback_days_grid) >= 1
+    assert all(10 <= d <= 500 for d in qh.tsmom_lookback_days_grid)
+    assert qh.funding_extreme_pos_ann_pct > qh.funding_extreme_neg_ann_pct
+
+
+def test_quant_hyp_lookback_fuera_de_rango_es_rechazado():
+    # Un lookback de 5 días no es "momentum", es ruido (rango [10, 500]).
+    with pytest.raises(ValidationError):
+        QuantHypothesesConfig(**_valid_quant_hyp_kwargs(tsmom_lookback_days_grid=[5]))
+
+
+def test_quant_hyp_grid_no_puede_estar_vacio():
+    with pytest.raises(ValidationError):
+        QuantHypothesesConfig(**_valid_quant_hyp_kwargs(tsmom_lookback_days_grid=[]))
+
+
+def test_quant_hyp_funding_extremo_pos_debe_superar_neg():
+    # El umbral positivo de euforia debe estar por encima del negativo de capitulación.
+    with pytest.raises(ValidationError):
+        QuantHypothesesConfig(**_valid_quant_hyp_kwargs(
+            funding_extreme_neg_ann_pct=-20.0, funding_extreme_pos_ann_pct=-30.0))
+
+
+def test_quant_hyp_donchian_funding_band_coherente():
+    # max de la banda de funding debe ser > min.
+    with pytest.raises(ValidationError):
+        QuantHypothesesConfig(**_valid_quant_hyp_kwargs(
+            donchian_funding_min_8h_pct=0.05, donchian_funding_max_8h_pct=0.01))
+
+
+def test_quant_hyp_exit_ema_menor_que_canal_de_entrada():
+    # La EMA de salida debe ser más rápida que el canal Donchian de entrada.
+    with pytest.raises(ValidationError):
+        QuantHypothesesConfig(**_valid_quant_hyp_kwargs(
+            donchian_entry_period=10, donchian_exit_ema=20))
 
 
 def test_pairs_lookback_minimo_24h():

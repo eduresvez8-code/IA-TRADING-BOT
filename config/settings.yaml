@@ -286,3 +286,28 @@ quant_matrix:
   squeeze_keltner_atr_mult: 1.5       # multiplicador del ATR de Keltner (estándar TTM)
   squeeze_forward_horizon: 4          # horizonte IC Etapa 1 + holding time-based (4h)
   squeeze_breakout_threshold: 1.0     # |close−mid| > thr·(bb_std·σ): 1.0 = en la banda Bollinger
+
+# --- Hipótesis quant de la investigación Perplexity (2026-06) ---
+# Research puro (backtest/run_quant_hypotheses.py). NO opera el bot en vivo: mide,
+# NETO de costos sobre el histórico real, si cada hipótesis tiene edge. Las
+# hipótesis de POSICIONAMIENTO (open interest / long-short ratio) NO están aquí:
+# Binance solo sirve ~30 días de ese dato gratis → no se pueden backtestear (se
+# documentan como no-verificables en el reporte). Cero Hardcoding: todo umbral vive aquí.
+quant_hypotheses:
+  # Común a las familias direccionales: stop = entrada ∓ mult·ATR(risk.atr_period).
+  atr_stop_mult: 2.0                  # Perplexity especificó ATR(14)*2 en todas.
+  # H1 — TSMOM diario (time-series momentum): signo del retorno a N días marca el lado.
+  tsmom_lookback_days_grid: [60, 90, 126, 180, 252]  # barrido de robustez (¿meseta o suerte?)
+  # H2 — Funding extremo direccional (contrarian + filtro de tendencia de fondo).
+  funding_extreme_neg_ann_pct: -20.0  # FR anualizado < esto → crowd corto → buscar LONG
+  funding_extreme_pos_ann_pct: 40.0   # FR anualizado > esto → euforia larga → buscar SHORT
+  funding_normal_low_ann_pct: -5.0    # salida: el FR anualizado vuelve a [low, high]
+  funding_normal_high_ann_pct: 10.0
+  funding_trend_ma_days: 200          # filtro de tendencia: MA de cierres diarios
+  # H3 — Ruptura Donchian 4h (SIN el gate de OI, que no es backtesteable con datos gratis).
+  donchian_entry_period: 20           # canal de entrada: máx/mín de los N cierres previos
+  donchian_exit_ema: 10               # salida por cruce de EMA rápida (en velas 4h)
+  donchian_funding_min_8h_pct: 0.01   # long requiere funding 8h en [min, max] (en %)
+  donchian_funding_max_8h_pct: 0.05
+  donchian_take_profit_rr: 3.0        # TP = 3× la distancia del stop (Perplexity: 3*riesgo)
+  donchian_max_hold_bars: 30          # salida por tiempo si no salta stop/TP/señal

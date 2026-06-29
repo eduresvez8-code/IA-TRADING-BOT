@@ -627,6 +627,89 @@ class QuantMatrixConfig(BaseModel):
     squeeze_breakout_threshold: float = Field(ge=0.5, le=3.0)
 
 
+class QuantHypothesesConfig(BaseModel):
+    """Hipótesis quant de la investigación Perplexity (backtest/run_quant_hypotheses.py).
+
+    Research puro: NO opera el bot en vivo. Cada familia se mide NETA de costos sobre
+    el histórico real. Las hipótesis de posicionamiento (open interest / long-short
+    ratio) NO viven aquí: Binance solo sirve ~30 días de ese dato gratis, así que no
+    son backtesteables y se reportan como no-verificables. Cero Hardcoding: todo umbral
+    de estas hipótesis está aquí, tipado y acotado.
+    """
+    # Stop común de las familias direccionales: entrada ∓ mult·ATR(risk.atr_period).
+    # ge=0.5 (un stop a <0.5 ATR salta con el ruido normal); le=10 ataja un typo.
+    atr_stop_mult: float = Field(ge=0.5, le=10.0)
+
+    # --- H1 — TSMOM diario (time-series momentum) ---
+    # Barrido de ventanas de lookback (días) para el test de robustez: el signo del
+    # retorno a N días marca el lado. Lista no vacía; cada ventana ge=10 (con <10 días
+    # el "momentum" es ruido) y le=500 (>~1.5 años deja muy pocas señales en 3 años).
+    tsmom_lookback_days_grid: list[int] = Field(min_length=1)
+
+    # --- H2 — Funding extremo direccional (contrarian + filtro de tendencia) ---
+    # FR anualizado por debajo de esto (negativo) = crowd corto pagando → buscar LONG.
+    # le=0: el umbral "negativo extremo" debe ser negativo para tener sentido.
+    funding_extreme_neg_ann_pct: float = Field(le=0.0, ge=-200.0)
+    # FR anualizado por encima de esto (positivo) = euforia larga → buscar SHORT.
+    funding_extreme_pos_ann_pct: float = Field(ge=0.0, le=500.0)
+    # Banda "normal" del FR anualizado para la SALIDA (el crowding se deshizo).
+    funding_normal_low_ann_pct: float = Field(ge=-100.0, le=0.0)
+    funding_normal_high_ann_pct: float = Field(ge=0.0, le=200.0)
+    # Filtro de tendencia de fondo: MA de cierres diarios. ge=20 (con <20 días no es
+    # "tendencia de fondo"); le=400 ataja un typo (más MA que datos no sirve).
+    funding_trend_ma_days: int = Field(ge=20, le=400)
+
+    # --- H3 — Ruptura Donchian 4h (sin el gate de OI, no backtesteable) ---
+    # Canal de entrada: máx/mín de los N cierres previos. ge=5 / le=200.
+    donchian_entry_period: int = Field(ge=5, le=200)
+    # EMA rápida de salida (en velas 4h). ge=2 / le=100, y < entry_period (validador).
+    donchian_exit_ema: int = Field(ge=2, le=100)
+    # Banda de funding 8h (en %) que debe cumplir un LONG. min < max (validador).
+    donchian_funding_min_8h_pct: float = Field(ge=-1.0, le=1.0)
+    donchian_funding_max_8h_pct: float = Field(ge=-1.0, le=1.0)
+    # Take-profit en múltiplos de la distancia del stop. gt=0; le=10 ataja un typo.
+    donchian_take_profit_rr: float = Field(gt=0.0, le=10.0)
+    # Salida por tiempo si no salta stop/TP/señal. ge=1 / le=500.
+    donchian_max_hold_bars: int = Field(ge=1, le=500)
+
+    @field_validator("tsmom_lookback_days_grid")
+    @classmethod
+    def lookbacks_en_rango(cls, v: list[int]) -> list[int]:
+        for d in v:
+            if not (10 <= d <= 500):
+                raise ValueError(f"tsmom_lookback_days_grid: {d} fuera de [10, 500]")
+        return v
+
+    @field_validator("funding_extreme_pos_ann_pct")
+    @classmethod
+    def pos_mayor_que_neg(cls, v: float, info) -> float:
+        neg = info.data.get("funding_extreme_neg_ann_pct")
+        if neg is not None and v <= neg:
+            raise ValueError(
+                f"funding_extreme_pos_ann_pct ({v}) debe ser > "
+                f"funding_extreme_neg_ann_pct ({neg})")
+        return v
+
+    @field_validator("donchian_funding_max_8h_pct")
+    @classmethod
+    def funding_max_mayor_que_min(cls, v: float, info) -> float:
+        lo = info.data.get("donchian_funding_min_8h_pct")
+        if lo is not None and v <= lo:
+            raise ValueError(
+                f"donchian_funding_max_8h_pct ({v}) debe ser > "
+                f"donchian_funding_min_8h_pct ({lo})")
+        return v
+
+    @field_validator("donchian_exit_ema")
+    @classmethod
+    def exit_ema_menor_que_entry(cls, v: int, info) -> int:
+        entry = info.data.get("donchian_entry_period")
+        if entry is not None and v >= entry:
+            raise ValueError(
+                f"donchian_exit_ema ({v}) debe ser < donchian_entry_period ({entry})")
+        return v
+
+
 class Settings(BaseModel):
     market: MarketConfig
     risk: RiskConfig
@@ -647,6 +730,7 @@ class Settings(BaseModel):
     storage: StorageConfig
     dashboard: DashboardConfig
     quant_matrix: QuantMatrixConfig
+    quant_hypotheses: QuantHypothesesConfig
 
 
 def load_settings(path: Path | None = None) -> Settings:
