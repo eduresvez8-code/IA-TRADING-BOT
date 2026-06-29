@@ -311,3 +311,11 @@ quant_hypotheses:
   donchian_funding_max_8h_pct: 0.05
   donchian_take_profit_rr: 3.0        # TP = 3× la distancia del stop (Perplexity: 3*riesgo)
   donchian_max_hold_bars: 30          # salida por tiempo si no salta stop/TP/señal
+  # H4 — Cruce de medias móviles (sweep guiado por foros): pares fast/slow más citados
+  # en cripto (9/21, golden cross 50/200, etc.), tipo (EMA rápida / SMA sin whipsaws) y
+  # timeframe. Se EXCLUYE <1h: foros y nuestro propio hallazgo coinciden en que el ruido
+  # + costo a 5m/15m mata el edge. Stop ATR común (atr_stop_mult), flip en el cruce opuesto.
+  ma_cross_pairs: [[5, 13], [9, 21], [8, 21], [10, 20], [12, 26], [20, 50], [21, 55], [50, 200]]
+  ma_cross_types: ["ema", "sma"]      # EMA (reacciona antes) vs SMA (menos señales falsas)
+  ma_cross_timeframes: ["1h", "4h", "1d"]  # golden cross clásico vive en 1d; nada <1h
+  ma_cross_allow_short: true          # simétrico (long/short), como el resto de la matriz

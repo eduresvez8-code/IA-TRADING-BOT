@@ -128,6 +128,64 @@ def make_tsmom_decider(closes: np.ndarray, atrs: np.ndarray, lookback: int,
     return decider
 
 
+def moving_average(closes: np.ndarray, period: int, kind: str) -> np.ndarray:
+    """Media móvil de los cierres: 'sma' (simple) o 'ema' (exponencial).
+
+    La SMA pondera igual las N velas (más lenta, menos whipsaws); la EMA pondera
+    más lo reciente (reacciona antes, más señales falsas). Ambas causales.
+    """
+    s = pd.Series(closes)
+    if kind == "ema":
+        return s.ewm(span=period, adjust=False).mean().to_numpy()
+    return s.rolling(period).mean().to_numpy()
+
+
+def make_macross_decider(closes: np.ndarray, atrs: np.ndarray, fast: np.ndarray,
+                         slow: np.ndarray, *, atr_mult: float, allow_short: bool):
+    """H4 — Cruce de medias: el lado lo marca el signo de (fast − slow).
+
+    LONG cuando la media rápida está por encima de la lenta; SHORT cuando por debajo
+    (si allow_short). Flip en el cruce opuesto. Igual que el TSMOM, el stop ATR es un
+    freno: tras saltar, NO se reentra en la misma dirección hasta que el cruce se
+    reinicie (las medias se vuelven a cruzar) → un stop no genera churn de reentradas.
+    Esta es la lógica clásica del golden/death cross, simétrica y neta de costos.
+    """
+    st = {"prev_pos": None, "exit_emitted": False, "suppress": None}
+
+    def decider(i, position_side, score, ts):
+        if (st["prev_pos"] is not None and position_side is None
+                and not st["exit_emitted"]):
+            st["suppress"] = st["prev_pos"]
+        st["exit_emitted"] = False
+        st["prev_pos"] = position_side
+
+        f, s = fast[i], slow[i]
+        if math.isnan(f) or math.isnan(s):
+            return None
+        side = "LONG" if f > s else ("SHORT" if f < s else None)
+        if st["suppress"] == "LONG" and f <= s:
+            st["suppress"] = None
+        elif st["suppress"] == "SHORT" and f >= s:
+            st["suppress"] = None
+
+        if position_side is None:
+            if side is None or side == st["suppress"]:
+                return None
+            if side == "SHORT" and not allow_short:
+                return None
+            stop = _stop_level(side, closes[i], atrs[i], atr_mult)
+            if stop is None:
+                return None
+            return ("enter", side, 1.0, stop, None)
+        # Sosteniendo: salir cuando las medias cruzan en contra.
+        if (position_side == "LONG" and f < s) or (position_side == "SHORT" and f > s):
+            st["exit_emitted"] = True
+            return ("exit",)
+        return None
+
+    return decider
+
+
 def make_funding_decider(closes: np.ndarray, atrs: np.ndarray,
                          funding_ann_pct: np.ndarray, trend_ma: np.ndarray,
                          *, neg_thr: float, pos_thr: float,

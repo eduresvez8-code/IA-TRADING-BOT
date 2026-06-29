@@ -672,6 +672,44 @@ class QuantHypothesesConfig(BaseModel):
     # Salida por tiempo si no salta stop/TP/señal. ge=1 / le=500.
     donchian_max_hold_bars: int = Field(ge=1, le=500)
 
+    # --- H4 — Cruce de medias móviles (sweep) ---
+    # Pares [fast, slow] a barrer. Cada par: 2 enteros, fast < slow, en [2, 400].
+    ma_cross_pairs: list[list[int]] = Field(min_length=1)
+    # Tipos de media: subconjunto de {"ema","sma"}. Lista no vacía.
+    ma_cross_types: list[str] = Field(min_length=1)
+    # Timeframes a barrer: subconjunto de {"1h","4h","1d"} (nada <1h: ruido + costo).
+    ma_cross_timeframes: list[str] = Field(min_length=1)
+    # Simetría direccional: true = opera long y short; false = solo long.
+    ma_cross_allow_short: bool
+
+    @field_validator("ma_cross_pairs")
+    @classmethod
+    def pares_ma_validos(cls, v: list[list[int]]) -> list[list[int]]:
+        for pair in v:
+            if len(pair) != 2:
+                raise ValueError(f"ma_cross_pairs: {pair} debe tener exactamente 2 valores")
+            fast, slow = pair
+            if not (2 <= fast < slow <= 400):
+                raise ValueError(
+                    f"ma_cross_pairs: {pair} debe cumplir 2 ≤ fast < slow ≤ 400")
+        return v
+
+    @field_validator("ma_cross_types")
+    @classmethod
+    def tipos_ma_validos(cls, v: list[str]) -> list[str]:
+        for t in v:
+            if t not in ("ema", "sma"):
+                raise ValueError(f"ma_cross_types: '{t}' no es 'ema' ni 'sma'")
+        return v
+
+    @field_validator("ma_cross_timeframes")
+    @classmethod
+    def timeframes_ma_validos(cls, v: list[str]) -> list[str]:
+        for tf in v:
+            if tf not in ("1h", "4h", "1d"):
+                raise ValueError(f"ma_cross_timeframes: '{tf}' no soportado (usa 1h/4h/1d)")
+        return v
+
     @field_validator("tsmom_lookback_days_grid")
     @classmethod
     def lookbacks_en_rango(cls, v: list[int]) -> list[int]:

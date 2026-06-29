@@ -186,6 +186,10 @@ def _valid_quant_hyp_kwargs(**overrides):
         donchian_funding_max_8h_pct=0.05,
         donchian_take_profit_rr=3.0,
         donchian_max_hold_bars=30,
+        ma_cross_pairs=[[9, 21], [50, 200]],
+        ma_cross_types=["ema", "sma"],
+        ma_cross_timeframes=["1h", "4h", "1d"],
+        ma_cross_allow_short=True,
     )
     base.update(overrides)
     return base
@@ -231,6 +235,31 @@ def test_quant_hyp_exit_ema_menor_que_canal_de_entrada():
     with pytest.raises(ValidationError):
         QuantHypothesesConfig(**_valid_quant_hyp_kwargs(
             donchian_entry_period=10, donchian_exit_ema=20))
+
+
+def test_quant_hyp_ma_cross_del_repo_es_valido():
+    qh = load_settings().quant_hypotheses
+    assert len(qh.ma_cross_pairs) >= 1
+    assert all(len(p) == 2 and p[0] < p[1] for p in qh.ma_cross_pairs)
+    assert set(qh.ma_cross_types) <= {"ema", "sma"}
+    assert set(qh.ma_cross_timeframes) <= {"1h", "4h", "1d"}
+
+
+def test_quant_hyp_ma_cross_par_invertido_es_rechazado():
+    # fast >= slow no es un cruce (par mal formado).
+    with pytest.raises(ValidationError):
+        QuantHypothesesConfig(**_valid_quant_hyp_kwargs(ma_cross_pairs=[[50, 20]]))
+
+
+def test_quant_hyp_ma_cross_tipo_invalido_es_rechazado():
+    with pytest.raises(ValidationError):
+        QuantHypothesesConfig(**_valid_quant_hyp_kwargs(ma_cross_types=["wma"]))
+
+
+def test_quant_hyp_ma_cross_timeframe_sub_hora_es_rechazado():
+    # Nada por debajo de 1h: foros y nuestro hallazgo coinciden (ruido + costo).
+    with pytest.raises(ValidationError):
+        QuantHypothesesConfig(**_valid_quant_hyp_kwargs(ma_cross_timeframes=["5m"]))
 
 
 def test_pairs_lookback_minimo_24h():
