@@ -422,7 +422,8 @@ def _valid_risk_kwargs(**overrides):
         max_same_direction_positions=3,
         max_daily_loss_pct=3.0, max_drawdown_pct=10.0,
         atr_stop_multiplier=1.5, atr_period=14,
-        take_profit_rr=2.0, low_confidence_threshold=0.4,
+        take_profit_rr=2.0, min_confidence_to_trade=0.5,
+        low_confidence_threshold=0.7,
         low_confidence_size_factor=0.5, stale_feed_seconds=30,
         stale_feed_intervals=2.0,
         max_leverage=3, max_portfolio_margin_pct=85.0,
@@ -460,7 +461,8 @@ def test_time_stop_del_repo_y_rango():
 def test_risk_config_sprint5_valido():
     rc = RiskConfig(**_valid_risk_kwargs())
     assert rc.take_profit_rr == 2.0
-    assert rc.low_confidence_threshold == 0.4
+    assert rc.min_confidence_to_trade == 0.5
+    assert rc.low_confidence_threshold == 0.7
     assert rc.low_confidence_size_factor == 0.5
     assert rc.stale_feed_seconds == 30
 
@@ -475,6 +477,14 @@ def test_low_confidence_size_factor_fuera_de_rango():
     # Un factor > 1 AUMENTARÍA el tamaño con baja confianza — al revés (le=1.0).
     with pytest.raises(ValidationError):
         RiskConfig(**_valid_risk_kwargs(low_confidence_size_factor=1.5))
+
+
+def test_piso_de_confianza_no_puede_superar_el_techo():
+    # min_confidence_to_trade > low_confidence_threshold dejaría la banda reducida
+    # vacía/invertida (validador cruzado).
+    with pytest.raises(ValidationError):
+        RiskConfig(**_valid_risk_kwargs(
+            min_confidence_to_trade=0.8, low_confidence_threshold=0.7))
 
 
 def test_stale_feed_seconds_cero_es_rechazado():
@@ -1096,8 +1106,8 @@ def test_event_max_headline_age_absurdo_es_rechazado():
 
 def test_settings_yaml_event():
     s = load_settings()
-    # Por seguridad, el Fast Path arranca APAGADO en el repo (no cableado aún).
-    assert s.event.enabled is False
+    # ARMADO (2026-06-29): el Fast Path corre en paralelo al Slow Path en testnet.
+    assert s.event.enabled is True
     # El poll de eventos debe ser estrictamente más rápido que el del Slow Path.
     assert s.event.poll_interval_seconds < s.sentiment.poll_interval_seconds
     assert 0.0 < s.event.min_impact_score < 1.0

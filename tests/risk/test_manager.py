@@ -132,12 +132,23 @@ def test_size_factor_reduce_la_cantidad():
 
 
 def test_baja_confianza_reduce_la_cantidad():
+    # Confianza en la banda media [min_confidence_to_trade, low_confidence_threshold)
+    # opera pero a tamaño reducido. 0.6 cae en esa banda con la config del repo.
     rm = RiskManager(CFG)
     base = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
                      state=healthy_state(), filters=FINE, confidence=0.9).order.quantity
     low = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
-                    state=healthy_state(), filters=FINE, confidence=0.2).order.quantity
+                    state=healthy_state(), filters=FINE, confidence=0.6).order.quantity
     assert low == pytest.approx(base * CFG.risk.low_confidence_size_factor)
+
+
+def test_confianza_bajo_el_piso_veta_el_trade():
+    # Por debajo de min_confidence_to_trade la noticia es demasiado incierta: no se
+    # opera (veto duro), no solo se reduce el tamaño.
+    rm = RiskManager(CFG)
+    a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
+                  state=healthy_state(), filters=FINE, confidence=0.3)
+    assert a.approved is False and a.reason == "low_confidence"
 
 
 def test_atr_cero_no_opera():
@@ -217,7 +228,7 @@ def test_below_min_notional_rechaza_no_infla():
     filt = SymbolFilters(symbol="BTCUSDT", tick_size="0.01", step_size="0.00000001",
                          min_qty="0", min_notional="500")
     a = rm.assess(make_decision(Action.LONG, size_factor=0.5), price=1000.0, atr=50.0,
-                  state=healthy_state(), filters=filt, confidence=0.2)
+                  state=healthy_state(), filters=filt, confidence=0.6)
     assert a.approved is False and a.reason == "below_min_notional"
 
 

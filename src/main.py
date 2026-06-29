@@ -38,6 +38,18 @@ def check() -> int:
           f"noticia origina ≥{c.sentiment_confirm_threshold} | "
           f"{regime_desc} | "
           f"cortos {'ON (simétrico)' if c.allow_short else 'OFF'}")
+    slow = (f"Slow Path ON (poll {settings.sentiment.poll_interval_seconds}s, "
+            f"vela {settings.market.timeframe})" if settings.sentiment.enabled
+            else "Slow Path OFF")
+    ev = settings.event
+    fast = (f"Fast Path ON (poll {ev.poll_interval_seconds}s, shocks |score|≥"
+            f"{ev.min_impact_score}, conf≥{ev.min_confidence}, impulso≥"
+            f"{ev.confirm_impulse_bps}bps)" if ev.enabled else "Fast Path OFF")
+    print(f"✓ paths de noticias — {slow} | {fast}")
+    rk = settings.risk
+    print(f"✓ confianza del sentimiento — <{rk.min_confidence_to_trade} VETO | "
+          f"[{rk.min_confidence_to_trade},{rk.low_confidence_threshold}) ×"
+          f"{rk.low_confidence_size_factor} | ≥{rk.low_confidence_threshold} pleno")
     print(f"✓ risk manager (Futuros USD-M) — máx {settings.risk.max_open_positions} "
           f"posiciones ({settings.risk.max_same_direction_positions} por dirección) | "
           f"TP {settings.risk.take_profit_rr}×SL | "

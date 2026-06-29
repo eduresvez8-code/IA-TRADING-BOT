@@ -162,6 +162,14 @@ class RiskManager:
         if same_dir >= r.max_same_direction_positions:
             return RiskAssessment(False, "max_same_direction")
 
+        # Veto por confianza del sentimiento: por debajo del piso, la noticia es
+        # demasiado incierta para arriesgar capital (Claude dudando del titular).
+        # Entre el piso y low_confidence_threshold el tamaño se reduce (paso 5); por
+        # encima, tamaño pleno. El Fast Path ya filtra <event.min_confidence en
+        # decide_event; este veto cubre el Slow Path (decide no mira la confianza).
+        if confidence < r.min_confidence_to_trade:
+            return RiskAssessment(False, "low_confidence")
+
         # ===== Pipeline de construcción de la orden =====
 
         # (1) Precio de entrada (orden a mercado: el fill esperado es el precio).
@@ -217,6 +225,9 @@ class RiskManager:
         risk_amount = (
             state.wallet_balance * (risk_pct / 100.0) * decision.size_factor
         )
+        # Tramo de confianza media [min_confidence_to_trade, low_confidence_threshold):
+        # opera pero a tamaño reducido. El veto duro (< min) ya salió antes; aquí solo
+        # queda decidir pleno vs reducido.
         if confidence < r.low_confidence_threshold:
             risk_amount *= r.low_confidence_size_factor
         risk_amount *= vol_damp

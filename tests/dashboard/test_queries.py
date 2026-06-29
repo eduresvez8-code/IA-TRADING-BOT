@@ -111,7 +111,9 @@ async def test_pnl_por_simbolo_excluye_fuera_del_universo(tmp_path):
 
 
 async def test_modo_refleja_quant_apagado(populated):
-    # El badge de modo debe decir la verdad: con quant_regime_enabled=false → "quant OFF".
+    # El badge "quant OFF" vive en la rama Slow Path puro; aislamos ese modo
+    # apagando el Fast Path para probar el label del quant.
+    populated.event.enabled = False
     populated.confluence.quant_regime_enabled = False
     snap = build_snapshot(populated, now=NOW, testnet=True)
     assert "quant OFF" in snap["meta"]["mode"]
@@ -146,11 +148,12 @@ async def test_sin_latido_es_offline(populated):
     assert snap["meta"]["heartbeat_ms"] is None
 
 
-async def test_modo_slow_path_activo(populated):
-    # settings.yaml del repo (2026-06-21): sentiment=True, event=False → Slow Path.
+async def test_modo_repo_es_hibrido(populated):
+    # settings.yaml del repo (2026-06-29): sentiment=True Y event=True → Híbrido.
+    # Fija el estado SHIPPED: si alguien apaga un gate sin querer, este test lo caza.
     snap = build_snapshot(populated, now=NOW, testnet=True)
-    assert "Slow Path" in snap["meta"]["mode"]
-    assert snap["meta"]["event_enabled"] is False
+    assert "Híbrido" in snap["meta"]["mode"]
+    assert snap["meta"]["event_enabled"] is True
     assert snap["meta"]["sentiment_enabled"] is True
 
 

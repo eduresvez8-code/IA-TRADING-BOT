@@ -19,9 +19,13 @@ risk:
   # objetivo = RR × distancia_al_stop. Copia de simulación del backtest vive en
   # backtest.take_profit_rr; esta es la del camino EN VIVO (Risk Manager).
   take_profit_rr: 2.0
-  # Confianza del sentimiento por debajo de este umbral → tamaño reducido.
-  low_confidence_threshold: 0.4
-  low_confidence_size_factor: 0.5   # multiplicador cuando la confianza es baja
+  # Banda de confianza del sentimiento (tres tramos):
+  #   < 0.5        → VETO: no se opera (Claude duda demasiado del titular)
+  #   [0.5, 0.7)   → tamaño reducido (× low_confidence_size_factor)
+  #   ≥ 0.7        → tamaño pleno
+  min_confidence_to_trade: 0.5      # piso duro: por debajo no se arriesga capital
+  low_confidence_threshold: 0.7     # techo de la banda de tamaño reducido
+  low_confidence_size_factor: 0.5   # multiplicador en la banda media
   # Circuit breaker (a): precio más viejo que esto (s) → no abrir nuevas entradas.
   stale_feed_seconds: 30
   # Feed obsoleto = sin vela por más de stale_feed_intervals × intervalo (o
@@ -187,9 +191,13 @@ orchestrator:
 # Gobierna CUÁNDO un shock (hack/ETF/depeg…) cuaja en una orden. La lógica
 # (decide_event) llega en Fase 2.2; el consumidor (cola + on_event) en 2.3.
 event:
-  # Gate maestro. FALSE hasta que el Fast Path esté cableado (2.3) y validado en
-  # testnet (kill criteria §B/§C). Nada debe correr el Fast Path antes.
-  enabled: false
+  # Gate maestro. ARMADO (2026-06-29, decisión de Eduardo): el Fast Path está
+  # cableado (main.py construye event_fetch y run() arranca markPrice + productor +
+  # consumidor cuando enabled=true) y con 677 tests verdes. Se valida EN VIVO en
+  # testnet (dinero falso): el primer arranque debe MIRARSE (logs markprice:* +
+  # event_open/event_hold). El Slow Path sigue ON en paralelo; cada trade queda
+  # etiquetado por fuente (slow vs event) en el dashboard para comparar cuál gana.
+  enabled: true
   # Poll de eventos: más rápido que el Slow Path (sentiment.poll = 120s). No
   # competimos en latencia con RSS gratis; 15s es el balance fresco/no-baneo.
   poll_interval_seconds: 15

@@ -61,8 +61,16 @@ class RiskConfig(BaseModel):
     atr_period: int = Field(ge=2)
     # Sprint 5: parámetros del Risk Manager en vivo.
     take_profit_rr: float = Field(gt=0)
-    # low_confidence_threshold en (0,1): por encima de 1 nunca reduciría, en 0
-    # nunca dispararía. low_confidence_size_factor en (0,1]: 1.0 = no reduce.
+    # Banda de confianza del sentimiento en tres tramos:
+    #   confianza < min_confidence_to_trade        → VETO (no se opera; Claude duda
+    #                                                 demasiado del titular).
+    #   [min_confidence_to_trade, low_conf_thresh) → tamaño reducido (× size_factor).
+    #   ≥ low_confidence_threshold                  → tamaño pleno.
+    # min_confidence_to_trade en (0,1): el piso de confianza para arriesgar capital.
+    # low_confidence_threshold en (0,1): el techo de la banda reducida. Validador
+    # cruzado: min ≤ threshold (si no, la banda reducida quedaría vacía/invertida).
+    # low_confidence_size_factor en (0,1]: 1.0 = no reduce.
+    min_confidence_to_trade: float = Field(gt=0.0, lt=1.0)
     low_confidence_threshold: float = Field(gt=0.0, lt=1.0)
     low_confidence_size_factor: float = Field(gt=0.0, le=1.0)
     stale_feed_seconds: float = Field(gt=0)
@@ -109,6 +117,12 @@ class RiskConfig(BaseModel):
             raise ValueError(
                 f"max_same_direction_positions ({self.max_same_direction_positions}) "
                 f"no puede superar max_open_positions ({self.max_open_positions})"
+            )
+        if self.min_confidence_to_trade > self.low_confidence_threshold:
+            raise ValueError(
+                f"min_confidence_to_trade ({self.min_confidence_to_trade}) no puede "
+                f"superar low_confidence_threshold ({self.low_confidence_threshold}): "
+                f"la banda de tamaño reducido quedaría vacía"
             )
         return self
 
