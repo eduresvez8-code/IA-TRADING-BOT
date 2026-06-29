@@ -881,8 +881,25 @@ class Orchestrator:
     async def _watchdog_loop(self) -> None:
         period = max(self.cfg.risk.stale_feed_seconds / 2.0, 1.0)
         while True:
-            await asyncio.sleep(period)
+            await self._write_heartbeat()   # latido inmediato y luego cada `period`
             self.check_feed_health()
+            await asyncio.sleep(period)
+
+    async def _write_heartbeat(self) -> None:
+        """Latido del lazo en vivo (online/offline del dashboard). No-op sin storage.
+
+        Solo avanza mientras el event loop está VIVO; si el proceso muere o se congela
+        (dormir el Mac), deja de latir → el dashboard lo ve offline en segundos, sin
+        esperar a que caduque el último equity_snapshot (que solo se escribe cada vela).
+        Un fallo de BD no debe tumbar el watchdog (lo recoge _supervise igualmente).
+        """
+        storage = self.executor.storage
+        if storage is None:
+            return
+        try:
+            await storage.save_heartbeat(int(datetime.now(timezone.utc).timestamp() * 1000))
+        except Exception:
+            logger.warning("no se pudo escribir el latido del bot", exc_info=True)
 
     async def _sentiment_loop(
         self, fetch: Callable[[], Awaitable[dict[str, SentimentScore]]]

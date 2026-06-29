@@ -91,6 +91,10 @@ def build_snapshot(
         "age_seconds": None,
         "stale": True,
         "has_data": False,
+        # Online/offline por LATIDO del bot (más fino que la antigüedad del snapshot).
+        "heartbeat_ms": None,
+        "online_timeout_seconds": d.online_timeout_seconds,
+        "online": False,
     }
     empty = {
         "meta": meta,
@@ -142,8 +146,18 @@ def build_snapshot(
         realized_rows = _rows(
             conn, "SELECT symbol, realized FROM realized_pnl",
         )
+        heartbeat = _rows(conn, "SELECT ts FROM heartbeat WHERE id = 1")
     finally:
         conn.close()
+
+    # Online/offline por latido: el bot reescribe `heartbeat.ts` cada ~15s mientras
+    # su event loop vive. Offline si no late hace más de online_timeout_seconds (o si
+    # nunca latió). Es independiente de la antigüedad del snapshot (cada 5m): distingue
+    # "el bot está corriendo" de "el último dato es viejo".
+    if heartbeat:
+        meta["heartbeat_ms"] = heartbeat[0]["ts"]
+        hb_age = (now_ms - heartbeat[0]["ts"]) / 1000.0
+        meta["online"] = hb_age <= d.online_timeout_seconds
 
     # Normaliza tipos del JSON guardado.
     for n in news:

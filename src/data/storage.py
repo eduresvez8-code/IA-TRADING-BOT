@@ -135,6 +135,18 @@ CREATE TABLE IF NOT EXISTS realized_pnl (
 )
 """
 
+# Latido del lazo en vivo: fila única que el bot reescribe cada pocos segundos
+# mientras su event loop está VIVO. El dashboard lo lee para decir online/offline con
+# precisión de segundos — más fino que la antigüedad del último equity_snapshot (que
+# solo se escribe al cerrar vela, cada 5m). Si el proceso muere o se congela (dormir
+# el Mac), el latido deja de avanzar → offline.
+HEARTBEAT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS heartbeat (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    ts INTEGER NOT NULL                -- epoch ms UTC del último latido
+)
+"""
+
 
 class Storage:
     def __init__(self, db_path: str | Path, candles_dir: str | Path):
@@ -154,6 +166,7 @@ class Storage:
         await self._db.execute(EQUITY_SCHEMA)
         await self._db.execute(DECISIONS_SCHEMA)
         await self._db.execute(REALIZED_SCHEMA)
+        await self._db.execute(HEARTBEAT_SCHEMA)
         await self._db.commit()
         return self
 
@@ -363,6 +376,12 @@ class Storage:
                 "INSERT OR REPLACE INTO realized_pnl VALUES (?, ?, ?)",
                 (symbol, float(value), ts_ms),
             )
+        await self._db.commit()
+
+    async def save_heartbeat(self, ts_ms: int) -> None:
+        """Reescribe el latido (fila única) con el epoch ms actual."""
+        await self._db.execute(
+            "INSERT OR REPLACE INTO heartbeat (id, ts) VALUES (1, ?)", (ts_ms,))
         await self._db.commit()
 
     async def get_realized_pnl(self) -> list[dict]:

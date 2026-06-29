@@ -529,6 +529,11 @@ class DashboardConfig(BaseModel):
     # OBSOLETO (señal de liveness: el bot probablemente está caído/halted). ge=1
     # (al menos una vela de gracia); le=20 ataja un typo que nunca avisaría.
     stale_after_intervals: float = Field(ge=1.0, le=20.0)
+    # Segundos sin LATIDO del bot tras los cuales el dashboard lo marca OFFLINE. El
+    # bot late cada ~stale_feed_seconds/2 (≈15s); este timeout debe ser un par de
+    # latidos para no parpadear (default 45s). gt=0; le=600 ataja un typo que dejaría
+    # el indicador "online" mucho después de que el bot muriera.
+    online_timeout_seconds: float = Field(default=45.0, gt=0.0, le=600.0)
 
 
 class QuantMatrixConfig(BaseModel):

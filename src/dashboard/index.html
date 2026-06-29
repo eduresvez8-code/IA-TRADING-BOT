@@ -156,9 +156,8 @@
 <script>
 const $ = id => document.getElementById(id);
 let timer = null;
-let lastUpdateMs = null;   // ts del último equity_snapshot (ms epoch)
-let hasData = false;
-let dataStale = false;
+let heartbeatMs = null;          // ts del último LATIDO del bot (ms epoch)
+let onlineTimeoutMs = 45000;     // sin latido más que esto → offline
 
 function fmtUsd(x){ if(x==null) return "—"; const s=x<0?"-":""; return s+"$"+Math.abs(x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmtPct(x){ if(x==null) return "—"; return (x>=0?"+":"")+x.toFixed(2)+"%"; }
@@ -181,10 +180,9 @@ function render(s){
   else { net.textContent="—"; net.className="badge"; }
   $("kill").style.display = k.kill_switch ? "" : "none";
 
-  // liveness — solo almacena estado; updateLiveness() lo pinta cada segundo
-  hasData = m.has_data;
-  lastUpdateMs = m.last_update_ms;
-  dataStale = m.stale;
+  // online/offline por LATIDO del bot; updateLiveness() lo repinta cada segundo
+  heartbeatMs = m.heartbeat_ms;
+  onlineTimeoutMs = (m.online_timeout_seconds || 45) * 1000;
   updateLiveness();
 
   // KPIs
@@ -317,15 +315,9 @@ function renderNews(rows){
 
 function updateLiveness(){
   const dot=$("dot"), lt=$("liveTxt");
-  if(!hasData || lastUpdateMs==null){
-    dot.className="dot"; lt.textContent="esperando datos del bot…"; return;
-  }
-  const ageMs = Math.max(0, Date.now() - lastUpdateMs);
-  if(dataStale){
-    dot.className="dot warn"; lt.textContent="datos obsoletos · "+ago(ageMs);
-  } else {
-    dot.className="dot ok"; lt.textContent="en vivo · "+ago(ageMs);
-  }
+  const online = heartbeatMs!=null && (Date.now()-heartbeatMs) < onlineTimeoutMs;
+  if(online){ dot.className="dot ok"; lt.textContent="online"; }
+  else { dot.className="dot bad"; lt.textContent="offline"; }
 }
 
 function updateClock(){
@@ -347,7 +339,8 @@ async function tick(){
     clearTimeout(timer); timer=setTimeout(tick, ms);
   }catch(e){
     $("offline").style.display="block";
-    $("dot").className="dot bad"; $("liveTxt").textContent="desconectado";
+    heartbeatMs=null;                       // servidor caído → offline
+    $("dot").className="dot bad"; $("liveTxt").textContent="offline";
     clearTimeout(timer); timer=setTimeout(tick, 4000);
   }
 }

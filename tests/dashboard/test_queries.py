@@ -124,6 +124,28 @@ async def test_liveness_fresco_vs_obsoleto(populated):
     assert stale["meta"]["stale"] is True          # 2000s > 900s
 
 
+async def test_online_por_latido_fresco_vs_viejo(tmp_path):
+    # El online/offline lo decide el LATIDO del bot, no la antigüedad del snapshot.
+    settings = _settings(tmp_path)
+    st = await Storage(settings.storage.db_path, tmp_path / "candles").init()
+    base = int(NOW.timestamp() * 1000)
+    await st.save_equity_snapshot(ts_ms=base, wallet=100.0, equity=100.0, upnl=0.0,
+                                  positions=[])
+    await st.save_heartbeat(base)                      # latido en NOW
+    await st.close()
+    fresh = build_snapshot(settings, now=NOW + timedelta(seconds=10), testnet=True)
+    assert fresh["meta"]["online"] is True             # 10s < timeout (45s)
+    stale = build_snapshot(settings, now=NOW + timedelta(seconds=120), testnet=True)
+    assert stale["meta"]["online"] is False            # 120s > timeout → offline
+
+
+async def test_sin_latido_es_offline(populated):
+    # Una BD con datos pero sin latido (bot nunca arrancó con heartbeat) → offline.
+    snap = build_snapshot(populated, now=NOW, testnet=True)
+    assert snap["meta"]["online"] is False
+    assert snap["meta"]["heartbeat_ms"] is None
+
+
 async def test_modo_slow_path_activo(populated):
     # settings.yaml del repo (2026-06-21): sentiment=True, event=False → Slow Path.
     snap = build_snapshot(populated, now=NOW, testnet=True)

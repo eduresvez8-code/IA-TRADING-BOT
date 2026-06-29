@@ -265,6 +265,7 @@ dashboard:
   orders_rows: 40             # filas de la tabla de órdenes
   news_rows: 25               # filas del panel de noticias/sentimiento
   stale_after_intervals: 3    # snapshot más viejo que 3 velas → liveness en rojo
+  online_timeout_seconds: 45  # sin latido del bot > 45s → dashboard lo marca OFFLINE
 
 quant_matrix:
   taker_commission_pct: 0.05          # VIP0 conservador (aislado de backtest.commission_pct)
