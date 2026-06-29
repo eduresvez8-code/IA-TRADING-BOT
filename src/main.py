@@ -39,16 +39,21 @@ def check() -> int:
           f"{regime_desc} | "
           f"cortos {'ON (simétrico)' if c.allow_short else 'OFF'}")
     print(f"✓ risk manager (Futuros USD-M) — máx {settings.risk.max_open_positions} "
-          f"posiciones | TP {settings.risk.take_profit_rr}×SL | "
+          f"posiciones ({settings.risk.max_same_direction_positions} por dirección) | "
+          f"TP {settings.risk.take_profit_rr}×SL | "
           f"feed obsoleto >{settings.risk.stale_feed_seconds:.0f}s | "
           f"leverage máx {settings.risk.max_leverage}x | "
           f"margen máx {settings.risk.max_portfolio_margin_pct:.0f}%")
     from src.orchestrator.engine import Orchestrator  # noqa: F401
     print(f"✓ execution — hedge mode al arrancar | stops sobre "
           f"{settings.execution.stop_working_type} | "
-          f"reconciliación ±{settings.execution.reconcile_position_tolerance:.1%}")
+          f"reconciliación ±{settings.execution.reconcile_position_tolerance:.1%} | "
+          f"aborto defensivo si falla el SL (no quedar desnudo)")
+    hold = settings.orchestrator.max_position_hold_candles
+    time_stop = (f"time-stop {hold} velas" if hold > 0 else "time-stop OFF")
     print(f"✓ orchestrator — warmup {settings.orchestrator.warmup_candles} velas | "
-          f"política: una pierna por símbolo (flip en señal opuesta)")
+          f"una pierna por símbolo (flip en señal opuesta) | {time_stop} | "
+          f"auto-recupera HALT por feed")
 
     missing = [name for name, value in [
         ("BINANCE_API_KEY", secrets.binance_api_key),

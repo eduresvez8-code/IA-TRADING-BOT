@@ -79,7 +79,30 @@ def test_short_aprobado_simetrico():
     assert o.position_side == PositionSide.SHORT
     assert o.stop_loss == pytest.approx(1075.0)
     assert o.take_profit == pytest.approx(850.0)
-    assert o.take_profit < o.entry_price < o.stop_loss
+
+
+def test_cap_direccional_veta_long_correlacionado_de_mas():
+    # Con max_same_direction_positions longs ya abiertos, un long más se veta por
+    # concentración por correlación — aunque queden ranuras en max_open_positions.
+    cap = CFG.risk.max_same_direction_positions
+    rm = RiskManager(CFG)
+    state = healthy_state(open_positions=cap, long_positions=cap, short_positions=0)
+    a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
+                  state=state, filters=FINE)
+    assert a.approved is False
+    assert a.reason == "max_same_direction"
+
+
+def test_cap_direccional_no_estorba_la_direccion_opuesta():
+    # El cap es POR dirección: con el cupo de longs lleno, un short sigue pasando.
+    cap = CFG.risk.max_same_direction_positions
+    rm = RiskManager(CFG)
+    state = healthy_state(open_positions=cap, long_positions=cap, short_positions=0)
+    a = rm.assess(make_decision(Action.SHORT), price=1000.0, atr=50.0,
+                  state=state, filters=FINE)
+    assert a.approved is True
+    assert a.order.position_side == PositionSide.SHORT
+    assert a.order.take_profit < a.order.entry_price < a.order.stop_loss
 
 
 def test_orden_lleva_el_leverage_del_bot():

@@ -419,6 +419,7 @@ def test_exit_threshold_no_puede_superar_entry():
 def _valid_risk_kwargs(**overrides):
     base = dict(
         risk_per_trade_pct=1.0, max_open_positions=3,
+        max_same_direction_positions=3,
         max_daily_loss_pct=3.0, max_drawdown_pct=10.0,
         atr_stop_multiplier=1.5, atr_period=14,
         take_profit_rr=2.0, low_confidence_threshold=0.4,
@@ -436,6 +437,24 @@ def test_riesgo_absurdo_es_rechazado():
     # 10% de riesgo por trade es un typo, no una estrategia.
     with pytest.raises(ValidationError):
         RiskConfig(**_valid_risk_kwargs(risk_per_trade_pct=10.0))
+
+
+def test_cap_direccional_no_puede_superar_max_open_positions():
+    # Capar a 3 con un máximo de 2 abiertas no tiene sentido (validador cruzado).
+    with pytest.raises(ValidationError):
+        RiskConfig(**_valid_risk_kwargs(
+            max_open_positions=2, max_same_direction_positions=3))
+
+
+def test_time_stop_del_repo_y_rango():
+    # El settings.yaml del repo carga el time-stop; un negativo se rechaza (ge=0).
+    from src.core.config import OrchestratorConfig
+    o = load_settings().orchestrator
+    assert o.max_position_hold_candles >= 0
+    data = o.model_dump()
+    data["max_position_hold_candles"] = -1   # aísla la restricción del resto de campos
+    with pytest.raises(ValidationError):
+        OrchestratorConfig(**data)
 
 
 def test_risk_config_sprint5_valido():

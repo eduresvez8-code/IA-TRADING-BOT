@@ -791,3 +791,72 @@ async def test_sentiment_loop_gate_true_actualiza_el_store():
         await asyncio.sleep(0)
     task.cancel()                             # cancelamos antes del sleep del poll
     assert orch.sentiment_store[SYMBOL].score == 0.5
+
+
+# ------------------------------ time-stop (cierre por tiempo) ------------------------------
+
+async def test_time_stop_cierra_posicion_que_supera_el_hold():
+    # Una pierna que vive más de max_position_hold_candles se cierra por tiempo,
+    # aunque el catalizador (sentimiento) siga vigente.
+    cfg = CFG.model_copy(deep=True)
+    cfg.orchestrator.max_position_hold_candles = 2   # ~2 velas (10 min) de hold máx
+    ex, execu, orch, rec, sig = make_env(cfg=cfg)
+    await orch.startup()
+    sig.score = 0.8
+    orch.sentiment_store[SYMBOL] = _sent(0.6)
+    await feed(orch, [0, 1])                  # abre LONG en la vela 1
+    assert (SYMBOL, LONG) in ex.positions
+    await feed(orch, [2])                      # 5 min < 10: aún no vence
+    assert (SYMBOL, LONG) in ex.positions
+    await feed(orch, [3])                      # 10 min ≥ 2*5: time-stop cierra
+    assert (SYMBOL, LONG) not in ex.positions
+    assert (SYMBOL, LONG) not in orch.expected
+    assert "time_stop" in rec.events()
+
+
+async def test_time_stop_desactivado_no_cierra():
+    # Con max_position_hold_candles=0 (off) la pierna no se cierra por tiempo.
+    cfg = CFG.model_copy(deep=True)
+    cfg.orchestrator.max_position_hold_candles = 0
+    ex, execu, orch, rec, sig = make_env(cfg=cfg)
+    await orch.startup()
+    sig.score = 0.8
+    orch.sentiment_store[SYMBOL] = _sent(0.6)
+    await feed(orch, [0, 1, 2, 3, 4, 5])
+    assert (SYMBOL, LONG) in ex.positions
+    assert "time_stop" not in rec.events()
+
+
+# ------------------------------ auto-recuperación del HALT ------------------------------
+
+async def test_feed_recupera_levanta_el_halt_por_stale():
+    ex, orch, rec, sig = await build()
+    orch.last_candle_time[SYMBOL] = T0
+    stale = orch._stale_threshold_seconds()
+    far = T0 + timedelta(seconds=stale + 60)
+    assert orch.check_feed_health(now=far) is False          # feed congelado → halt
+    assert orch.halted is True and orch.halt_reason == "stale_feed"
+    orch.last_candle_time[SYMBOL] = far                       # llega vela fresca
+    assert orch.check_feed_health(now=far + timedelta(seconds=1)) is True
+    assert orch.halted is False and orch.halt_reason is None  # se auto-levanta
+    assert "feed_recovered" in rec.events()
+
+
+async def test_halt_de_reconciliacion_no_se_auto_recupera():
+    # Un halt por divergencia exige revisión humana: un feed sano NO lo levanta.
+    ex, orch, rec, sig = await build()
+    orch.halted = True
+    orch.halt_reason = "reconcile_halt"
+    orch.last_candle_time[SYMBOL] = T0
+    assert orch.check_feed_health(now=T0 + timedelta(seconds=1)) is True
+    assert orch.halted is True and orch.halt_reason == "reconcile_halt"
+
+
+async def test_portfolio_state_estampa_feed_age_y_halted():
+    # El snapshot que ve el Risk Manager lleva la edad del feed y el flag de halt
+    # (antes quedaban en 0.0/False → los circuit breakers (a)/(c) del RM, muertos).
+    ex, orch, rec, sig = await build()
+    orch.last_candle_time[SYMBOL] = T0
+    state = await orch._portfolio_state(SYMBOL, T0 + timedelta(seconds=42))
+    assert state.feed_age_seconds == pytest.approx(42.0)
+    assert state.halted is False

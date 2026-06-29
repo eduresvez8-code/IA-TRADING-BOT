@@ -337,6 +337,8 @@ class Executor:
         acct = await self.exchange.get_account()
         self._update_running(acct.wallet_balance, now)
         committed = sum(p.initial_margin for p in acct.positions)
+        longs = sum(1 for p in acct.positions if p.position_side == PositionSide.LONG)
+        shorts = sum(1 for p in acct.positions if p.position_side == PositionSide.SHORT)
         return PortfolioState(
             wallet_balance=acct.wallet_balance,
             available_balance=acct.available_balance,
@@ -344,4 +346,6 @@ class Executor:
             peak_wallet_balance=self._peak_wallet,
             day_start_wallet_balance=self._day_start_wallet,
             open_positions=len(acct.positions),
+            long_positions=longs,
+            short_positions=shorts,
         )

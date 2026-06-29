@@ -54,6 +54,8 @@ class PortfolioState:
     open_positions: int      # posiciones abiertas ahora mismo
     feed_age_seconds: float = 0.0  # antigüedad del último precio (circuit breaker a)
     halted: bool = False     # parada manual / discrepancia de reconciliación (cb c)
+    long_positions: int = 0   # piernas LONG abiertas (cap de concentración direccional)
+    short_positions: int = 0  # piernas SHORT abiertas (cap de concentración direccional)
 
 
 @dataclass
@@ -151,6 +153,14 @@ class RiskManager:
             return RiskAssessment(False, "hold")
         # En Futuros operamos LONG y SHORT de forma simétrica.
         is_long = decision.action == Action.LONG
+
+        # Tope de concentración DIRECCIONAL: una noticia market-wide abriría, si no, los
+        # 5 perps en el mismo sentido. Como la cripto está muy correlacionada, eso no son
+        # 5 riesgos independientes sino ~1 apuesta direccional grande a beta. Capamos las
+        # piernas simultáneas en la misma dirección (el símbolo a abrir aún no cuenta).
+        same_dir = state.long_positions if is_long else state.short_positions
+        if same_dir >= r.max_same_direction_positions:
+            return RiskAssessment(False, "max_same_direction")
 
         # ===== Pipeline de construcción de la orden =====
 

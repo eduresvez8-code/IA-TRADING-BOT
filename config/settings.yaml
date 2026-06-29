@@ -10,7 +10,8 @@ market:
 
 risk:
   risk_per_trade_pct: 1.0    # % del capital arriesgado por operación
-  max_open_positions: 5      # 6 símbolos en el universo; tope simultáneo conservador
+  max_open_positions: 5      # 5 símbolos en el universo; tope simultáneo conservador
+  max_same_direction_positions: 3  # acota concentración por correlación: máx 3 perps en el mismo sentido
   max_daily_loss_pct: 3.0    # al tocarlo, el bot se detiene hasta el día siguiente
   max_drawdown_pct: 10.0     # kill switch: requiere reinicio manual
   atr_stop_multiplier: 1.5   # SL = entrada -/+ 1.5 * ATR(14)
@@ -177,6 +178,10 @@ orchestrator:
   # PnL antes de reintentar: da tiempo a que macOS re-sincronice por NTP en vez de
   # martillar la API. El offset del reloj ya se recalibra en retry_with_backoff.
   clock_retry_delay_seconds: 30
+  # Time-stop: una posición se cierra por tiempo tras este nº de velas base (5m) si no
+  # la cerró antes el SL/TP/flip. 576 = ~48h: el edge de una noticia es la reacción, no
+  # sostener días; bound contra rides indefinidos tras caducar el catalizador. 0 = off.
+  max_position_hold_candles: 576
 
 # --- Fast Path: originación de trades por evento (Plan V2 Fase 2) ---
 # Gobierna CUÁNDO un shock (hack/ETF/depeg…) cuaja en una orden. La lógica

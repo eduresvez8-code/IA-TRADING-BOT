@@ -103,6 +103,11 @@ class Orchestrator:
         self._needs_rewarm: set[str] = set()
         self.last_candle_time: dict[str, datetime] = {}
         self.halted = False
+        # Causa del HALT: distingue lo auto-recuperable (stale_feed → se levanta solo
+        # cuando el feed vuelve) de lo que exige revisión humana (reconcile/naked).
+        self.halt_reason: str | None = None
+        # Instante de apertura de cada pierna, para el time-stop (cierre por tiempo).
+        self._entry_time: dict[LegKey, datetime] = {}
 
         self._lock = asyncio.Lock()
         self._interval = timedelta(milliseconds=interval_to_ms(self.cfg.market.timeframe))
@@ -162,13 +167,17 @@ class Orchestrator:
         una posición desnuda tras un reinicio es el riesgo #1 → halt y alerta.
         """
         acct = await self.executor.exchange.get_account()
+        adopted_at = datetime.now(timezone.utc)
         for p in acct.positions:
             key = (p.symbol, p.position_side)
             self.expected[key] = p.qty
+            # Pierna adoptada: no conocemos su apertura real → ventana de hold fresca.
+            self._entry_time[key] = adopted_at
             open_orders = await self.executor.exchange.get_open_orders(p.symbol)
             has_stop = any(o.type == OrderType.STOP_MARKET for o in open_orders)
             if not has_stop:
                 self.halted = True
+                self.halt_reason = "naked_position"
                 self.alerts.alert(AlertLevel.CRITICAL, "naked_position",
                                   f"{p.symbol} {p.position_side.value} sin STOP tras reinicio "
                                   f"— revisión manual requerida")
@@ -361,6 +370,7 @@ class Orchestrator:
                 if self._in_flight[key] > grace:         # nunca apareció: no cuajó
                     del self._in_flight[key]
                     self.expected.pop(key, None)
+                    self._entry_time.pop(key, None)
                     self.alerts.alert(AlertLevel.WARNING, "open_unconfirmed", str(key))
 
         # --- 1b. Clasificar (ignora lo en vuelo) ---
@@ -371,6 +381,7 @@ class Orchestrator:
         for key in report.resync_keys:                   # cierres benignos por SL/TP
             self.expected.pop(key, None)
             self._suspect_counts.pop(key, None)
+            self._entry_time.pop(key, None)
         if report.resync_keys:
             self.alerts.alert(AlertLevel.WARNING, "resync",
                               f"cerradas por SL/TP: {self._fmt_keys(report.resync_keys)}")
@@ -384,6 +395,7 @@ class Orchestrator:
             self._suspect_counts[key] = self._suspect_counts.get(key, 0) + 1
         if any(c >= grace for c in self._suspect_counts.values()):
             self.halted = True
+            self.halt_reason = "reconcile_halt"
             self.alerts.alert(AlertLevel.CRITICAL, "reconcile_halt",
                               f"divergencia sostenida: esperado={self._fmt(self.expected)} "
                               f"real={self._fmt(actual)}")
@@ -392,6 +404,13 @@ class Orchestrator:
             self.alerts.alert(AlertLevel.WARNING, "reconcile_suspect",
                               f"anomalía en gracia {self._fmt_keys(seen)} — re-chequeando")
             return  # en gracia: no operamos esta vela
+
+        # --- 1d. Time-stop: cerrar una pierna que lleva demasiado abierta. El edge
+        #     event-driven es la REACCIÓN a la noticia, no sostener la posición días;
+        #     sin esto una entrada cabalga hasta su SL/TP aunque el catalizador haya
+        #     caducado. 0 = desactivado. Se evalúa por símbolo en su cierre de vela.
+        if await self._time_stop_due(sym, now):
+            return  # cerramos por tiempo; no abrimos nada nuevo esta vela
 
         # --- 2. Señal base (timeframe de entrada) → ATR para los stops ---
         # El ATR de los stops DEBE salir del timeframe base (5m): un trade
@@ -419,7 +438,7 @@ class Orchestrator:
         await self._record_decision(decision, "slow")  # feed del dashboard (incl. HOLD)
 
         # --- 4. Veredicto del Risk Manager ---
-        state = await self.executor.snapshot_portfolio(now=now)
+        state = await self._portfolio_state(sym, now)
         confidence = sentiment.confidence if sentiment is not None else 1.0
         assessment = self.risk.assess(
             decision, price=candle.close, atr=atr, state=state,
@@ -441,6 +460,7 @@ class Orchestrator:
             await self.executor.close_position(sym, held, now=now)
             self.expected.pop((sym, held), None)
             self._in_flight.pop((sym, held), None)
+            self._entry_time.pop((sym, held), None)
             self.alerts.alert(AlertLevel.INFO, "flip_close",
                               f"{sym}: cerrada {held.value}; apertura inversa en el próximo ciclo")
 
@@ -456,11 +476,54 @@ class Orchestrator:
             qty = report.confirmed_qty if report.confirmed_qty > 0 else order.quantity
             self.expected[key] = qty
             self._in_flight[key] = 0   # pendiente de que el exchange la confirme
+            self._entry_time[key] = now   # arranca el reloj del time-stop
             self.alerts.alert(AlertLevel.INFO, "open",
                               f"{order.symbol} {order.position_side.value} qty={qty:.6f}")
         else:
             self.alerts.alert(AlertLevel.WARNING, "open_failed",
                               f"{order.symbol}: {report.detail}")
+
+    async def _portfolio_state(self, sym: str, now: datetime):
+        """Snapshot del Risk Manager + los datos que SOLO el orquestador conoce.
+
+        El executor no sabe la EDAD del feed del símbolo (circuit breaker a) ni el
+        flag de HALT (cb c); sin estamparlos, esos dos vetos del Risk Manager
+        quedaban muertos en vivo. Importan sobre todo en el Fast Path: un evento
+        puede llegar con el feed de velas congelado, y ahí el `stale_feed` del RM es
+        la única red. En el Slow Path es defensa en profundidad (la vela acaba de
+        cerrar → feed fresco). El `halted` ya filtra antes en on_closed_candle/on_event,
+        pero estamparlo deja el snapshot honesto y completo.
+        """
+        state = await self.executor.snapshot_portfolio(now=now)
+        last = self.last_candle_time.get(sym)
+        state.feed_age_seconds = (now - last).total_seconds() if last else 0.0
+        state.halted = self.halted
+        return state
+
+    async def _time_stop_due(self, sym: str, now: datetime) -> bool:
+        """Cierra la pierna de `sym` si supera `max_position_hold_candles`. True si cerró.
+
+        Time-stop: el edge event-driven está en la reacción a la noticia, no en sostener
+        la posición días. Sin esto, una entrada cabalga hasta su SL/TP aunque el
+        catalizador haya caducado. 0 = desactivado. Mide contra `_entry_time` (apertura
+        real o adopción) en múltiplos del intervalo base.
+        """
+        max_hold = self.cfg.orchestrator.max_position_hold_candles
+        if max_hold <= 0:
+            return False
+        key = next((k for k in self.expected if k[0] == sym), None)
+        if key is None:
+            return False
+        entered = self._entry_time.get(key)
+        if entered is None or (now - entered) < max_hold * self._interval:
+            return False
+        await self.executor.close_position(sym, key[1], now=now)
+        self.expected.pop(key, None)
+        self._in_flight.pop(key, None)
+        self._entry_time.pop(key, None)
+        self.alerts.alert(AlertLevel.INFO, "time_stop",
+                          f"{sym}: cerrada {key[1].value} por time-stop ({max_hold} velas)")
+        return True
 
     # ------------------------- Fast Path: consumo de eventos -------------------------
 
@@ -521,7 +584,7 @@ class Orchestrator:
         # (4) Veredicto del Risk Manager en modo evento (Fase 2.4): stop más ancho,
         #     presupuesto menor, vol_damp activo si hay suficiente historia.
         price = self.buffers[sym][-1].close
-        state = await self.executor.snapshot_portfolio(now=now)
+        state = await self._portfolio_state(sym, now)
         assessment = self.risk.assess(
             decision, price=price, atr=atr, state=state,
             filters=self.executor.filters[sym], confidence=intent.sentiment.confidence,
@@ -547,6 +610,7 @@ class Orchestrator:
             await self.executor.close_position(sym, held, now=now)
             self.expected.pop((sym, held), None)
             self._in_flight.pop((sym, held), None)
+            self._entry_time.pop((sym, held), None)
             self.alerts.alert(AlertLevel.INFO, "event_flip_close",
                               f"{sym}: cerrada {held.value} por evento; inversa en el próximo ciclo")
         await self._persist_session(now)
@@ -704,16 +768,31 @@ class Orchestrator:
                    r.stale_feed_intervals * self._interval.total_seconds())
 
     def check_feed_health(self, *, now: datetime | None = None) -> bool:
-        """Si algún símbolo lleva sin velas más del umbral (timeframe-aware) → halt."""
+        """Vigila la frescura del feed y AUTO-RECUPERA el halt cuando vuelve.
+
+        Si algún símbolo lleva sin velas más del umbral (timeframe-aware) → halt con
+        causa `stale_feed`. Si el feed se RESTABLECE (todos frescos) y el halt era SOLO
+        por feed, se levanta solo: la congelación típica al dormir el Mac ya no exige
+        reinicio externo — en cuanto el stream reconecta y llegan velas, el bot reanuda.
+        Los HALT por reconciliación o posición desnuda NO se auto-recuperan (otra causa
+        en `halt_reason` → requieren revisión humana). No pisa un halt de otra causa.
+        """
         now = now or datetime.now(timezone.utc)
         stale = self._stale_threshold_seconds()
         for sym, last in self.last_candle_time.items():
             if (now - last).total_seconds() > stale:
                 if not self.halted:
                     self.halted = True
+                    self.halt_reason = "stale_feed"
                     self.alerts.alert(AlertLevel.CRITICAL, "stale_feed",
                                       f"{sym}: sin velas hace más de {stale:.0f}s")
                 return False
+        # Feed sano: si estábamos detenidos SOLO por el feed, reanudamos.
+        if self.halted and self.halt_reason == "stale_feed":
+            self.halted = False
+            self.halt_reason = None
+            self.alerts.alert(AlertLevel.INFO, "feed_recovered",
+                              "feed restablecido; se reanuda el trading")
         return True
 
     # ------------------------- capa operativa (red) -------------------------

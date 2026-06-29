@@ -334,3 +334,20 @@ async def test_log_auditado_persiste_las_ordenes(tmp_path):
     assert entry["side"] == "BUY" and entry["position_side"] == "LONG"
     assert entry["status"] == "FILLED" and entry["decision_reason"] == "test"
     await storage.close()
+
+
+async def test_snapshot_cuenta_posiciones_por_direccion():
+    # El PortfolioState lleva el desglose long/short para el cap de concentración.
+    ex = make_fake()
+    execu = Executor(ex, CFG, id_factory=counter_ids())
+    await execu.startup()
+    ex.positions[("BTCUSDT", PositionSide.LONG)] = ExchangePosition(
+        symbol="BTCUSDT", position_side=PositionSide.LONG, qty=1.0,
+        entry_price=1000.0, initial_margin=333.0)
+    ex.positions[("ETHUSDT", PositionSide.SHORT)] = ExchangePosition(
+        symbol="ETHUSDT", position_side=PositionSide.SHORT, qty=1.0,
+        entry_price=2000.0, initial_margin=666.0)
+    state = await execu.snapshot_portfolio(now=NOW)
+    assert state.long_positions == 1
+    assert state.short_positions == 1
+    assert state.open_positions == 2

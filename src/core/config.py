@@ -49,6 +49,12 @@ class RiskConfig(BaseModel):
     # risk_per_trade_pct: 10 en el YAML no pasa de aquí.
     risk_per_trade_pct: float = Field(gt=0, le=2.0)
     max_open_positions: int = Field(ge=1, le=10)
+    # Tope de posiciones simultáneas en la MISMA dirección (long o short). Acota la
+    # concentración por correlación: una noticia market-wide abriría, si no, los 5
+    # perps en el mismo sentido — 5 apuestas cripto correlacionadas no son 5 riesgos
+    # independientes sino ~1 apuesta direccional grande a beta. Poner =max_open_positions
+    # lo desactiva (sin tope extra). Validador: ≤ max_open_positions.
+    max_same_direction_positions: int = Field(ge=1, le=10)
     max_daily_loss_pct: float = Field(gt=0, le=5.0)
     max_drawdown_pct: float = Field(gt=0, le=20.0)
     atr_stop_multiplier: float = Field(gt=0)
@@ -98,6 +104,11 @@ class RiskConfig(BaseModel):
             raise ValueError(
                 f"event_atr_stop_multiplier ({self.event_atr_stop_multiplier}) "
                 f"debe ser ≥ atr_stop_multiplier ({self.atr_stop_multiplier})"
+            )
+        if self.max_same_direction_positions > self.max_open_positions:
+            raise ValueError(
+                f"max_same_direction_positions ({self.max_same_direction_positions}) "
+                f"no puede superar max_open_positions ({self.max_open_positions})"
             )
         return self
 
@@ -336,6 +347,13 @@ class OrchestratorConfig(BaseModel):
     # gt=0 (un 0 reintentaría en bucle cerrado); le=300 ataja un typo (más de 5 min
     # dejaría el panel de PnL rancio sin necesidad).
     clock_retry_delay_seconds: float = Field(default=30.0, gt=0.0, le=300.0)
+    # Time-stop: máximo de velas base que una posición puede vivir antes de cerrarse
+    # por tiempo. El edge event-driven está en la REACCIÓN a la noticia, no en sostener
+    # la posición días; sin esto, una entrada cabalga hasta su SL/TP aunque el
+    # catalizador haya caducado hace mucho. 0 = desactivado (rides ilimitados, solo
+    # SL/TP/flip cierran). le acota a ~10 días de 5m para que el time-stop no sea
+    # ilusorio. Se aplica en el cierre de vela del símbolo (granularidad = 1 vela).
+    max_position_hold_candles: int = Field(default=0, ge=0, le=3000)
 
 
 class EventConfig(BaseModel):
