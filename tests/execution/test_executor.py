@@ -10,11 +10,11 @@ from datetime import datetime, timezone
 import pytest
 
 from src.core.config import load_settings
-from src.core.models import Order, PositionSide, Side, SymbolFilters
+from src.core.models import Order, OrderType, PositionSide, Side, SymbolFilters
 from src.data.storage import Storage
-from src.execution.exchange import ExchangePosition
+from src.execution.exchange import ExchangePosition, OrderResult
 from src.execution.executor import Executor, ExecutionStartupError
-from src.execution.fake_exchange import FakeFuturesExchange
+from src.execution.fake_exchange import FakeExchangeError, FakeFuturesExchange
 
 # Scope a los símbolos que el fake conoce (filtros/precios abajo): estos tests son
 # del Executor sobre BTC/ETH, no del universo de producción. Desacopla de settings.yaml.
@@ -112,6 +112,75 @@ async def test_open_sin_take_profit_solo_un_protector():
     await execu.startup()
     report = await execu.open_position(long_order(tp=None))
     assert len(report.protective) == 1
+
+
+class FailingProtectiveExchange(FakeFuturesExchange):
+    """Fake que falla la colocación de UNA protectora concreta (SL o TP).
+
+    `mode="raise"` simula un rechazo que lanza excepción (lo normal en python-binance);
+    `mode="reject"` simula que el exchange DEVUELVE un status de rechazo sin lanzar.
+    """
+
+    def __init__(self, *args, fail_type: OrderType, mode: str = "raise", **kwargs):
+        super().__init__(*args, **kwargs)
+        self._fail_type = fail_type
+        self._fail_mode = mode
+
+    async def place_order(self, req):
+        if req.type == self._fail_type:
+            if self._fail_mode == "raise":
+                raise FakeExchangeError("rechazo simulado de protectora")
+            return OrderResult(
+                order_id="rej", symbol=req.symbol, status="REJECTED", side=req.side,
+                position_side=req.position_side, type=req.type, executed_qty=0.0,
+                avg_price=0.0, client_order_id=req.client_order_id)
+        return await super().place_order(req)
+
+
+def _make_failing(fail_type: OrderType, mode: str = "raise") -> FailingProtectiveExchange:
+    return FailingProtectiveExchange(
+        wallet_balance=10_000.0, filters=FILTERS,
+        prices={"BTCUSDT": 1000.0, "ETHUSDT": 2000.0}, dual_mode=False,
+        fail_type=fail_type, mode=mode)
+
+
+async def test_sl_que_lanza_cierra_la_entrada_y_no_deja_posicion_desnuda():
+    # Si la colocación del STOP-LOSS lanza, la entrada (ya llena) debe cerrarse:
+    # nunca sostenemos una pierna sin stop. ok=False y cuenta plana al terminar.
+    ex = _make_failing(OrderType.STOP_MARKET, mode="raise")
+    execu = Executor(ex, CFG, id_factory=counter_ids())
+    await execu.startup()
+    report = await execu.open_position(long_order(qty=1.0))
+
+    assert report.ok is False
+    assert "desnuda" in report.detail
+    assert ("BTCUSDT", PositionSide.LONG) not in ex.positions  # entrada cerrada
+    assert ex.available_balance == pytest.approx(10_000.0)      # margen liberado
+
+
+async def test_sl_rechazado_por_status_tambien_cierra_la_entrada():
+    # Mismo aborto defensivo si el exchange DEVUELVE un status de rechazo (sin lanzar).
+    ex = _make_failing(OrderType.STOP_MARKET, mode="reject")
+    execu = Executor(ex, CFG, id_factory=counter_ids())
+    await execu.startup()
+    report = await execu.open_position(long_order(qty=1.0))
+
+    assert report.ok is False
+    assert ("BTCUSDT", PositionSide.LONG) not in ex.positions
+
+
+async def test_tp_que_falla_mantiene_la_pierna_con_su_stop():
+    # El take-profit es prescindible: si SOLO él falla, la pierna conserva su SL y se
+    # mantiene abierta (ok=True, una sola protectora).
+    ex = _make_failing(OrderType.TAKE_PROFIT_MARKET, mode="raise")
+    execu = Executor(ex, CFG, id_factory=counter_ids())
+    await execu.startup()
+    report = await execu.open_position(long_order(qty=1.0))
+
+    assert report.ok is True
+    assert len(report.protective) == 1                          # solo el SL
+    assert ("BTCUSDT", PositionSide.LONG) in ex.positions       # sigue abierta
+    assert report.protective[0].type == OrderType.STOP_MARKET
 
 
 # ------------------------------ reconciliación ------------------------------

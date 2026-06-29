@@ -23,12 +23,12 @@ primero, Claude al final):
        pieza del Sprint 4: irrelevante→None; escalado→Claude; si no→score local.
 
 Resolución de scope (`resolve_scope`): misma semántica que `_resolve_scope` del
-engine — "*" (mercado) → todos los símbolos que operamos; en otro caso, la
-intersección exacta con `market.symbols`. ⚠️ Limitación compartida con el Fast
-Path: Claude devuelve tickers como ["BTC"]; nuestros símbolos son ["BTCUSDT"], así
-que un scope NO-wildcard rara vez machea — en la práctica el overlay entra por "*"
-(market-wide, como el viejo Fear&Greed). Arreglarlo (normalizar tickers) tocaría
-AMBOS paths + el prompt de Claude → módulo aparte.
+engine — "*" (mercado) → todos los símbolos que operamos; en otro caso machea por
+NOMBRE COMPLETO ("BTCUSDT") o por ACTIVO BASE ("BTC" → "BTCUSDT", vía
+`market.quote_assets`). Así una noticia idiosincrática (hack/ETF de UN activo) entra
+SOLO en su símbolo, no market-wide. Esto resuelve la antigua DEUDA_TICKER (el v1
+hacía intersección exacta y "BTC" nunca macheaba "BTCUSDT" → casi todo caía en "*");
+única fuente de verdad compartida con el Fast Path en `src/core/scope.py`.
 
 Cuando varias noticias mapean al MISMO símbolo en un poll, gana la de `published_at`
 más reciente (last-write-wins): procesamos en orden ascendente y la última escritura

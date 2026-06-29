@@ -20,6 +20,7 @@ memoria; en producción, el adaptador real de python-binance.
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable
@@ -34,6 +35,13 @@ from src.data.storage import Storage
 from src.execution.exchange import FuturesExchange, OrderRequest, OrderResult
 from src.execution.translate import build_close_request, build_open_requests
 from src.risk.manager import PortfolioState
+
+logger = logging.getLogger(__name__)
+
+# Estados con los que el exchange puede DEVOLVER (sin lanzar) una protectora que NO
+# quedó en reposo. Una STOP_MARKET aceptada vuelve "NEW"; cualquiera de estos es un
+# rechazo encubierto y, para el stop-loss, equivale a quedarse sin protección.
+_REJECTED_STATUSES = frozenset({"REJECTED", "EXPIRED", "CANCELED"})
 
 
 class ExecutionStartupError(RuntimeError):
@@ -179,9 +187,52 @@ class Executor:
                 return ExecutionReport(order, entry_res, [], ok=False,
                                        detail=f"entrada no llenó (status={entry_res.status})")
 
-        protective = [await self._send(r, order.decision_reason, now) for r in protective_reqs]
+        # --- colocar protectoras, con ABORTO DEFENSIVO si falla el stop-loss ---
+        # El SL es el control de riesgo: si NO se puede colocar (rechazo de Binance,
+        # p.ej. -2021 "would immediately trigger" tras un movimiento brusco post-
+        # entrada), la pierna quedaría DESNUDA. En ese caso la cerramos de inmediato:
+        # "si no la puedo proteger, no la sostengo". El take-profit es prescindible —
+        # si solo él falla, la pierna conserva su stop y se mantiene (con aviso).
+        protective: list[OrderResult] = []
+        for req in protective_reqs:
+            is_stop = req.type == OrderType.STOP_MARKET
+            try:
+                res = await self._send(req, order.decision_reason, now)
+            except Exception as exc:
+                if is_stop:
+                    await self._abort_naked(order, now)
+                    return ExecutionReport(
+                        order, entry_res, protective, ok=False,
+                        detail=f"SL no se pudo colocar ({type(exc).__name__}): entrada "
+                               f"cerrada para evitar posición desnuda")
+                logger.warning("TP no se colocó para %s; la pierna conserva su SL",
+                               order.symbol, exc_info=True)
+                continue
+            if is_stop and res.status in _REJECTED_STATUSES:
+                await self._abort_naked(order, now)
+                return ExecutionReport(
+                    order, entry_res, protective, ok=False,
+                    detail=f"SL rechazado (status={res.status}): entrada cerrada para "
+                           f"evitar posición desnuda")
+            protective.append(res)
         return ExecutionReport(order, entry_res, protective, ok=True, detail="abierta",
                                confirmed_qty=confirmed_qty)
+
+    async def _abort_naked(self, order: Order, now: datetime | None) -> None:
+        """Cierra a mercado una entrada que se quedó sin stop (colocación de SL fallida).
+
+        Cancela cualquier protectora colgada y cierra la pierna. Si el PROPIO cierre
+        falla, lo registra a nivel CRITICAL: hay una posición desnuda confirmada que
+        exige intervención manual. Nunca relanza — el caller ya devuelve ok=False y el
+        engine no registrará `expected[key]`, así que la reconciliación no se confunde.
+        """
+        try:
+            await self.close_position(order.symbol, order.position_side, now=now)
+        except Exception:
+            logger.critical(
+                "ABORTO de pierna desnuda FALLÓ para %s %s — posición SIN STOP, "
+                "intervención manual requerida", order.symbol,
+                order.position_side.value, exc_info=True)
 
     async def _confirm_fill(self, symbol: str,
                             position_side: PositionSide) -> tuple[bool, float]:
