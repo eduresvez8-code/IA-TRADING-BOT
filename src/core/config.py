@@ -719,6 +719,28 @@ class QuantHypothesesConfig(BaseModel):
     # Simetría direccional: true = opera long y short; false = solo long.
     ma_cross_allow_short: bool
 
+    # --- H5 — Lead-lag cascade (BTC lidera, altcoin sigue) ---
+    # Hipótesis Perplexity rank 4/5 (Guo 2024): el retorno de BTC a N horas predice
+    # la dirección del altcoin. leader = activo que lidera; targets = los que siguen.
+    # Cero Hardcoding: símbolos y lags viven aquí, no en el runner.
+    leadlag_leader: str = Field(min_length=6)
+    leadlag_target_assets: list[str] = Field(min_length=1)
+    # Barrido de lags en HORAS del retorno del líder. ge=1 / le=336 (2 semanas).
+    leadlag_lag_hours_grid: list[int] = Field(min_length=1)
+    # Filtro de régimen: SMA de cierres 1h que líder Y target deben cruzar en la misma
+    # dirección para permitir el lado. ge=20 (con <20 no es tendencia); le=400.
+    leadlag_regime_sma: int = Field(ge=20, le=400)
+    # Simetría direccional: true = long y short; false = solo long.
+    leadlag_allow_short: bool
+
+    @field_validator("leadlag_lag_hours_grid")
+    @classmethod
+    def lags_leadlag_validos(cls, v: list[int]) -> list[int]:
+        for lag in v:
+            if not (1 <= lag <= 336):
+                raise ValueError(f"leadlag lag {lag}h fuera de [1, 336]")
+        return v
+
     @field_validator("ma_cross_pairs")
     @classmethod
     def pares_ma_validos(cls, v: list[list[int]]) -> list[list[int]]:

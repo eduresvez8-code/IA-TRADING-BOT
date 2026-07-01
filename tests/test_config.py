@@ -190,9 +190,22 @@ def _valid_quant_hyp_kwargs(**overrides):
         ma_cross_types=["ema", "sma"],
         ma_cross_timeframes=["1h", "4h", "1d"],
         ma_cross_allow_short=True,
+        leadlag_leader="BTCUSDT",
+        leadlag_target_assets=["ETHUSDT", "SOLUSDT"],
+        leadlag_lag_hours_grid=[6, 24, 72],
+        leadlag_regime_sma=200,
+        leadlag_allow_short=True,
     )
     base.update(overrides)
     return base
+
+
+def test_leadlag_lag_fuera_de_rango_es_rechazado():
+    # Un lag de 0h (o >336h) no tiene sentido para el lead-lag (validador de campo).
+    with pytest.raises(ValidationError):
+        QuantHypothesesConfig(**_valid_quant_hyp_kwargs(leadlag_lag_hours_grid=[0]))
+    with pytest.raises(ValidationError):
+        QuantHypothesesConfig(**_valid_quant_hyp_kwargs(leadlag_lag_hours_grid=[500]))
 
 
 def test_quant_hypotheses_config_del_repo_es_valido():

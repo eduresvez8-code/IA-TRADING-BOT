@@ -287,3 +287,67 @@ def make_donchian_decider(closes: np.ndarray, atrs: np.ndarray,
         return None
 
     return decider
+
+
+def make_leadlag_decider(closes: np.ndarray, atrs: np.ndarray,
+                         leader_ret_lag: np.ndarray, target_sma: np.ndarray,
+                         leader_close: np.ndarray, leader_sma: np.ndarray,
+                         *, atr_mult: float, allow_short: bool):
+    """H5 — Lead-lag cascade: el signo del retorno del LÍDER (BTC) a N horas marca
+    el lado del TARGET (alt), filtrado por un régimen SMA que líder y target deben
+    compartir.
+
+    Señal (causal, ya desfasada 1 vela en `leader_ret_lag`):
+        LONG  si leader_ret_lag > 0 Y target_close > target_SMA Y leader_close > leader_SMA
+        SHORT si leader_ret_lag < 0 Y target_close < target_SMA Y leader_close < leader_SMA
+    El doble gate de régimen (ambos activos de acuerdo) es la condición del JSON de
+    Perplexity (rank 4/5). Flip cuando la señal se invierte; supresión tras stop para
+    no reentrar la misma dirección hasta que la señal se reinicie (igual que TSMOM/MA).
+    """
+    st = {"prev_pos": None, "exit_emitted": False, "suppress": None}
+
+    def _side(i):
+        m = leader_ret_lag[i]
+        if math.isnan(m) or math.isnan(target_sma[i]) or math.isnan(leader_sma[i]):
+            return None
+        up_regime = closes[i] > target_sma[i] and leader_close[i] > leader_sma[i]
+        dn_regime = closes[i] < target_sma[i] and leader_close[i] < leader_sma[i]
+        if m > 0 and up_regime:
+            return "LONG"
+        if m < 0 and dn_regime:
+            return "SHORT"
+        return None
+
+    def decider(i, position_side, score, ts):
+        if (st["prev_pos"] is not None and position_side is None
+                and not st["exit_emitted"]):
+            st["suppress"] = st["prev_pos"]
+        st["exit_emitted"] = False
+        st["prev_pos"] = position_side
+
+        side = _side(i)
+        # La supresión se levanta cuando la señal deja de apuntar a esa dirección.
+        if st["suppress"] == "LONG" and side != "LONG":
+            st["suppress"] = None
+        elif st["suppress"] == "SHORT" and side != "SHORT":
+            st["suppress"] = None
+
+        if position_side is None:
+            if side is None or side == st["suppress"]:
+                return None
+            if side == "SHORT" and not allow_short:
+                return None
+            stop = _stop_level(side, closes[i], atrs[i], atr_mult)
+            if stop is None:
+                return None
+            return ("enter", side, 1.0, stop, None)
+        # Sosteniendo: salir cuando la señal se invierte o se apaga contra la posición.
+        if position_side == "LONG" and side != "LONG":
+            st["exit_emitted"] = True
+            return ("exit",)
+        if position_side == "SHORT" and side != "SHORT":
+            st["exit_emitted"] = True
+            return ("exit",)
+        return None
+
+    return decider

@@ -333,3 +333,9 @@ quant_hypotheses:
   ma_cross_types: ["ema", "sma"]      # EMA (reacciona antes) vs SMA (menos señales falsas)
   ma_cross_timeframes: ["1h", "4h", "1d"]  # golden cross clásico vive en 1d; nada <1h
   ma_cross_allow_short: true          # simétrico (long/short), como el resto de la matriz
+  # --- H5 — Lead-lag cascade (Perplexity rank 4/5, Guo 2024): BTC lidera, alt sigue ---
+  leadlag_leader: "BTCUSDT"           # el activo que lidera el movimiento
+  leadlag_target_assets: ["ETHUSDT", "SOLUSDT"]  # los que (supuestamente) siguen
+  leadlag_lag_hours_grid: [6, 24, 72]  # lags del retorno de BTC que probamos (JSON)
+  leadlag_regime_sma: 200             # SMA200 1h: líder y target deben coincidir en dirección
+  leadlag_allow_short: true           # simétrico (long/short)
