@@ -21,7 +21,7 @@ import pandas as pd
 
 from src.core.config import load_settings
 from src.core.models import Signal
-from src.quant.indicators import atr, ema, rsi
+from src.quant.indicators import atr, ema, rsi, sma
 
 STRATEGY_NAME = "ema_cross_rsi"
 
@@ -48,7 +48,7 @@ def _scores_from_indicators(ema_fast, ema_slow, rsi_vals, ema_weight):
     return raw_score, ema_diff_pct, ema_score, rsi_score
 
 
-def compute_signal_series(candles_df: pd.DataFrame) -> pd.Series:
+def compute_signal_series(candles_df: pd.DataFrame, settings=None) -> pd.Series:
     """Score [-1,+1] vectorizado para CADA vela del DataFrame.
 
     Los indicadores son causales (el valor en t solo depende de velas ≤ t),
@@ -59,17 +59,22 @@ def compute_signal_series(candles_df: pd.DataFrame) -> pd.Series:
     Args:
         candles_df: DataFrame con columnas 'open','high','low','close','volume',
                     en orden cronológico ascendente.
+        settings:   config inyectable; por defecto la global (load_settings). Que sea
+                    inyectable DESACOPLA el motor/tests de la config enviada: el
+                    backtest usa SU cfg, no la global (evita que cambiar settings.yaml
+                    altere silenciosamente el comportamiento de todos los tests).
 
     Returns:
         pd.Series alineada al índice de entrada, con NaN donde los indicadores
         aún no tienen suficientes datos.
     """
-    cfg = load_settings()
+    cfg = settings or load_settings()
     q = cfg.quant
 
     close = candles_df["close"]
-    ema_fast_s = ema(close, q.ema_fast_period)
-    ema_slow_s = ema(close, q.ema_slow_period)
+    _ma = sma if q.ma_type == "sma" else ema
+    ema_fast_s = _ma(close, q.ema_fast_period)
+    ema_slow_s = _ma(close, q.ema_slow_period)
     rsi_s = rsi(close, q.rsi_period)
 
     raw, _, _, _ = _scores_from_indicators(ema_fast_s, ema_slow_s, rsi_s, q.ema_weight)
@@ -78,7 +83,7 @@ def compute_signal_series(candles_df: pd.DataFrame) -> pd.Series:
     return raw.clip(lower=-1.0, upper=1.0)
 
 
-def compute_signal(candles_df: pd.DataFrame, symbol: str) -> Signal | None:
+def compute_signal(candles_df: pd.DataFrame, symbol: str, settings=None) -> Signal | None:
     """Calcula la señal de trading sobre las últimas velas cerradas.
 
     Lógica:
@@ -94,7 +99,7 @@ def compute_signal(candles_df: pd.DataFrame, symbol: str) -> Signal | None:
     Returns:
         Signal con score en [-1, +1], o None si no hay suficientes datos.
     """
-    cfg = load_settings()
+    cfg = settings or load_settings()
     q = cfg.quant
 
     # Mínimo de filas para que todos los indicadores tengan al menos
@@ -105,8 +110,9 @@ def compute_signal(candles_df: pd.DataFrame, symbol: str) -> Signal | None:
 
     close = candles_df["close"]
 
-    ema_fast_s = ema(close, q.ema_fast_period)
-    ema_slow_s = ema(close, q.ema_slow_period)
+    _ma = sma if q.ma_type == "sma" else ema
+    ema_fast_s = _ma(close, q.ema_fast_period)
+    ema_slow_s = _ma(close, q.ema_slow_period)
     rsi_s = rsi(close, q.rsi_period)
     atr_s = atr(candles_df, cfg.risk.atr_period)
 

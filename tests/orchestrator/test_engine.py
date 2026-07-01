@@ -29,12 +29,32 @@ from src.execution.fake_exchange import FakeFuturesExchange
 from src.orchestrator.alerts import RecordingAlertSink
 from src.orchestrator.engine import Orchestrator
 
+from src.core.config import QuantConfig
+
 CFG = load_settings().model_copy(deep=True)
 CFG.orchestrator.warmup_candles = 2  # tests cortos
+# Estos tests validan la MECÁNICA del orquestador (ratio HTF, buckets, régimen,
+# stale, time-stop), diseñada para base 5m / HTF 1h / quant EMA. El settings.yaml
+# enviado ahora usa 1h/4h/SMA 50/200; fijamos aquí la config histórica para
+# DESACOPLAR estos tests de la config de producción (la validan test_config.py).
+CFG.market = CFG.market.model_copy(update={"timeframe": "5m", "htf_timeframe": "1h"})
+CFG.quant = QuantConfig(ma_type="ema", ema_fast_period=9, ema_slow_period=21,
+                        rsi_period=14, ema_weight=0.6)
+# EMA solo necesita 35 velas HTF; el 230 del settings.yaml (para SMA200) haría un
+# buffer_target de 2760 velas y el _downtrend_buffer generaría precios NEGATIVOS.
+CFG.orchestrator.regime_htf_bars = 50
 # TTL holgado: los tests del lazo reusan un sentimiento fijo (analyzed_at=T0) a
 # lo largo de varias velas; no deben verse afectados por la caducidad. Los tests
 # dedicados al TTL usan un CFG propio con un TTL realista (ver _cfg_ttl).
 CFG.confluence.sentiment_ttl_seconds = 10_000
+
+
+@pytest.fixture(autouse=True)
+def _force_ema_in_signal(monkeypatch):
+    """El signal_fn=compute_signal que inyectan algunos tests lee la config GLOBAL
+    (load_settings), no el CFG del orquestador. Forzamos EMA ahí también para que el
+    régimen caliente con los datos cortos de estos tests."""
+    monkeypatch.setattr("src.quant.strategy.load_settings", lambda *a, **k: CFG)
 # El repo en vivo tiene el quant apagado (news_only); estos tests del engine ejercen
 # el veto/confirm de régimen, que solo existe con el quant encendido.
 CFG.confluence.quant_regime_enabled = True

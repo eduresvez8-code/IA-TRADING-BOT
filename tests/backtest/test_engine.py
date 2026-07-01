@@ -13,8 +13,16 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.core.config import load_settings
+from src.core.config import QuantConfig, load_settings
 from backtest.engine import BacktestEngine
+
+
+def _ema_quant() -> QuantConfig:
+    """Quant EMA 9/21/14 — la señal para la que se diseñaron estos tests (datos
+    cortos, warmup 35 velas). Se fija explícitamente para NO depender de lo que
+    haya en settings.yaml (que ahora envía SMA 50/200, warmup 214)."""
+    return QuantConfig(ma_type="ema", ema_fast_period=9, ema_slow_period=21,
+                       rsi_period=14, ema_weight=0.6)
 
 
 def make_ohlc(closes: list[float], spread: float = 0.5) -> pd.DataFrame:
@@ -60,8 +68,11 @@ def _trend(start: float, step: float, n: int = 120):
 
 
 def fresh_settings():
-    """Settings recién cargados (mutables) para tunear costos por test."""
-    return load_settings()
+    """Settings recién cargados (mutables) para tunear costos por test, con el quant
+    fijado a EMA 9/21/14 (independiente del settings.yaml enviado)."""
+    s = load_settings()
+    s.quant = _ema_quant()
+    return s
 
 
 class TestNoSignalNoTrades:

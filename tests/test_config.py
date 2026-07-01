@@ -934,10 +934,14 @@ def test_settings_yaml_universo_sin_doge():
     assert s.risk.max_open_positions <= len(s.market.symbols)
 
 
-def test_settings_yaml_quant_regime_apagado():
-    # 2026-06-26: el quant como régimen está APAGADO en vivo → modo "solo noticias".
+def test_settings_yaml_quant_regime_hibrido():
+    # 2026-07-01 (último intento): régimen SMA 50/200 @ 4h ENCENDIDO + noticias.
     s = load_settings()
-    assert s.confluence.quant_regime_enabled is False
+    assert s.confluence.quant_regime_enabled is True
+    assert s.quant.ma_type == "sma"
+    assert s.quant.ema_fast_period == 50 and s.quant.ema_slow_period == 200
+    assert s.quant.ema_weight == 1.0        # 100% cruce de medias, RSI pesa 0
+    assert s.market.timeframe == "1h" and s.market.htf_timeframe == "4h"
 
 
 def test_warmup_demasiado_corto_es_rechazado():
@@ -1135,8 +1139,8 @@ def test_event_max_headline_age_absurdo_es_rechazado():
 
 def test_settings_yaml_event():
     s = load_settings()
-    # ARMADO (2026-06-29): el Fast Path corre en paralelo al Slow Path en testnet.
-    assert s.event.enabled is True
+    # 2026-07-01: Fast Path APAGADO para el híbrido limpio (Slow news + régimen SMA).
+    assert s.event.enabled is False
     # El poll de eventos debe ser estrictamente más rápido que el del Slow Path.
     assert s.event.poll_interval_seconds < s.sentiment.poll_interval_seconds
     assert 0.0 < s.event.min_impact_score < 1.0

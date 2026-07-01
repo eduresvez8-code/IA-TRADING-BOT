@@ -120,10 +120,12 @@ async def test_modo_refleja_quant_apagado(populated):
 
 
 async def test_liveness_fresco_vs_obsoleto(populated):
-    fresh = build_snapshot(populated, now=NOW + timedelta(seconds=100), testnet=True)
-    assert fresh["meta"]["stale"] is False        # 100s < 3×300s
-    stale = build_snapshot(populated, now=NOW + timedelta(seconds=2000), testnet=True)
-    assert stale["meta"]["stale"] is True          # 2000s > 900s
+    # El umbral de obsolescencia escala con el timeframe base (ahora 1h): stale si
+    # la antigüedad supera stale_after_intervals(3) × 3600s = 10800s (3h).
+    fresh = build_snapshot(populated, now=NOW + timedelta(seconds=5000), testnet=True)
+    assert fresh["meta"]["stale"] is False        # 5000s < 3×3600s
+    stale = build_snapshot(populated, now=NOW + timedelta(seconds=12000), testnet=True)
+    assert stale["meta"]["stale"] is True          # 12000s > 10800s
 
 
 async def test_online_por_latido_fresco_vs_viejo(tmp_path):
@@ -148,12 +150,12 @@ async def test_sin_latido_es_offline(populated):
     assert snap["meta"]["heartbeat_ms"] is None
 
 
-async def test_modo_repo_es_hibrido(populated):
-    # settings.yaml del repo (2026-06-29): sentiment=True Y event=True → Híbrido.
-    # Fija el estado SHIPPED: si alguien apaga un gate sin querer, este test lo caza.
+async def test_modo_repo_es_slow_path(populated):
+    # settings.yaml del repo (2026-07-01): sentiment=True, event=False → Slow Path.
+    # Fija el estado SHIPPED: si alguien cambia un gate sin querer, este test lo caza.
     snap = build_snapshot(populated, now=NOW, testnet=True)
-    assert "Híbrido" in snap["meta"]["mode"]
-    assert snap["meta"]["event_enabled"] is True
+    assert "Slow Path" in snap["meta"]["mode"]
+    assert snap["meta"]["event_enabled"] is False
     assert snap["meta"]["sentiment_enabled"] is True
 
 

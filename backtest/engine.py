@@ -85,7 +85,9 @@ class BacktestEngine:
         n = len(df)
 
         # Indicadores precalculados de una sola pasada (causales → sin look-ahead).
-        scores = compute_signal_series(df).to_numpy()
+        # Pasa SU cfg (no la global): el backtest usa la config con la que se
+        # construyó el motor, desacoplado de lo que haya en settings.yaml.
+        scores = compute_signal_series(df, self.cfg).to_numpy()
         atrs = atr(df, self.cfg.risk.atr_period).to_numpy()
 
         opens = df["open"].to_numpy()

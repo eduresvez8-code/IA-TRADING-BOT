@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
-from src.core.config import load_settings
+from src.core.config import QuantConfig, load_settings
 from src.core.models import SentimentScore
 from backtest.confluence import (
     align_sentiment,
@@ -19,6 +19,10 @@ from backtest.confluence import (
 # ejercen el régimen (veta/confirma), que solo existe con el quant encendido.
 CFG = load_settings().model_copy(deep=True)
 CFG.confluence.quant_regime_enabled = True
+# Quant EMA 9/21/14 (warmup 35): estos tests usan datos sintéticos cortos. El
+# settings.yaml enviado usa SMA 50/200 (warmup 214) → no calentaría. Se fija aquí.
+CFG.quant = QuantConfig(ma_type="ema", ema_fast_period=9, ema_slow_period=21,
+                        rsi_period=14, ema_weight=0.6)
 T0 = datetime(2025, 6, 1, 0, 0, tzinfo=timezone.utc)
 
 

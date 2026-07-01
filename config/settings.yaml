@@ -4,8 +4,9 @@
 
 market:
   symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT"]   # DOGE fuera (2026-06-26): meme de cola gorda + peor fricción, nunca validado en la matriz quant
-  timeframe: "5m"            # vela base de trabajo
-  htf_timeframe: "1h"        # timeframe superior para contexto/tendencia
+  timeframe: "1h"            # vela base (subida de 5m: el régimen SMA200 @ 4h necesita
+                             # 920 velas base = 230·(4h/1h), cabe en 1 backfill <1000)
+  htf_timeframe: "4h"        # régimen SMA 50/200 @ 4h (único cruce que sobrevivió OOS)
   quote_assets: ["USDT"]     # quotes para derivar el activo base (BTCUSDT→BTC) al resolver scope de noticias
 
 risk:
@@ -66,16 +67,16 @@ confluence:
   # false lo volvería long-only sin tocar código.
   allow_short: true
   # TTL del sentimiento EN VIVO (segundos). Pasado esto desde analyzed_at, el
-  # score caduca y se trata como "sin noticia". 300s = un score fresco informa la
-  # vela inmediata de 5m (poll cada 120s) pero no se reusa 10 min después. El
-  # Fast Path (Plan V2 Fase 2) es quien explota noticias sub-vela; este TTL solo
-  # corta el bug de "reusar el último score para siempre" del Slow Path.
-  sentiment_ttl_seconds: 300
+  # score caduca y se trata como "sin noticia". CON BASE 1h: las decisiones ocurren
+  # al cierre de cada vela de 1h, así que el TTL debe cubrir ese hueco o la noticia
+  # caducaría antes del cierre y NUNCA originaría (error silencioso). 5400s = 90 min
+  # → una noticia fresca sobrevive hasta el siguiente cierre de 1h con margen.
+  sentiment_ttl_seconds: 5400
   # Interruptor del quant como RÉGIMEN. 2026-06-26: APAGADO (false) → la noticia
   # opera sola, a tamaño pleno, sin que la tendencia 1h vete ni reduzca (reason
   # `news_only`). Modo "solo noticias" para aislar el edge event-driven en testnet.
   # Poner true restaura el veto/confirm/sizing por régimen sin tocar código.
-  quant_regime_enabled: false
+  quant_regime_enabled: true
 
 sentiment:
   enabled: true                # Slow Path ON (Opción 2): noticias originan, régimen 1h confirma — validación testnet 2026-06-21
@@ -92,10 +93,13 @@ sentiment:
   max_news_age_hours: 24         # ignorar noticias más viejas que esto
 
 quant:
-  ema_fast_period: 9
-  ema_slow_period: 21
-  rsi_period: 14
-  ema_weight: 0.6   # peso EMA en el score combinado; peso RSI = 1 - ema_weight
+  # Régimen SMA 50/200 @ 4h (el único cruce que sobrevivió OOS, Sharpe +0.71).
+  # ma_type=sma + ema_weight=1.0 → score = tanh(50·(SMA50−SMA200)/SMA200), sin RSI.
+  ma_type: "sma"
+  ema_fast_period: 50   # SMA rápida (pese al nombre del campo, ma_type manda)
+  ema_slow_period: 200  # SMA lenta
+  rsi_period: 14        # sin efecto con ema_weight=1.0 (RSI pesa 0)
+  ema_weight: 1.0       # 100% cruce de medias, 0% RSI → régimen de tendencia puro
 
 backtest:
   # Costos: se cobran en CADA lado (entrada y salida). Una estrategia que solo
@@ -174,7 +178,7 @@ orchestrator:
   # las resamplea a 1h y corre el EMA-cross ahí. La literatura cripto solo halla
   # edge de EMA-cross en velas DIARIAS/horarias, nunca en 5m → el régimen vive en
   # el HTF, no en la vela base de entrada.
-  regime_htf_bars: 50
+  regime_htf_bars: 230   # SMA200 @ 4h necesita ≥214 velas HTF (200+14); 230 da holgura
   # Sondeo del PnL realizado por símbolo (income history Binance) para el dashboard.
   # Solo observabilidad, en tarea aparte; no afecta el trading. 60s es de sobra.
   realized_pnl_poll_seconds: 60
@@ -182,22 +186,19 @@ orchestrator:
   # PnL antes de reintentar: da tiempo a que macOS re-sincronice por NTP en vez de
   # martillar la API. El offset del reloj ya se recalibra en retry_with_backoff.
   clock_retry_delay_seconds: 30
-  # Time-stop: una posición se cierra por tiempo tras este nº de velas base (5m) si no
-  # la cerró antes el SL/TP/flip. 576 = ~48h: el edge de una noticia es la reacción, no
-  # sostener días; bound contra rides indefinidos tras caducar el catalizador. 0 = off.
-  max_position_hold_candles: 576
+  # Time-stop: una posición se cierra por tiempo tras este nº de velas base si no
+  # la cerró antes el SL/TP/flip. CON BASE 1h: 72 velas = 72h (~3 días), backstop
+  # razonable para un híbrido tendencia+noticias. 0 = off.
+  max_position_hold_candles: 72
 
 # --- Fast Path: originación de trades por evento (Plan V2 Fase 2) ---
 # Gobierna CUÁNDO un shock (hack/ETF/depeg…) cuaja en una orden. La lógica
 # (decide_event) llega en Fase 2.2; el consumidor (cola + on_event) en 2.3.
 event:
-  # Gate maestro. ARMADO (2026-06-29, decisión de Eduardo): el Fast Path está
-  # cableado (main.py construye event_fetch y run() arranca markPrice + productor +
-  # consumidor cuando enabled=true) y con 677 tests verdes. Se valida EN VIVO en
-  # testnet (dinero falso): el primer arranque debe MIRARSE (logs markprice:* +
-  # event_open/event_hold). El Slow Path sigue ON en paralelo; cada trade queda
-  # etiquetado por fuente (slow vs event) en el dashboard para comparar cuál gana.
-  enabled: true
+  # Gate maestro. APAGADO (2026-07-01): el "último intento" es un híbrido LIMPIO de
+  # Slow Path (noticias que ya teníamos) + régimen SMA 50/200 @ 4h. El Fast Path se
+  # deja fuera para no mezclar dos experimentos; el cableado sigue listo si se reabre.
+  enabled: false
   # Poll de eventos: más rápido que el Slow Path (sentiment.poll = 120s). No
   # competimos en latencia con RSS gratis; 15s es el balance fresco/no-baneo.
   poll_interval_seconds: 15

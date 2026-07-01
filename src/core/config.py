@@ -196,6 +196,17 @@ class QuantConfig(BaseModel):
     ema_slow_period: int = Field(ge=2, le=200)
     rsi_period: int = Field(ge=2, le=50)
     ema_weight: float = Field(ge=0.0, le=1.0)
+    # Tipo de media para el cruce: "ema" (default, comportamiento histórico) o "sma".
+    # El único cruce que sobrevivió OOS fue SMA 50/200 @ 4h; con ma_type="sma",
+    # ema_weight=1.0 y periodos 50/200 el score = tanh(50·(SMA50−SMA200)/SMA200).
+    ma_type: str = Field(default="ema")
+
+    @field_validator("ma_type")
+    @classmethod
+    def ma_type_valido(cls, v: str) -> str:
+        if v not in ("ema", "sma"):
+            raise ValueError(f"ma_type debe ser 'ema' o 'sma', no '{v}'")
+        return v
 
     @field_validator("ema_slow_period")
     @classmethod

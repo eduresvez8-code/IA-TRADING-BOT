@@ -11,7 +11,19 @@ Verifica que compute_signal:
 import pandas as pd
 import pytest
 
+from src.core.config import QuantConfig, load_settings
 from src.quant.strategy import compute_signal, compute_signal_series
+
+
+@pytest.fixture(autouse=True)
+def _force_ema_quant(monkeypatch):
+    """Estos tests validan la señal EMA 9/21/14. El settings.yaml enviado ahora usa
+    SMA 50/200 (warmup 214) → con datos cortos daría None. Forzamos que el
+    load_settings() que lee strategy.py devuelva la config EMA histórica."""
+    cfg = load_settings()
+    cfg.quant = QuantConfig(ma_type="ema", ema_fast_period=9, ema_slow_period=21,
+                            rsi_period=14, ema_weight=0.6)
+    monkeypatch.setattr("src.quant.strategy.load_settings", lambda *a, **k: cfg)
 
 
 def _make_df(close_prices: list[float]) -> pd.DataFrame:
