@@ -808,7 +808,9 @@ def _valid_xs_kwargs(**overrides):
     base = dict(history_days=1100, min_history_days=60, momentum_lookback_days=30,
                 momentum_skip_days=0, vol_adjust=False, vol_lookback_days=30,
                 forward_days=7, rebalance_days=7, n_quantiles=5, min_assets=10,
-                liquidity_drop_pct=0.25, winsorize_quantile=0.02, max_weight=0.10)
+                liquidity_drop_pct=0.25, winsorize_quantile=0.02, max_weight=0.10,
+                xs_liquid_lookback_days_grid=[3, 7, 14, 30],
+                xs_liquid_n_side_grid=[1, 2])
     base.update(overrides)
     return base
 
@@ -839,6 +841,12 @@ def test_cross_sectional_winsorize_fuera_de_rango_es_rechazado():
     # winsorize_quantile ≥ 0.5 recortaría todo contra la mediana.
     with pytest.raises(ValidationError):
         CrossSectionalConfig(**_valid_xs_kwargs(winsorize_quantile=0.5))
+
+
+def test_xs_liquid_n_side_fuera_de_rango_es_rechazado():
+    # Con 5 activos, ir 3 por lado (6 posiciones) no cabe: n_side ∈ [1,2].
+    with pytest.raises(ValidationError):
+        CrossSectionalConfig(**_valid_xs_kwargs(xs_liquid_n_side_grid=[3]))
 
 
 def test_settings_yaml_portfolio_robustez():

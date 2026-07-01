@@ -242,6 +242,9 @@ cross_sectional:
   liquidity_drop_pct: 0.25      # descarta el 25% de menor volumen (microcaps de la cola)
   winsorize_quantile: 0.02      # recorta retornos al percentil 2/98 (ningún activo domina)
   max_weight: 0.10              # tope de peso por activo (10%)
+  # --- Reversión entre los 5 perps líquidos (única forma tradeable del lead) ---
+  xs_liquid_lookback_days_grid: [3, 7, 14, 30]  # ranking por retorno de N días
+  xs_liquid_n_side_grid: [1, 2]                  # long-1/short-1 y long-2/short-2
 
 # --- Regímenes de mercado por sentimiento (Fear & Greed como ancla) ---
 # Edge test de 3 métodos cuantitativos de sentimiento. NO opera: mide si el F&G

@@ -486,6 +486,21 @@ class CrossSectionalConfig(BaseModel):
     liquidity_drop_pct: float = Field(ge=0.0, lt=1.0)
     winsorize_quantile: float = Field(ge=0.0, lt=0.5)
     max_weight: float = Field(gt=0.0, le=1.0)
+    # --- Reversión entre los 5 perps LÍQUIDOS (market.symbols) — la única forma
+    #     tradeable de nuestro lead cross-sectional (sin supervivencia ni iliquidez) ---
+    # Grid de lookbacks (días) del retorno usado para rankear. No vacío, cada uno ≥1.
+    xs_liquid_lookback_days_grid: list[int] = Field(min_length=1)
+    # Cuántos activos ir largo (los peores) y corto (los mejores) por lado. Con 5
+    # activos: 1 → long-1/short-1; 2 → long-2/short-2. Cada n en [1, 2], lista no vacía.
+    xs_liquid_n_side_grid: list[int] = Field(min_length=1)
+
+    @field_validator("xs_liquid_n_side_grid")
+    @classmethod
+    def n_side_valido(cls, v: list[int]) -> list[int]:
+        for n in v:
+            if not (1 <= n <= 2):
+                raise ValueError(f"xs_liquid_n_side {n} fuera de [1,2] (5 activos)")
+        return v
 
 
 class SentimentRegimeConfig(BaseModel):
