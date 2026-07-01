@@ -195,6 +195,14 @@ def _valid_quant_hyp_kwargs(**overrides):
         leadlag_lag_hours_grid=[6, 24, 72],
         leadlag_regime_sma=200,
         leadlag_allow_short=True,
+        seasonality_entry_open_hour_utc=22,
+        seasonality_hold_hours=2,
+        dow_entry_weekday=0,
+        dow_hold_days=1,
+        rsi_reversion_period=10,
+        rsi_reversion_oversold=30.0,
+        rsi_reversion_overbought=70.0,
+        rsi_reversion_trend_sma=200,
     )
     base.update(overrides)
     return base

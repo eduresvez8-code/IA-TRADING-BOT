@@ -351,3 +351,78 @@ def make_leadlag_decider(closes: np.ndarray, atrs: np.ndarray,
         return None
 
     return decider
+
+
+def _utc_dt(ts):
+    """Convierte el open_time del motor (epoch ms int, o datetime) a datetime UTC."""
+    if isinstance(ts, (int, float)):
+        return pd.Timestamp(ts, unit="ms", tz="UTC")
+    return pd.Timestamp(ts).tz_localize("UTC") if pd.Timestamp(ts).tzinfo is None else pd.Timestamp(ts)
+
+
+def make_hour_seasonality_decider(entry_open_hour: int, hold_hours: int):
+    """H6 — Estacionalidad horaria: LONG en la APERTURA de `entry_open_hour` UTC,
+    sostener `hold_hours` velas 1h, salir por señal. Sin predecir precio: apuesta a
+    un patrón de flujo por hora del día (SSRN 4081000). Stop ATR del motor = freno.
+
+    Como el motor decide al cierre de i y ejecuta en la apertura de i+1: para entrar
+    en la apertura de la hora H hay que señalar cuando la vela i es la hora (H-1);
+    para salir en la apertura de H+hold hay que señalar en la hora (H+hold-1).
+    """
+    signal_in = (entry_open_hour - 1) % 24
+    signal_out = (entry_open_hour - 1 + hold_hours) % 24
+
+    def decider(i, position_side, score, ts):
+        h = _utc_dt(ts).hour
+        if position_side is None:
+            if h == signal_in:
+                return ("enter", "LONG", 1.0)   # stop/tp None → ATR del motor
+            return None
+        if h == signal_out:
+            return ("exit",)
+        return None
+
+    return decider
+
+
+def make_dow_decider(entry_weekday: int, hold_days: int):
+    """H7 — Efecto día-de-la-semana en velas DIARIAS: LONG el día `entry_weekday`
+    (0=lunes), sostener `hold_days` velas. El motor entra en la apertura del día
+    siguiente al de la señal, así que señalamos el día previo al de entrada deseado.
+    """
+    signal_in = (entry_weekday - 1) % 7
+
+    def decider(i, position_side, score, ts):
+        wd = _utc_dt(ts).dayofweek
+        if position_side is None:
+            if wd == signal_in:
+                return ("enter", "LONG", 1.0)
+            return None
+        # Salir tras hold_days: señalamos hold_days-1 días después de la entrada real.
+        if wd == (entry_weekday - 1 + hold_days) % 7:
+            return ("exit",)
+        return None
+
+    return decider
+
+
+def make_rsi_reversion_decider(closes: np.ndarray, rsi_vals: np.ndarray,
+                               trend_sma: np.ndarray, *, oversold: float,
+                               overbought: float):
+    """H8 — Reversión a la media: LONG cuando RSI<oversold Y close>SMA (comprar el
+    dip DENTRO de una tendencia alcista de fondo), salir cuando RSI>overbought. El
+    filtro SMA evita 'cazar el cuchillo' en tendencia bajista. Stop ATR del motor.
+    """
+    def decider(i, position_side, score, ts):
+        r = rsi_vals[i]
+        if math.isnan(r) or math.isnan(trend_sma[i]):
+            return None
+        if position_side is None:
+            if r < oversold and closes[i] > trend_sma[i]:
+                return ("enter", "LONG", 1.0)
+            return None
+        if r > overbought:
+            return ("exit",)
+        return None
+
+    return decider

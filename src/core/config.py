@@ -733,6 +733,23 @@ class QuantHypothesesConfig(BaseModel):
     # Simetría direccional: true = long y short; false = solo long.
     leadlag_allow_short: bool
 
+    # --- H6 — Estacionalidad horaria (overnight, Quantpedia/SSRN 4081000) ---
+    # Hora UTC en cuya APERTURA se entra long; se mantiene N horas. ge=0/le=23.
+    seasonality_entry_open_hour_utc: int = Field(ge=0, le=23)
+    seasonality_hold_hours: int = Field(ge=1, le=24)
+
+    # --- H7 — Efecto día-de-la-semana ---
+    # Día en que se entra (0=lunes … 6=domingo, convención Python). Se mantiene N días.
+    dow_entry_weekday: int = Field(ge=0, le=6)
+    dow_hold_days: int = Field(ge=1, le=7)
+
+    # --- H8 — Reversión a la media RSI + filtro de tendencia SMA (no VWAP) ---
+    # LONG si RSI<oversold Y close>SMA_trend; salir si RSI>overbought. Periodos acotados.
+    rsi_reversion_period: int = Field(ge=2, le=100)
+    rsi_reversion_oversold: float = Field(gt=0.0, lt=50.0)
+    rsi_reversion_overbought: float = Field(gt=50.0, lt=100.0)
+    rsi_reversion_trend_sma: int = Field(ge=20, le=400)
+
     @field_validator("leadlag_lag_hours_grid")
     @classmethod
     def lags_leadlag_validos(cls, v: list[int]) -> list[int]:

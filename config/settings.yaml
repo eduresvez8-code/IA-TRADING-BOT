@@ -339,3 +339,14 @@ quant_hypotheses:
   leadlag_lag_hours_grid: [6, 24, 72]  # lags del retorno de BTC que probamos (JSON)
   leadlag_regime_sma: 200             # SMA200 1h: líder y target deben coincidir en dirección
   leadlag_allow_short: true           # simétrico (long/short)
+  # --- H6 — Estacionalidad horaria overnight (Quantpedia/SSRN 4081000) ---
+  seasonality_entry_open_hour_utc: 22  # entrar en la apertura de las 22:00 UTC
+  seasonality_hold_hours: 2            # mantener 2h → salir en apertura de 00:00 UTC
+  # --- H7 — Efecto día-de-la-semana ---
+  dow_entry_weekday: 0                 # 0=lunes: entrar long el lunes
+  dow_hold_days: 1                     # mantener 1 día
+  # --- H8 — Reversión RSI + filtro de tendencia SMA (no VWAP) ---
+  rsi_reversion_period: 10
+  rsi_reversion_oversold: 30.0
+  rsi_reversion_overbought: 70.0
+  rsi_reversion_trend_sma: 200
