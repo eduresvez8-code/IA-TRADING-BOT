@@ -579,6 +579,10 @@ class StorageConfig(BaseModel):
     candles_dir: str
     funding_dir: str
     universe_dir: str
+    # Métricas de posicionamiento de Binance Vision (OI, long/short ratios) que
+    # descarga src/data/download_metrics.py. Separado de candles_dir: son series
+    # 5m de derivados, no velas OHLCV, y se regeneran con otro downloader.
+    metrics_dir: str
 
 
 class DashboardConfig(BaseModel):
@@ -888,6 +892,73 @@ class QuantHypothesesConfig(BaseModel):
         return v
 
 
+class PositioningResearchConfig(BaseModel):
+    """Investigación de posicionamiento (backtest/run_positioning.py, 2026-07).
+
+    Research puro: NO opera el bot en vivo. Familias E1 (flujo taker/CVD),
+    E2 (OI + funding + long/short ratios a 1h) y E2b (diaria), habilitadas por
+    el histórico gratuito de Binance Vision (src/data/download_metrics.py).
+    Resultado de la sesión 2026-07-06: ninguna pasó el listón OOS; los
+    parámetros quedan aquí para reproducir/extender el estudio sin hardcodear.
+    """
+
+    # Ventana del z-score causal a 1h (velas). ge=24: con menos de un día la
+    # "sorpresa" es ruido puro; le=2000 ataja un typo (83 días a 1h).
+    zscore_window_bars: int = Field(ge=24, le=2000)
+    # Ventana del z-score en la variante diaria (días). ge=10, le=365.
+    zscore_window_days: int = Field(ge=10, le=365)
+    # Medias del desequilibrio taker a barrer (velas 1h). Cada k ge=1, le=500.
+    imbalance_ma_bars_grid: list[int] = Field(min_length=1)
+    # Umbrales |z| de entrada a barrer. gt=0: umbral 0 = siempre en mercado,
+    # lo que convierte el estudio en un test de señal continua, no de umbral.
+    entry_threshold_grid: list[float] = Field(min_length=1)
+    # Costo por lado (%): comisión taker + slippage. Alineado por defecto con
+    # backtest.commission_pct + backtest.slippage_pct pero AISLADO a propósito:
+    # el estudio debe poder estresar costos sin tocar la config del motor.
+    cost_per_side_pct: float = Field(ge=0.0, le=1.0)
+    # Fecha de corte train/test (ISO, UTC). La selección de configs usa SOLO
+    # datos anteriores; el tramo posterior se mide UNA vez (anti data-snooping,
+    # la lección del artefacto run_ma_split de 2026-07-06).
+    train_test_split_date: str
+    # Huecos máximos a rellenar (ffill) al remuestrear métricas 5m → 1h. le=48:
+    # más de 2 días de hueco ya no es "el último dato vigente", es inventar.
+    metrics_ffill_limit_bars: int = Field(ge=0, le=48)
+
+    @field_validator("imbalance_ma_bars_grid")
+    @classmethod
+    def ma_bars_en_rango(cls, v: list[int]) -> list[int]:
+        for k in v:
+            if not (1 <= k <= 500):
+                raise ValueError(f"imbalance_ma_bars_grid: {k} fuera de [1, 500]")
+        return v
+
+    @field_validator("entry_threshold_grid")
+    @classmethod
+    def umbrales_positivos(cls, v: list[float]) -> list[float]:
+        for th in v:
+            if not (0.0 < th <= 10.0):
+                raise ValueError(f"entry_threshold_grid: {th} fuera de (0, 10]")
+        return v
+
+    @field_validator("train_test_split_date")
+    @classmethod
+    def fecha_parseable(cls, v: str) -> str:
+        # datetime estándar (no pandas): core/config debe seguir siendo liviano.
+        from datetime import datetime
+
+        try:
+            ts = datetime.fromisoformat(v.replace("Z", "+00:00"))
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"train_test_split_date no parseable: {v!r}") from e
+        if ts.tzinfo is None:
+            raise ValueError(
+                f"train_test_split_date debe llevar zona horaria explícita "
+                f"(ej. '2024-12-15T00:00:00Z'), no {v!r}: un corte naive se "
+                f"compara mal contra índices UTC y partiría el dataset en otro "
+                f"punto del que se cree")
+        return v
+
+
 class Settings(BaseModel):
     market: MarketConfig
     risk: RiskConfig
@@ -909,6 +980,7 @@ class Settings(BaseModel):
     dashboard: DashboardConfig
     quant_matrix: QuantMatrixConfig
     quant_hypotheses: QuantHypothesesConfig
+    positioning_research: PositioningResearchConfig
 
     @model_validator(mode="after")
     def regimen_htf_tiene_datos(self) -> "Settings":

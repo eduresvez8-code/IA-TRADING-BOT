@@ -1,0 +1,499 @@
+# Protocolo fijado ANTES de mirar resultados (2026-07-06)
+
+Split temporal único para TODOS los experimentos:
+- TRAIN: open_time < 2024-12-15 00:00 UTC
+- TEST:  open_time >= 2024-12-15 00:00 UTC (se mide UNA vez, sin re-elegir)
+
+Reglas:
+1. Toda selección de configuración (parámetros, dirección mom/contra, umbral)
+   se hace SOLO con métricas de TRAIN.
+2. El TEST se corre una única vez por familia, con la config ya congelada.
+3. Se reporta el grid COMPLETO (train y test de todas las configs, para ver
+   la distribución), pero la decisión se toma antes de mirar la columna test.
+4. Costos: 0.06% por lado (comisión 0.04 + slippage 0.02), igual que el motor
+   del repo; ida-vuelta 0.12%. Para alts iliquidos, sensibilidad con 0.10%/lado.
+5. Criterio de "vivo": Sharpe TEST > 0.5 neto de costos Y Sharpe TRAIN > 0.5
+   Y signo consistente train/test. Menos que eso = muerto o incierto.
+6. IC (information coefficient) = Spearman(feature_t, retorno t+1..t+h).
+   Umbral de interés: |IC| >= 0.02 con t-stat >= 3 en TRAIN a 1h,
+   |IC| >= 0.05 con t-stat >= 2.5 en diario.
+
+================ RESULTADOS e1 ================
+=== IC (Spearman, feature t -> ret t+1 y t+1..t+24) en TRAIN ===
+  imb_ma4    BTC: -0.047(t-5.3)/-0.027(t-3.1)  ETH: -0.051(t-5.8)/-0.031(t-3.5)  SOL: -0.040(t-4.5)/-0.013(t-1.5)  XRP: -0.038(t-4.3)/-0.014(t-1.6)  BNB: -0.032(t-3.7)/-0.017(t-2.0)
+  imb_ma24   BTC: -0.036(t-4.1)/+0.017(t+1.9)  ETH: -0.040(t-4.5)/-0.009(t-1.0)  SOL: -0.023(t-2.6)/-0.019(t-2.2)  XRP: -0.026(t-3.0)/-0.011(t-1.3)  BNB: -0.033(t-3.7)/-0.027(t-3.1)
+  imb_ma72   BTC: -0.007(t-0.8)/+0.049(t+5.6)  ETH: -0.014(t-1.6)/+0.021(t+2.4)  SOL: -0.017(t-2.0)/-0.024(t-2.7)  XRP: -0.009(t-1.0)/+0.031(t+3.5)  BNB: -0.015(t-1.7)/+0.011(t+1.3)
+  cvd_div24  BTC: -0.012(t-1.4)/-0.072(t-8.1)  ETH: -0.005(t-0.6)/-0.016(t-1.9)  SOL: -0.007(t-0.8)/-0.006(t-0.6)  XRP: -0.008(t-0.9)/-0.023(t-2.7)  BNB: -0.007(t-0.8)/+0.021(t+2.4)
+  flow24     BTC: -0.032(t-3.7)/+0.017(t+1.9)  ETH: -0.041(t-4.6)/-0.001(t-0.1)  SOL: -0.018(t-2.1)/+0.005(t+0.6)  XRP: -0.029(t-3.3)/-0.027(t-3.1)  BNB: -0.029(t-3.3)/-0.031(t-3.6)
+
+=== Grid de estrategias (portafolio EW 5 majors, neto de costos) ===
+config                       ShTR   ShTE    retTR    retTE  expTR  toTR/yr
+imb_ma72|mom|z1.0           -0.73  -1.87  -0.1993  -0.4177  0.442
+imb_ma72|mom|z0.5           -0.77   -2.0  -0.2745  -0.5302  0.699
+cvd_div24|con|z1.0          -1.66   -1.0  -0.3341  -0.2379   0.22
+flow24|con|z1.0             -1.68   -2.1  -0.3691  -0.4276  0.365
+imb_ma24|con|z1.0           -1.86   -2.3  -0.3611   -0.414   0.36
+flow24|mom|z0.5             -1.98  -1.73  -0.5361  -0.5005  0.643
+flow24|con|z0.5             -2.02  -2.21  -0.5426    -0.58  0.643
+cvd_div24|mom|z1.0          -2.11  -2.88  -0.3988   -0.516   0.22
+imb_ma72|con|z0.5           -2.22  -0.89  -0.5561  -0.3099  0.699
+imb_ma24|con|z0.5           -2.34  -2.58  -0.5461  -0.5905  0.638
+cvd_div24|con|z0.5          -2.37  -1.77  -0.5488  -0.4776  0.521
+imb_ma72|con|z1.0            -2.5  -1.27  -0.4942  -0.3151  0.442
+cvd_div24|mom|z0.5           -2.5   -2.9  -0.5662   -0.642  0.521
+flow24|mom|z1.0             -2.58  -2.21  -0.4981  -0.4439  0.365
+imb_ma24|mom|z0.5           -3.29  -2.68  -0.6634  -0.6037  0.638
+imb_ma24|mom|z1.0           -3.96  -3.39  -0.6034  -0.5391   0.36
+imb_ma4|con|z0.5             -5.8  -6.08  -0.8455  -0.8601    0.6
+imb_ma4|con|z1.0            -6.07  -5.93  -0.7151   -0.719  0.309
+imb_ma4|mom|z0.5            -7.98  -7.19  -0.9216  -0.9012    0.6
+imb_ma4|mom|z1.0            -8.18  -7.33  -0.8147  -0.7909  0.309
+
+>> ELEGIDA EN TRAIN: imb_ma72|mom|z1.0 -> Sharpe TRAIN -0.73, Sharpe TEST -1.87 (ret -0.1993 / -0.4177)
+
+================ RESULTADOS e2 ================
+=== IC (feature t -> ret t+1 / t+1..t+24) en TRAIN ===
+  doi24_z      BTC:-0.017(t-1.8)/-0.074(t-8.1) ETH:-0.013(t-1.4)/-0.030(t-3.3) SOL:+0.001(t+0.2)/-0.016(t-1.8) XRP:-0.014(t-1.6)/-0.002(t-0.2) BNB:-0.004(t-0.4)/-0.018(t-2.0)
+  glsr_z       BTC:-0.000(t-0.0)/-0.028(t-3.2) ETH:+0.011(t+1.3)/-0.028(t-3.2) SOL:-0.006(t-0.7)/-0.064(t-7.3) XRP:+0.007(t+0.7)/-0.059(t-6.7) BNB:+0.002(t+0.2)/-0.013(t-1.4)
+  tlsr_z       BTC:+0.001(t+0.1)/-0.020(t-2.2) ETH:-0.016(t-1.8)/-0.114(t-13.0) SOL:+0.005(t+0.6)/+0.016(t+1.8) XRP:+0.005(t+0.6)/+0.008(t+0.9) BNB:-0.014(t-1.6)/-0.042(t-4.7)
+  smart_dumb   BTC:+0.002(t+0.3)/+0.014(t+1.6) ETH:-0.019(t-2.2)/-0.058(t-6.6) SOL:+0.010(t+1.1)/+0.061(t+7.0) XRP:+0.001(t+0.1)/+0.046(t+5.2) BNB:-0.012(t-1.4)/-0.026(t-3.0)
+  fund_z       BTC:-0.008(t-0.9)/-0.089(t-9.9) ETH:-0.016(t-1.7)/-0.093(t-10.2) SOL:-0.005(t-0.5)/-0.017(t-1.8) XRP:-0.005(t-0.5)/-0.007(t-0.8) BNB:+0.001(t+0.1)/+0.067(t+7.4)
+  oi_conf_mom  BTC:-0.038(t-4.4)/-0.074(t-8.5) ETH:-0.032(t-3.7)/-0.012(t-1.3) SOL:-0.010(t-1.1)/+0.001(t+0.2) XRP:-0.025(t-2.8)/-0.009(t-1.0) BNB:-0.024(t-2.8)/+0.001(t+0.1)
+  oi_div_fade  BTC:+0.016(t+1.9)/-0.043(t-4.9) ETH:+0.033(t+3.7)/+0.004(t+0.4) SOL:+0.018(t+2.1)/-0.008(t-0.9) XRP:+0.013(t+1.5)/+0.043(t+4.9) BNB:+0.024(t+2.7)/+0.006(t+0.7)
+  squeeze      BTC:+0.002(t+0.3)/+0.054(t+6.2) ETH:+0.015(t+1.7)/+0.063(t+7.2) SOL:+0.007(t+0.8)/+0.011(t+1.2) XRP:-0.001(t-0.1)/-0.002(t-0.3) BNB:+0.004(t+0.5)/-0.003(t-0.4)
+
+=== Grid de estrategias (portafolio EW, neto de costos) ===
+config                       ShTR   ShTE    retTR    retTE  expTR
+glsr_z|con|z0.5              2.01    0.3   0.9574   0.0399  0.749
+glsr_z|con|z1.0              1.48   0.31   0.4973   0.0494    0.5
+smart_dumb|mom|z1.0           0.7  -0.13   0.1869  -0.1003  0.591
+smart_dumb|mom|z0.5          0.65  -0.45   0.1844  -0.2217  0.776
+fund_z|con|z0.5               0.4   -0.8   0.0827  -0.2525  0.599
+fund_z|con|z1.0              0.15  -0.78   0.0056  -0.1696   0.28
+squeeze|mom|z0.5            -0.14  -2.17  -0.0237  -0.2188  0.082
+tlsr_z|con|z0.5             -0.58   -1.5   -0.225  -0.4342   0.75
+tlsr_z|con|z1.0             -0.58  -1.89  -0.1913  -0.4379  0.498
+tlsr_z|mom|z0.5             -1.47  -1.03  -0.4278  -0.3366   0.75
+oi_conf_mom|con|z1.0        -1.49  -1.85  -0.3257  -0.3512  0.189
+oi_div_fade|mom|z1.0        -1.53  -1.06   -0.217   -0.205  0.116
+oi_conf_mom|mom|z1.0         -1.6  -1.47  -0.3433  -0.2947  0.189
+doi24_z|mom|z1.0            -1.66  -2.37  -0.3447  -0.4161  0.278
+tlsr_z|mom|z1.0             -1.71  -0.75  -0.4183  -0.2238  0.498
+fund_z|mom|z1.0             -1.72  -1.65  -0.3695  -0.3069   0.28
+doi24_z|con|z1.0            -1.75  -1.56  -0.3577   -0.303  0.278
+oi_conf_mom|con|z0.5        -1.81  -2.35  -0.4428  -0.4954  0.338
+doi24_z|con|z0.5            -1.99  -2.06   -0.474   -0.466  0.533
+fund_z|mom|z0.5              -2.0  -1.75   -0.544  -0.4403  0.599
+oi_conf_mom|mom|z0.5        -2.11   -1.8  -0.4896  -0.4141  0.338
+squeeze|con|z0.5            -2.11  -0.67  -0.2302  -0.0779  0.082
+doi24_z|mom|z0.5            -2.18  -2.27  -0.5028   -0.498  0.533
+oi_div_fade|mom|z0.5        -2.38  -1.59  -0.3961  -0.3521  0.239
+oi_div_fade|con|z1.0        -2.44  -2.12  -0.3183  -0.3566  0.116
+oi_div_fade|con|z0.5        -2.87  -2.66  -0.4524  -0.5048  0.239
+smart_dumb|con|z0.5         -2.92  -1.86  -0.6664  -0.5499  0.776
+smart_dumb|con|z1.0         -2.97   -2.2  -0.6308  -0.5601  0.591
+glsr_z|mom|z1.0             -3.52  -2.38   -0.672  -0.5588    0.5
+glsr_z|mom|z0.5             -3.78   -2.2  -0.7678  -0.6174  0.749
+squeeze|mom|z1.0              nan    nan      0.0      0.0    0.0
+squeeze|con|z1.0              nan    nan      0.0      0.0    0.0
+
+>> ELEGIDA EN TRAIN: glsr_z|con|z0.5 -> Sharpe TRAIN 2.01, Sharpe TEST 0.3
+
+================ RESULTADOS e2b ================
+=== IC diario (feature D -> ret D+1) en TRAIN ===
+  glsr_z       BTC:-0.017(t-0.4) ETH:-0.005(t-0.1) SOL:-0.060(t-1.3) XRP:-0.023(t-0.5) BNB:+0.024(t+0.5)
+  tlsr_z       BTC:+0.025(t+0.6) ETH:-0.056(t-1.2) SOL:+0.045(t+1.0) XRP:+0.047(t+1.0) BNB:-0.011(t-0.2)
+  smart_dumb   BTC:+0.035(t+0.8) ETH:-0.046(t-1.0) SOL:+0.081(t+1.8) XRP:+0.061(t+1.3) BNB:-0.031(t-0.7)
+  fund_z       BTC:-0.002(t-0.0) ETH:-0.056(t-1.2) SOL:+0.027(t+0.6) XRP:-0.021(t-0.5) BNB:+0.042(t+0.9)
+  doi5d_z      BTC:-0.059(t-1.2) ETH:-0.064(t-1.4) SOL:+0.005(t+0.1) XRP:-0.066(t-1.5) BNB:-0.035(t-0.8)
+
+=== Grid diario (portafolio EW, neto de costos) ===
+config                       ShTR   ShTE    retTR    retTE  expTR
+smart_dumb|mom|z0.5          1.88   -0.2   0.7715  -0.1444  0.668
+smart_dumb|mom|z0.0          1.78  -0.06   0.8155  -0.1152  0.892
+smart_dumb|mom|z1.0          1.63  -0.04   0.5015  -0.0638  0.478
+glsr_z|con|z0.5              1.34   0.61   0.4368   0.1654  0.634
+glsr_z|con|z1.0              1.33   0.55   0.3605   0.1197  0.388
+doi5d_z|con|z1.0             1.28   -1.1   0.2748  -0.2293  0.251
+glsr_z|con|z0.0              1.26   0.73   0.4515   0.2473  0.892
+tlsr_z|mom|z1.0              0.99   0.12   0.2771  -0.0143  0.458
+doi5d_z|con|z0.5             0.76  -0.26   0.1899  -0.1065  0.497
+tlsr_z|mom|z0.5              0.67   0.02   0.1921  -0.0679  0.679
+fund_z|mom|z0.5              0.52  -0.28    0.119   -0.138  0.528
+fund_z|mom|z1.0              0.43  -0.71   0.0723  -0.1593  0.263
+tlsr_z|mom|z0.0              0.42  -0.14   0.0917  -0.1481  0.892
+doi5d_z|con|z0.0             0.34   0.55   0.0579   0.1408  0.861
+fund_z|con|z0.0             -0.13  -0.64   -0.123  -0.3089  0.886
+fund_z|mom|z0.0              -0.2  -0.06  -0.1474  -0.1103  0.886
+tlsr_z|con|z0.0             -0.58   -0.1  -0.2722   -0.134  0.892
+doi5d_z|mom|z0.0            -0.84  -1.16   -0.287   -0.368  0.861
+fund_z|con|z1.0             -0.85  -0.06  -0.1898  -0.0355  0.263
+tlsr_z|con|z0.5             -0.86  -0.27  -0.3135  -0.1679  0.679
+fund_z|con|z0.5             -0.93  -0.47  -0.2821  -0.1891  0.528
+tlsr_z|con|z1.0             -1.22  -0.39  -0.3274  -0.1638  0.458
+doi5d_z|mom|z0.5            -1.24  -0.35  -0.3244  -0.1283  0.497
+glsr_z|mom|z0.0             -1.65  -1.09  -0.4631  -0.4277  0.892
+glsr_z|mom|z1.0             -1.74   -1.0  -0.3817  -0.2712  0.388
+doi5d_z|mom|z1.0            -1.74   0.59  -0.3171   0.1085  0.251
+glsr_z|mom|z0.5             -1.77  -1.02  -0.4452   -0.348  0.634
+smart_dumb|con|z1.0         -1.99  -0.32  -0.4392  -0.1457  0.478
+smart_dumb|con|z0.0         -2.11   -0.3  -0.5772  -0.2057  0.892
+smart_dumb|con|z0.5         -2.22  -0.18  -0.5506   -0.136  0.668
+
+>> ELEGIDA EN TRAIN: smart_dumb|mom|z0.5 -> Sharpe TRAIN 1.88, Sharpe TEST -0.2
+B&H BTC TRAIN: Sharpe 2.09, ret anual 145.83%
+B&H BTC TEST: Sharpe -0.43, ret anual -25.18%
+
+================ RESULTADOS e3 ================
+
+=== BTC: IC (feature dia D -> retorno D+1), TRAIN ===
+  dxy_above_ma50     IC=+0.0626 t=+1.47 n=548
+  ndx_ret5d          IC=-0.0542 t=-1.26 n=543
+  spx_above_ma50     IC=+0.0508 t=+1.19 n=548
+  ndx_above_ma50     IC=+0.0501 t=+1.17 n=548
+  spx_ret5d          IC=-0.0430 t=-1.00 n=543
+  eur_ret5d          IC=-0.0368 t=-0.86 n=543
+  spx_ret1d          IC=-0.0365 t=-0.85 n=547
+  ndx_ret1d          IC=-0.0347 t=-0.81 n=547
+  eur_ret20d         IC=+0.0308 t=+0.71 n=528
+  spx_ret20d         IC=+0.0201 t=+0.46 n=528
+  paxg_ret1d         IC=-0.0158 t=-0.37 n=547
+  dxy_ret20d         IC=+0.0152 t=+0.35 n=528
+  paxg_ret5d         IC=-0.0116 t=-0.27 n=543
+  paxg_above_ma50    IC=+0.0103 t=+0.24 n=548
+  eur_ret1d          IC=-0.0081 t=-0.19 n=547
+  ndx_ret20d         IC=+0.0078 t=+0.18 n=528
+  paxg_ret20d        IC=+0.0050 t=+0.12 n=528
+  dxy_ret5d          IC=+0.0042 t=+0.10 n=543
+  eur_above_ma50     IC=-0.0002 t=-0.00 n=548
+
+=== BTC: grid de estrategias (sign/threshold) ===
+config                                   ShTR   ShTE    retTR    retTE  expTR
+ndx_ret20d|mom|sign                      1.76  -1.15   1.0719   -0.457  0.964
+spx_above_ma50|mom|sign                  1.47  -1.05   0.8167  -0.4322    1.0
+eur_ret20d|mom|z0.5                      1.46  -0.36    0.641  -0.1838  0.595
+dxy_above_ma50|mom|sign                  1.41  -0.53   0.7658  -0.2849    1.0
+ndx_above_ma50|mom|sign                  1.38  -0.52   0.7369  -0.2828    1.0
+spx_ret20d|mom|sign                      1.29  -1.35   0.6572  -0.5022  0.964
+spx_ret20d|mom|z0.5                      0.84   0.12   0.2693  -0.0272  0.511
+dxy_above_ma50|mom|z0.5                  0.83  -0.53   0.3023  -0.1927  0.659
+eur_ret5d|mom|z0.5                        0.8  -0.43    0.266   -0.194  0.531
+ndx_ret5d|con|z0.5                       0.66   -0.0   0.1922  -0.0628  0.516
+eur_ret20d|mom|sign                      0.65   0.17   0.2206  -0.0211  0.964
+paxg_ret5d|con|z0.5                      0.62   0.81   0.1802   0.2464  0.558
+ndx_ret20d|mom|z0.5                      0.57  -0.19   0.1586  -0.1374   0.54
+spx_above_ma50|mom|z0.5                  0.57   0.41   0.1359   0.0846  0.429
+ndx_above_ma50|mom|z0.5                  0.52   0.95   0.1202   0.3039  0.432
+paxg_above_ma50|mom|sign                 0.52  -0.88   0.1472   -0.388    1.0
+spx_ret5d|mom|sign                       0.49  -0.99   0.1281  -0.4182  0.991
+eur_above_ma50|mom|z0.5                  0.42  -0.97   0.0909  -0.3595  0.588
+dxy_ret5d|con|sign                       0.41  -0.79   0.0879  -0.3626  0.989
+paxg_ret1d|con|sign                      0.33   0.66   0.0472   0.2166  0.956
+paxg_ret20d|mom|sign                     0.33  -0.89   0.0454   -0.392  0.958
+spx_ret5d|con|z0.5                       0.28    0.4   0.0365   0.0821  0.505
+ndx_ret5d|con|sign                       0.24   0.29  -0.0017   0.0286  0.991
+eur_above_ma50|con|sign                  0.22   0.01  -0.0106  -0.0899    1.0
+eur_ret5d|con|sign                        0.2  -0.05  -0.0201  -0.1138  0.985
+paxg_ret5d|con|sign                      0.13   0.61  -0.0524   0.1879  0.976
+paxg_ret20d|con|z0.5                     0.13   0.93  -0.0262   0.3249  0.549
+paxg_above_ma50|con|z0.5                 0.11    0.8  -0.0331   0.1661  0.518
+dxy_ret20d|mom|sign                      0.11  -0.42  -0.0621  -0.2483  0.964
+spx_ret1d|mom|sign                      -0.01  -1.36  -0.0768  -0.4372  0.686
+dxy_ret20d|mom|z0.5                     -0.04  -0.92  -0.0846   -0.342  0.591
+eur_ret1d|mom|sign                      -0.05   0.02  -0.1302  -0.0857  0.984
+dxy_ret20d|con|z0.5                      -0.1   0.69  -0.1048   0.2098  0.591
+dxy_ret5d|mom|z0.5                      -0.15   0.09  -0.1003  -0.0273  0.516
+eur_ret1d|mom|z0.5                      -0.18  -0.24  -0.1153  -0.1252   0.46
+dxy_ret5d|con|z0.5                      -0.23  -0.53  -0.1235  -0.2137  0.516
+paxg_above_ma50|mom|z0.5                -0.24   -1.0  -0.1538  -0.2216  0.518
+dxy_ret20d|con|sign                     -0.24   0.23  -0.2079    0.003  0.964
+ndx_ret1d|mom|z0.5                      -0.28  -1.41  -0.1235  -0.3876  0.359
+eur_above_ma50|mom|sign                 -0.32  -0.19  -0.2419  -0.1689    1.0
+paxg_ret20d|mom|z0.5                    -0.32  -1.13   -0.185  -0.3955  0.549
+spx_ret1d|con|z0.5                      -0.34    0.0  -0.1489  -0.0488  0.372
+paxg_ret1d|con|z0.5                     -0.36   0.64   -0.181   0.1689  0.482
+ndx_ret1d|con|sign                      -0.37   0.91  -0.2019   0.3081  0.686
+spx_ret1d|mom|z0.5                      -0.41   -0.9  -0.1661  -0.2864  0.372
+paxg_ret1d|mom|z0.5                     -0.43   -1.6  -0.2019  -0.4406  0.482
+paxg_ret5d|mom|sign                     -0.44  -0.94  -0.2765  -0.4047  0.976
+ndx_ret1d|con|z0.5                       -0.5   0.47  -0.1797   0.1019  0.359
+ndx_ret1d|mom|sign                      -0.51   -1.9   -0.242  -0.5397  0.686
+eur_above_ma50|con|z0.5                 -0.51   0.79  -0.2563   0.2602  0.588
+paxg_ret20d|con|sign                    -0.52    0.7  -0.3033   0.2381  0.958
+eur_ret5d|mom|sign                      -0.61  -0.39  -0.3381  -0.2356  0.985
+ndx_ret5d|mom|sign                      -0.62  -0.66  -0.3392  -0.3256  0.991
+ndx_above_ma50|con|z0.5                 -0.62  -1.05  -0.2122  -0.3419  0.432
+eur_ret1d|con|z0.5                      -0.63  -0.68  -0.2438  -0.2448   0.46
+spx_ret5d|mom|z0.5                      -0.66  -0.83  -0.2728  -0.2937  0.505
+spx_above_ma50|con|z0.5                 -0.66  -0.48  -0.2183  -0.2099  0.429
+paxg_above_ma50|con|sign                -0.68   0.75  -0.3627   0.2641    1.0
+ndx_ret20d|con|z0.5                     -0.75  -0.09  -0.3107  -0.1044   0.54
+dxy_ret5d|mom|sign                       -0.8   0.43  -0.3966    0.097  0.989
+eur_ret20d|con|sign                     -0.81  -0.42  -0.3982   -0.249  0.964
+spx_ret5d|con|sign                      -0.84   0.63  -0.4067   0.1962  0.991
+spx_ret1d|con|sign                      -0.91   0.38  -0.3552   0.0749  0.686
+eur_ret1d|con|sign                      -0.91  -0.99  -0.4295  -0.4156  0.984
+dxy_above_ma50|con|z0.5                 -0.92   0.39  -0.3832   0.0766  0.659
+paxg_ret5d|mom|z0.5                     -0.96  -1.22  -0.3654  -0.3851  0.558
+ndx_ret5d|mom|z0.5                       -1.0  -0.41  -0.3522    -0.19  0.516
+spx_ret20d|con|z0.5                     -1.02  -0.33  -0.3566  -0.1826  0.511
+eur_ret5d|con|z0.5                      -1.16   0.01  -0.4085  -0.0573  0.531
+paxg_ret1d|mom|sign                      -1.3   -1.7  -0.5064  -0.5755  0.956
+spx_ret20d|con|sign                     -1.38   1.16  -0.5416    0.517  0.964
+ndx_above_ma50|con|sign                 -1.48   0.42  -0.5688   0.0943    1.0
+dxy_above_ma50|con|sign                  -1.5   0.41  -0.5718   0.0852    1.0
+spx_above_ma50|con|sign                 -1.55   0.97  -0.5825   0.3932    1.0
+eur_ret20d|con|z0.5                      -1.6   0.15  -0.5072  -0.0113  0.595
+ndx_ret20d|con|sign                     -1.85   0.98  -0.6339   0.3997  0.964
+
+>> ELEGIDA EN TRAIN: ndx_ret20d|mom|sign -> TRAIN {'sharpe': 1.76, 'ann_ret': 1.0719, 'n_bars': 547, 'exposure': 0.964, 'turnover_yr': 36.7, 'maxdd': 0.267} | TEST {'sharpe': -1.15, 'ann_ret': -0.457, 'n_bars': 547, 'exposure': 1.0, 'turnover_yr': 64.7, 'maxdd': 0.606}
+
+=== ETH: IC (feature dia D -> retorno D+1), TRAIN ===
+  ndx_above_ma50     IC=+0.0732 t=+1.72 n=548
+  spx_above_ma50     IC=+0.0670 t=+1.57 n=548
+  dxy_above_ma50     IC=+0.0661 t=+1.55 n=548
+  eur_ret20d         IC=+0.0428 t=+0.98 n=528
+  paxg_above_ma50    IC=+0.0389 t=+0.91 n=548
+  spx_ret20d         IC=+0.0247 t=+0.57 n=528
+  paxg_ret5d         IC=-0.0236 t=-0.55 n=543
+  eur_ret5d          IC=-0.0215 t=-0.50 n=543
+  spx_ret5d          IC=+0.0187 t=+0.43 n=543
+  paxg_ret20d        IC=+0.0170 t=+0.39 n=528
+  dxy_ret5d          IC=+0.0154 t=+0.36 n=543
+  ndx_ret1d          IC=-0.0152 t=-0.35 n=547
+  dxy_ret20d         IC=+0.0146 t=+0.33 n=528
+  ndx_ret20d         IC=+0.0102 t=+0.23 n=528
+  eur_above_ma50     IC=+0.0100 t=+0.23 n=548
+  eur_ret1d          IC=-0.0090 t=-0.21 n=547
+  spx_ret1d          IC=+0.0054 t=+0.13 n=547
+  paxg_ret1d         IC=-0.0040 t=-0.09 n=547
+  ndx_ret5d          IC=+0.0014 t=+0.03 n=543
+
+=== ETH: grid de estrategias (sign/threshold) ===
+config                                   ShTR   ShTE    retTR    retTE  expTR
+ndx_ret20d|mom|sign                      1.84  -0.45   1.4346  -0.4455  0.964
+ndx_above_ma50|mom|sign                  1.65   0.12   1.1929    -0.16    1.0
+spx_above_ma50|mom|sign                  1.57  -0.33    1.094  -0.3946    1.0
+spx_ret5d|mom|sign                        1.5  -1.33   1.0118  -0.7068  0.991
+spx_ret20d|mom|sign                      1.43  -0.75    0.922  -0.5516  0.964
+dxy_above_ma50|mom|sign                  1.37  -0.18   0.8689  -0.3276    1.0
+eur_ret20d|mom|z0.5                      1.27  -1.25   0.6155   -0.601  0.595
+spx_ret20d|mom|z0.5                      1.13  -0.16   0.5212  -0.2485  0.511
+ndx_above_ma50|mom|z0.5                  0.95   1.16    0.342   0.6022  0.432
+ndx_ret20d|mom|z0.5                      0.91  -0.29   0.3868  -0.3033   0.54
+eur_ret5d|mom|z0.5                        0.9  -1.09   0.3623  -0.5475  0.531
+spx_above_ma50|mom|z0.5                  0.82   0.59   0.2774   0.1901  0.429
+spx_ret5d|mom|z0.5                       0.81  -0.96   0.3011   -0.494  0.505
+ndx_ret5d|mom|sign                       0.77  -1.01   0.3227  -0.6302  0.991
+paxg_ret20d|con|z0.5                      0.7   1.25     0.24   0.7787  0.549
+dxy_above_ma50|mom|z0.5                  0.67   0.53   0.2298   0.1486  0.659
+eur_ret20d|mom|sign                      0.65  -0.42   0.2353  -0.4326  0.964
+paxg_ret5d|con|z0.5                      0.51   0.51    0.136   0.1377  0.558
+paxg_above_ma50|mom|sign                 0.47  -1.26   0.1146  -0.6895    1.0
+ndx_ret5d|mom|z0.5                       0.45  -0.52   0.1087  -0.3623  0.516
+spx_ret1d|mom|sign                       0.36   -1.2   0.0603  -0.5926  0.686
+dxy_ret20d|mom|z0.5                      0.34  -0.13   0.0511  -0.2324  0.591
+paxg_ret5d|con|sign                      0.29   0.11   0.0024  -0.1665  0.976
+paxg_above_ma50|con|z0.5                 0.23   1.36   0.0019   0.5899  0.518
+eur_above_ma50|mom|z0.5                  0.21  -1.67  -0.0173  -0.6844  0.588
+dxy_ret20d|mom|sign                      0.17   0.07  -0.0648  -0.1938  0.964
+eur_ret1d|mom|sign                       0.12   -0.2  -0.0897  -0.3342  0.984
+eur_above_ma50|con|sign                  0.11   0.29  -0.0996   -0.052    1.0
+paxg_ret20d|con|sign                     0.08    0.9  -0.1137   0.4776  0.958
+ndx_ret1d|mom|z0.5                       0.05  -1.17   -0.042  -0.4836  0.359
+eur_ret5d|con|sign                       0.01   0.47  -0.1496   0.0817  0.985
+spx_ret1d|mom|z0.5                      -0.01  -0.91  -0.0723  -0.4269  0.372
+dxy_ret5d|con|sign                      -0.08  -0.92  -0.1895  -0.6033  0.989
+dxy_ret5d|mom|z0.5                      -0.09   0.93  -0.1014   0.4143  0.516
+paxg_ret1d|con|z0.5                      -0.1    1.2  -0.1348   0.6319  0.482
+eur_above_ma50|mom|sign                  -0.2   -0.4  -0.2449  -0.4252    1.0
+paxg_ret20d|mom|sign                    -0.23  -1.02  -0.2564   -0.633  0.958
+paxg_ret1d|mom|sign                     -0.24  -1.62  -0.2554  -0.7631  0.956
+dxy_ret5d|mom|sign                      -0.25   0.69  -0.2683   0.2697  0.989
+dxy_ret5d|con|z0.5                      -0.25  -1.23  -0.1555  -0.5322  0.516
+ndx_ret1d|mom|sign                      -0.28  -1.11  -0.2208  -0.5698  0.686
+eur_above_ma50|con|z0.5                 -0.29   1.56  -0.2322   1.0965  0.588
+dxy_ret20d|con|sign                     -0.29  -0.18  -0.2798  -0.3262  0.964
+eur_ret1d|con|z0.5                      -0.31  -0.11  -0.2007  -0.1906   0.46
+paxg_above_ma50|mom|z0.5                -0.34  -1.47  -0.2219  -0.4892  0.518
+eur_ret1d|mom|z0.5                      -0.35  -0.44  -0.2115  -0.3267   0.46
+eur_ret5d|mom|sign                      -0.36  -0.74  -0.3099   -0.547  0.985
+ndx_ret1d|con|sign                      -0.44   0.49  -0.2776   0.1199  0.686
+dxy_ret20d|con|z0.5                     -0.46  -0.01  -0.2709  -0.1731  0.591
+paxg_ret1d|mom|z0.5                     -0.55  -1.81  -0.2946  -0.6604  0.482
+paxg_ret1d|con|sign                     -0.55   0.98  -0.3784   0.5714  0.956
+paxg_ret5d|mom|sign                     -0.55  -0.32  -0.3822  -0.3879  0.976
+paxg_above_ma50|con|sign                 -0.6   1.18  -0.4055   0.7949    1.0
+spx_ret1d|con|z0.5                      -0.63   0.32  -0.2647   0.0381  0.372
+ndx_ret1d|con|z0.5                      -0.73   0.54  -0.2722   0.1549  0.359
+ndx_ret5d|con|z0.5                      -0.73   0.25  -0.3434  -0.0154  0.516
+dxy_above_ma50|con|z0.5                 -0.75  -0.61   -0.376  -0.3583  0.659
+eur_ret20d|con|sign                     -0.78   0.27  -0.4609  -0.0654  0.964
+paxg_ret5d|mom|z0.5                     -0.78  -0.77    -0.39  -0.4454  0.558
+paxg_ret20d|mom|z0.5                    -0.87  -1.38  -0.3912  -0.6401  0.549
+spx_above_ma50|con|z0.5                 -0.89  -0.63  -0.3464  -0.3966  0.429
+eur_ret1d|con|sign                      -0.93   -0.4  -0.5063  -0.4183  0.984
+ndx_above_ma50|con|z0.5                 -1.02  -1.23  -0.3803   -0.543  0.432
+ndx_ret20d|con|z0.5                     -1.05   0.11  -0.4732  -0.1113   0.54
+ndx_ret5d|con|sign                      -1.08   0.78  -0.5489   0.3513  0.991
+spx_ret1d|con|sign                      -1.12   0.59  -0.4776   0.1883  0.686
+spx_ret5d|con|z0.5                      -1.13   0.69  -0.4526    0.259  0.505
+eur_ret5d|con|z0.5                       -1.2   0.83  -0.4824   0.3656  0.531
+spx_ret20d|con|z0.5                     -1.28   0.03  -0.5078  -0.1605  0.511
+eur_ret20d|con|z0.5                     -1.39   1.12  -0.5277   0.6334  0.595
+dxy_above_ma50|con|sign                 -1.44   0.11  -0.6333  -0.1685    1.0
+spx_ret20d|con|sign                      -1.5   0.63  -0.6416   0.2134  0.964
+spx_above_ma50|con|sign                 -1.63   0.28  -0.6717  -0.0585    1.0
+ndx_above_ma50|con|sign                 -1.73  -0.18  -0.6905  -0.3268    1.0
+spx_ret5d|con|sign                      -1.79    1.1  -0.6991   0.7097  0.991
+ndx_ret20d|con|sign                     -1.92   0.35  -0.7176  -0.0124  0.964
+
+>> ELEGIDA EN TRAIN: ndx_ret20d|mom|sign -> TRAIN {'sharpe': 1.84, 'ann_ret': 1.4346, 'n_bars': 547, 'exposure': 0.964, 'turnover_yr': 36.7, 'maxdd': 0.247} | TEST {'sharpe': -0.45, 'ann_ret': -0.4455, 'n_bars': 547, 'exposure': 1.0, 'turnover_yr': 64.7, 'maxdd': 0.762}
+
+================ RESULTADOS e4 ================
+
+=== BTC: IC en TRAIN (feature D -> ret D+1 y D+1..D+7) ===
+  supply_g7d       IC1=+0.0517(t=+1.20) IC7=+0.0242(t=+0.56) n=540
+  supply_g7d_z     IC1=+0.0654(t=+1.24) IC7=+0.0248(t=+0.47) n=361
+  supply_g30d      IC1=+0.0335(t=+0.76) IC7=+0.0291(t=+0.66) n=517
+  supply_g30d_z    IC1=+0.0676(t=+1.24) IC7=+0.0785(t=+1.44) n=338
+  supply_g90d      IC1=-0.0360(t=-0.77) IC7=-0.1352(t=-2.91) n=457
+  supply_g90d_z    IC1=+0.0028(t=+0.05) IC7=-0.0273(t=-0.45) n=278
+
+=== BTC: grid de estrategias ===
+config                               ShTR   ShTE    retTR    retTE  expTR
+supply_g30d|mom                      1.77   0.42   1.0771   0.0905  0.943
+supply_g7d|mom                       1.54   0.26   0.8685   0.0178  0.985
+supply_g90d|mom                      1.33   0.03   0.6646  -0.0829  0.834
+supply_g7d_z|mom                     0.78   0.34    0.277   0.0559  0.659
+supply_g30d_z|mom                    0.31   0.02   0.0433  -0.0877  0.617
+supply_g90d_z|con                    -0.0   1.44    -0.07   0.7183  0.507
+supply_g90d_z|mom                   -0.01  -1.46  -0.0708  -0.5269  0.507
+supply_g30d_z|con                   -0.34  -0.07  -0.2044  -0.1203  0.617
+supply_g7d_z|con                    -0.93  -0.57  -0.3882  -0.2962  0.659
+supply_g90d|con                     -1.33  -0.05  -0.5183  -0.1135  0.834
+supply_g7d|con                      -1.72  -0.42  -0.6111  -0.2485  0.985
+supply_g30d|con                     -1.81  -0.46  -0.6258  -0.2616  0.943
+
+>> ELEGIDA EN TRAIN: supply_g30d|mom -> TRAIN {'sharpe': 1.77, 'ann_ret': 1.0771, 'n_bars': 547, 'exposure': 0.943, 'turnover_yr': 18.0, 'maxdd': 0.262} | TEST {'sharpe': 0.42, 'ann_ret': 0.0905, 'n_bars': 547, 'exposure': 1.0, 'turnover_yr': 15.3, 'maxdd': 0.327}
+
+=== ETH: IC en TRAIN (feature D -> ret D+1 y D+1..D+7) ===
+  supply_g7d       IC1=+0.0751(t=+1.75) IC7=+0.0882(t=+2.05) n=540
+  supply_g7d_z     IC1=+0.0852(t=+1.62) IC7=+0.1120(t=+2.14) n=361
+  supply_g30d      IC1=+0.0343(t=+0.78) IC7=+0.0603(t=+1.37) n=517
+  supply_g30d_z    IC1=+0.0352(t=+0.65) IC7=+0.0760(t=+1.40) n=338
+  supply_g90d      IC1=-0.0002(t=-0.00) IC7=-0.0456(t=-0.97) n=457
+  supply_g90d_z    IC1=+0.0204(t=+0.34) IC7=+0.0668(t=+1.11) n=278
+
+=== ETH: grid de estrategias ===
+config                               ShTR   ShTE    retTR    retTE  expTR
+supply_g7d|mom                       1.63   0.41   1.1685   0.0357  0.985
+supply_g30d|mom                      1.34   0.33    0.831  -0.0192  0.943
+supply_g7d_z|mom                     1.07    0.7   0.5283   0.2733  0.659
+supply_g90d|mom                      0.93  -0.01   0.4394  -0.2332  0.834
+supply_g90d_z|mom                    0.23  -1.99  -0.0045  -0.8175  0.507
+supply_g30d_z|mom                     0.1  -0.06  -0.0789  -0.2641  0.617
+supply_g30d_z|con                   -0.12   0.03  -0.1727  -0.2141  0.617
+supply_g90d_z|con                   -0.24   1.98  -0.2063   2.2093  0.507
+supply_g90d|con                     -0.93   -0.0  -0.4946  -0.2361  0.834
+supply_g7d_z|con                    -1.19  -0.84  -0.5335  -0.5795  0.659
+supply_g30d|con                     -1.38  -0.36  -0.6142  -0.4085  0.943
+supply_g7d|con                      -1.78   -0.5  -0.6969  -0.4679  0.985
+
+>> ELEGIDA EN TRAIN: supply_g7d|mom -> TRAIN {'sharpe': 1.63, 'ann_ret': 1.1685, 'n_bars': 547, 'exposure': 0.985, 'turnover_yr': 71.4, 'maxdd': 0.334} | TEST {'sharpe': 0.41, 'ann_ret': 0.0357, 'n_bars': 547, 'exposure': 1.0, 'turnover_yr': 58.1, 'maxdd': 0.674}
+
+================ RESULTADOS e5 ================
+=== Estructura (full sample) ===
+symbol          vol$/d(M)  volAnn  kurt1h  corrBTC  ac1_1h  ac1_1d  n_dias
+BTCUSDT           13750.5    0.47    11.0     1.00  -0.025  -0.050    1095
+ETHUSDT            8664.4    0.66    16.7     0.81  -0.024  -0.040    1095
+SOLUSDT            2608.8    0.85    10.5     0.74  -0.017  -0.018    1095
+XRPUSDT             864.2    0.88    66.8     0.56   0.004   0.008    1095
+BNBUSDT             411.7    0.52    14.3     0.66  -0.031  -0.018    1095
+DOGEUSDT            717.3    0.88    19.1     0.76  -0.022   0.086    1095
+ADAUSDT             260.1    0.92    79.2     0.69  -0.021   0.062    1095
+AVAXUSDT            236.5    0.88     9.4     0.70  -0.011   0.045    1095
+LTCUSDT             182.2    0.72    30.9     0.60  -0.037  -0.053    1095
+DOTUSDT             127.1    0.82    27.9     0.65  -0.034   0.057    1095
+LINKUSDT            243.1    0.87    11.9     0.67  -0.012  -0.020    1095
+NEARUSDT            131.7    1.04     9.2     0.62  -0.023  -0.067    1095
+APTUSDT              99.9    0.91    12.7     0.62  -0.032  -0.040    1095
+ARBUSDT             122.2    0.94    17.6     0.63  -0.002  -0.020    1095
+OPUSDT              115.9    1.03    23.7     0.56  -0.007  -0.014    1095
+INJUSDT              89.2    1.04    15.8     0.64  -0.016  -0.026    1095
+FETUSDT              80.5    1.17     9.8     0.59  -0.047  -0.005    1095
+SUIUSDT             370.3    1.05    10.4     0.60  -0.033   0.003    1095
+TIAUSDT             120.4    1.25    17.5     0.51   0.000  -0.023     958
+WIFUSDT             327.4    1.56    19.5     0.61   0.016   0.053     879
+1000PEPEUSDT        598.9    1.34    26.2     0.66  -0.020   0.086    1095
+1000SHIBUSDT        117.8    0.91    40.1     0.65  -0.009   0.042    1095
+1000BONKUSDT        111.6    1.49    13.5     0.60  -0.009   0.064     936
+
+=== Señal E1 (imb_ma4 contrarian) por símbolo: IC 1h en TRAIN ===
+  BTCUSDT        [MAJOR  ] IC=-0.0468 t=-5.3 n=12910
+  ETHUSDT        [MAJOR  ] IC=-0.0512 t=-5.8 n=12910
+  SOLUSDT        [MAJOR  ] IC=-0.0398 t=-4.5 n=12910
+  XRPUSDT        [MAJOR  ] IC=-0.0377 t=-4.3 n=12910
+  BNBUSDT        [MAJOR  ] IC=-0.0324 t=-3.7 n=12910
+  DOGEUSDT       [ALT    ] IC=-0.0324 t=-3.7 n=12910
+  ADAUSDT        [ALT    ] IC=-0.0063 t=-0.7 n=12910
+  AVAXUSDT       [ALT    ] IC=-0.0228 t=-2.6 n=12910
+  LTCUSDT        [ALT    ] IC=-0.0227 t=-2.6 n=12910
+  DOTUSDT        [ALT    ] IC=-0.0187 t=-2.1 n=12910
+  LINKUSDT       [ALT    ] IC=-0.0255 t=-2.9 n=12910
+  NEARUSDT       [ALT    ] IC=-0.0272 t=-3.1 n=12910
+  APTUSDT        [ALT    ] IC=-0.0403 t=-4.6 n=12910
+  ARBUSDT        [ALT    ] IC=-0.0460 t=-5.2 n=12910
+  OPUSDT         [ALT    ] IC=-0.0360 t=-4.1 n=12910
+  INJUSDT        [ALT    ] IC=-0.0309 t=-3.5 n=12910
+  FETUSDT        [ALT    ] IC=-0.0318 t=-3.6 n=12910
+  SUIUSDT        [ALT_NEW] IC=-0.0332 t=-3.8 n=12910
+  TIAUSDT        [ALT_NEW] IC=-0.0355 t=-3.5 n=9604
+  WIFUSDT        [ALT_NEW] IC=-0.0159 t=-1.4 n=7712
+  1000PEPEUSDT   [ALT_NEW] IC=-0.0286 t=-3.3 n=12910
+  1000SHIBUSDT   [ALT_NEW] IC=-0.0117 t=-1.3 n=12910
+  1000BONKUSDT   [ALT_NEW] IC=-0.0243 t=-2.3 n=9080
+
+IC medio TRAIN majors: -0.0416 | alts: -0.0272
+
+=== Contrarian de flujo en ALTS (EW), costos 0.10%/lado ===
+config                    ShTR    ShTE    retTR    retTE
+imb_ma24|con|z1.5        -3.11   -3.82  -0.3932  -0.4823
+imb_ma24|con|z1.0        -3.25    -3.5  -0.5685  -0.6287
+imb_ma4|con|z1.5         -7.61   -7.98   -0.629  -0.7111
+imb_ma4|con|z1.0          -8.5   -8.15  -0.8623   -0.892
+
+=== Igual pero BRUTO (sin costos), mejor config de train ===
+  TRAIN: Sharpe bruto 0.98
+  TEST: Sharpe bruto -0.40
+
+=== IC de ret24h -> fwd ret24h (reversión<0/momentum>0), TRAIN ===
+  MAJORS: IC medio -0.0391 (n símbolos 5)
+  ALTS: IC medio -0.0238 (n símbolos 18)
+
+================ RESULTADOS e6 ================
+=== E5b: momentum diario, cesta MEME vs MAJORS (EW, 0.10%/lado memes, 0.06% majors) ===
+grupo|lag                ShTR   ShTE    retTR    retTE
+MEME|mom3d               1.63  -0.83   2.0439  -0.6708
+MEME|mom7d               1.42  -0.08   1.4863  -0.3403
+MAJORS|mom3d             0.88  -1.02   0.3403  -0.4808
+MAJORS|mom7d             0.52   -0.3   0.1362  -0.2372
+MEME|mom1d               0.18   0.55  -0.2331   0.1186
+MAJORS|mom1d            -0.55   0.27  -0.2971   0.0156
+>> MEME elegida en train: MEME|mom3d -> ShTR 1.63, ShTE -0.83
+
+=== E6: POC (volume profile) del día anterior como nivel de reversión ===
+  BTCUSDT    IC1h=-0.0290(t-3.3)  IC6h=-0.0294(t-3.3)
+  ETHUSDT    IC1h=-0.0371(t-4.2)  IC6h=-0.0129(t-1.5)
+  SOLUSDT    IC1h=-0.0319(t-3.6)  IC6h=-0.0203(t-2.3)
+  XRPUSDT    IC1h=-0.0462(t-5.3)  IC6h=-0.0480(t-5.5)
+  IC medio 1h TRAIN: -0.0361 (<0 = reversión hacia el POC; comparar con costo 12bp ida-vuelta)
+
+=== DIAG: glsr contrarian diario (z0.5, elegido en train dentro de su familia) ===
+  Por símbolo TRAIN: {'BTC': 1.22, 'ETH': 0.28, 'SOL': 0.93, 'XRP': 0.98, 'BNB': 0.39}
+  Por símbolo TEST:  {'BTC': 0.12, 'ETH': 0.17, 'SOL': -0.0, 'XRP': 1.37, 'BNB': 0.2}
+  Portafolio TRAIN: Sharpe 1.34, ret 0.4368
+  Portafolio TEST:  Sharpe 0.61, ret 0.1654
+  TEST 1ª mitad: -0.28 | TEST 2ª mitad: 1.43
+  t-stat del PnL diario TEST: 0.74; IC90% bootstrap del Sharpe TEST: [-0.70, 1.92]
+

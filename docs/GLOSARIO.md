@@ -1151,3 +1151,47 @@ la salud del último `equity_snapshots.ts`: si es más viejo que
 drawdown = (peak_wallet − equity)/peak_wallet (high-water mark de `session_state`),
 PnL del día = equity − day_start_wallet. No persiste métricas redundantes: las
 deriva al vuelo de las tablas base (single source of truth).
+
+## Investigación de posicionamiento (2026-07): flujo taker + OI + L/S ratio
+
+- **Binance Vision**: repositorio público de datos bulk de Binance
+  (data.binance.vision). A diferencia de la API REST (que solo sirve ~30 días
+  de open interest / long-short ratio), publica el histórico COMPLETO de
+  "metrics" a 5 minutos desde ~2021-12, en un zip por día y símbolo, gratis.
+  Este hallazgo de infraestructura desbloqueó el backtest de las hipótesis de
+  posicionamiento que `quant_hypotheses` documentaba como no-verificables.
+  Descargador: `src/data/download_metrics.py`.
+- **Open interest (OI)**: número total de contratos de futuros ABIERTOS (cada
+  contrato tiene un largo y un corto; el OI cuenta pares vivos). Sube cuando
+  entra dinero nuevo (se abren posiciones), baja cuando se cierran. La lectura
+  clásica: movimiento de precio CON OI subiendo = convicción nueva; CON OI
+  bajando = cierre de posiciones (movimiento "hueco"). En nuestros datos esa
+  lectura no tuvo edge neto de costos en ninguna dirección.
+- **CVD (cumulative volume delta) / desequilibrio taker**: suma acumulada de
+  (volumen comprado a mercado − volumen vendido a mercado). Las klines de
+  Binance traen `taker_buy_base` (cuánto del volumen fue compra agresiva), así
+  que `imb = (2·taker_buy − vol)/vol ∈ [−1,+1]` es un proxy de CVD gratis, sin
+  stream L2. Hallazgo 2026-07: el imb tiene IC contrarian REAL a 1h (t≈−4…−6
+  en los 5 majors: la compra agresiva intensa precede retornos NEGATIVOS) pero
+  de magnitud ~0.04, insuficiente contra 12 bps de ida-vuelta taker — el mismo
+  patrón "señal real, anti-económica" de la reversión a VWAP.
+- **Long/short ratio (cuentas vs top traders)**: Binance publica dos ratios:
+  `count_long_short_ratio` (proporción de CUENTAS retail long vs short, el
+  "crowd") y `sum_toptrader_long_short_ratio` (posiciones de los top traders
+  por margen). La hipótesis "fade al retail crowd" (short cuando el crowd está
+  anormalmente long) fue la única familia positiva en train Y test (2.01/0.30
+  a 1h; variante diaria 1.34/0.61) — pero el diagnóstico la degrada a ruido:
+  t-stat 0.74, concentrada en XRP y en la 2ª mitad del test. Vigilable, no
+  operable.
+- **Data snooping / selección sobre el test set**: elegir la configuración
+  ganadora mirando su desempeño en el conjunto de prueba. Es el error que
+  fabricó el falso "SMA 50/200 @ 4h sobrevive OOS" (run_ma_split ordenaba por
+  la 2ª mitad). Protocolo correcto, ahora centralizado en
+  `backtest/positioning.py::split_by_date` + runner `run_positioning.py`:
+  elegir SOLO con train (< `positioning_research.train_test_split_date`),
+  medir UNA vez en test, y reportar el grid completo para ver la distribución.
+- **Researcher degrees of freedom**: cada decisión que el investigador toma
+  DESPUÉS de ver resultados (probar otra frecuencia, otro umbral, otra cesta)
+  añade una oportunidad de falso positivo aunque cada test individual sea
+  honesto. Por eso el informe 2026-07-06 declara qué familias se definieron
+  tras ver resultados previos (E2b tras E2) y descuenta sus conclusiones.

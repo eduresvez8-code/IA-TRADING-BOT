@@ -1217,3 +1217,69 @@ def test_score_squash_factor_invalido_es_rechazado():
     with pytest.raises(ValidationError):
         QuantConfig(ema_fast_period=9, ema_slow_period=21, rsi_period=14,
                     ema_weight=0.6, score_squash_factor=5000.0)
+
+
+# --- PositioningResearchConfig (investigación de posicionamiento 2026-07) ---
+
+def _valid_positioning_kwargs(**overrides):
+    base = dict(
+        zscore_window_bars=240,
+        zscore_window_days=60,
+        imbalance_ma_bars_grid=[4, 24, 72],
+        entry_threshold_grid=[0.5, 1.0],
+        cost_per_side_pct=0.06,
+        train_test_split_date="2024-12-15T00:00:00Z",
+        metrics_ffill_limit_bars=12,
+    )
+    base.update(overrides)
+    return base
+
+
+def test_positioning_research_en_settings_yaml():
+    # La sección debe existir y cargar tipada: es la Vía B del estudio E1/E2/E2b.
+    s = load_settings()
+    pr = s.positioning_research
+    assert pr.zscore_window_bars == 240
+    assert pr.imbalance_ma_bars_grid == [4, 24, 72]
+    assert pr.cost_per_side_pct == 0.06
+    # El corte train/test lleva zona horaria explícita (anti-corte silencioso).
+    assert pr.train_test_split_date.endswith("Z")
+    # Nuevo dir de storage para las métricas de Binance Vision.
+    assert s.storage.metrics_dir
+
+
+def test_positioning_research_valida():
+    from src.core.config import PositioningResearchConfig
+    pr = PositioningResearchConfig(**_valid_positioning_kwargs())
+    assert pr.zscore_window_days == 60
+
+
+def test_positioning_umbral_cero_es_rechazado():
+    # Umbral 0 = "siempre en mercado": deja de ser un test de umbral y además
+    # multiplica el turnover; el validador lo ataja como typo.
+    from src.core.config import PositioningResearchConfig
+    with pytest.raises(ValidationError):
+        PositioningResearchConfig(
+            **_valid_positioning_kwargs(entry_threshold_grid=[0.0]))
+
+
+def test_positioning_ma_bars_fuera_de_rango_es_rechazado():
+    from src.core.config import PositioningResearchConfig
+    with pytest.raises(ValidationError):
+        PositioningResearchConfig(
+            **_valid_positioning_kwargs(imbalance_ma_bars_grid=[0]))
+    with pytest.raises(ValidationError):
+        PositioningResearchConfig(
+            **_valid_positioning_kwargs(imbalance_ma_bars_grid=[501]))
+
+
+def test_positioning_split_date_naive_es_rechazada():
+    # Sin tz el corte se compararía mal contra índices UTC → partiría el dataset
+    # en otro punto del que se cree. Mejor morir al cargar la config.
+    from src.core.config import PositioningResearchConfig
+    with pytest.raises(ValidationError):
+        PositioningResearchConfig(
+            **_valid_positioning_kwargs(train_test_split_date="2024-12-15"))
+    with pytest.raises(ValidationError):
+        PositioningResearchConfig(
+            **_valid_positioning_kwargs(train_test_split_date="no-es-fecha"))

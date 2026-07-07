@@ -272,6 +272,7 @@ storage:
   candles_dir: "data/candles"
   funding_dir: "data/funding"
   universe_dir: "data/universe"
+  metrics_dir: "data/metrics"   # Binance Vision: OI + long/short ratios 5m (download_metrics)
 
 # --- Dashboard de observabilidad en tiempo real (proceso READ-ONLY aparte) ---
 # Lee la misma SQLite que escribe el engine (modo `ro`); jamás envía órdenes.
@@ -361,3 +362,18 @@ quant_hypotheses:
   rsi_reversion_oversold: 30.0
   rsi_reversion_overbought: 70.0
   rsi_reversion_trend_sma: 200
+
+# --- Investigación de posicionamiento (2026-07): flujo taker + OI + L/S ratio ---
+# Research puro (backtest/run_positioning.py). NO opera el bot en vivo. Binance
+# Vision SÍ tiene el histórico completo de OI/long-short (5m, gratis) — eso
+# desbloqueó lo que quant_hypotheses documentaba como no-verificable. Resultado
+# 2026-07-06: ninguna familia pasó el listón OOS (ver docs del informe); los
+# parámetros quedan para reproducir el estudio. Cero Hardcoding: todo vive aquí.
+positioning_research:
+  zscore_window_bars: 240             # ventana z-score a 1h (10 días): "sorpresa" vs su historia
+  zscore_window_days: 60              # ventana z-score de la variante diaria (E2b)
+  imbalance_ma_bars_grid: [4, 24, 72] # medias del desequilibrio taker a barrer (velas 1h)
+  entry_threshold_grid: [0.5, 1.0]    # umbrales |z| de entrada del barrido
+  cost_per_side_pct: 0.06             # comisión taker 0.04 + slippage 0.02 (aislado del motor)
+  train_test_split_date: "2024-12-15T00:00:00Z"  # corte train/test FIJO (anti data-snooping)
+  metrics_ffill_limit_bars: 12        # huecos 5m→1h a rellenar como máximo (12h)
