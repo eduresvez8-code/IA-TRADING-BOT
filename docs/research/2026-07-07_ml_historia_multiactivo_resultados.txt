@@ -1,0 +1,329 @@
+# Protocolo V3 — fijado ANTES de mirar cualquier resultado (2026-07-07)
+
+Tres frentes: A (ML), B (histórico extendido), C (otras clases de activo).
+Regla madre: ninguna elección de configuración puede usar datos del conjunto
+donde se reporta el resultado final. El test de cada frente se corre UNA vez.
+
+## Frente A — Gradient boosting sobre features 1h (5 majors)
+
+Datos: klines 1h perp (con taker_buy_base) + métricas 5m→1h (OI, L/S ratios,
+taker vol ratio) + funding, 2023-06-16 → 2026-06-15, BTC/ETH/SOL/XRP/BNB.
+
+Split de 3 vías por calendario (fijado AHORA):
+- TRAIN:      open_time <  2025-03-01 00:00 UTC   (~20.5 meses)
+- VALIDATION: 2025-03-01 <= t < 2025-11-01        (8 meses)
+- TEST:       t >= 2025-11-01                     (~7.5 meses) — se mide UNA vez
+- Purga de 24 barras a cada lado de las fronteras (el target mira hasta 4 barras
+  al futuro; 24 da margen).
+
+Modelo: LightGBM regresor, pooled 5 símbolos (symbol como categórica).
+Targets candidatos (elección en VALIDATION): ret fwd 1h, ret fwd 4h.
+Grid de hiperparámetros (fijado ahora, se evalúa TODO el grid en validation):
+  num_leaves {15, 31, 63} × learning_rate {0.03, 0.1} ×
+  min_child_samples {200, 1000} × feature_fraction {0.6, 0.9}
+  n_estimators max 3000 con early stopping (50 rondas) sobre RMSE de validation.
+Familia de estrategia (fijada ahora): portafolio EW 5 símbolos;
+  pos_t = sign(pred_t) si |pred_t| >= umbral τ, si no 0.
+  τ = cuantil de |pred| en TRAIN ∈ {0%, 50%, 70%, 80%, 90%}. Elección en VALIDATION.
+Métrica de selección en validation: Sharpe NETO de la estrategia (costos 0.06%/lado);
+  desempate por IC de rango (Spearman pred vs ret fwd).
+Criterio de "vivo": Sharpe TEST neto > 0.5 Y signo consistente validation/test.
+Se reporta: IC y Sharpe en TRAIN, VALIDATION y TEST (los tres), grid completo de
+validation, importancia de features (gain) del modelo final.
+
+## Frente B — Histórico extendido (BTC/ETH spot 1h, 2017-08 → 2026-06)
+
+Fuente: Binance Vision spot monthly klines 1h (incluyen taker_buy_base).
+ACLARACIÓN: es SPOT, no perp (no hay funding antes de 2019-09 y el perp de
+Vision empieza 2020); dinámica de precio/volumen sirve para señales de precio puro.
+
+Hipótesis re-testeadas (las 3 con mérito bruto previo, definiciones CONGELADAS
+de la investigación anterior, cero re-tuning):
+1. Flujo taker contrarian: imb = taker_buy/volume − 0.5; feature imb_ma4;
+   señal contrarian z1.0 sobre z-score rolling 168h (igual que E1).
+2. Reversión a VWAP: VWAP anclado al día UTC calculado con barras 1h
+   (proxy declarado del VWAP 5m original); feature = (close − vwap)/vwap,
+   z-score 168h, señal contrarian z1.0.
+3. Reversión al POC: POC del día anterior = bin de precio (25 bins del rango
+   low-high del día) con máximo volumen, precio típico (H+L+C)/3 por barra 1h
+   (proxy declarado del perfil 5m); feature = (close − poc)/poc, contrarian z1.0.
+
+Eras fijadas AHORA: E1 2017-08→2019-12 | E2 2020-01→2022-12 | E3 2023-01→2026-06.
+NOTA: E3 solapa el periodo donde estas configs fueron descubiertas → E3 no es
+evidencia fresca; la pregunta viva es si E1/E2 muestran más edge (mercado joven).
+Se reporta por era: IC Spearman (feature→ret t+1) y Sharpe bruto Y neto
+(0.06%/lado, costo perp actual, declarado como comparativo — el spot de 2017
+costaba 0.1%/lado, es decir los netos tempranos reales serían PEORES).
+Sin criterio de "vivo" aquí: es diagnóstico de decaimiento, no selección.
+
+## Frente C — Otras clases de activo (diario, décadas)
+
+Fuentes: stooq.com CSV diario gratis (^spx, eurusd, xauusd, cl.f) + FRED CSV
+(DTB3 tasa 3m EEUU, IR3TIB01EZM156N tasa 3m eurozona) — $0, sin API key.
+
+Split fijado AHORA: TRAIN < 2010-01-01 | TEST >= 2010-01-01 (se mide UNA vez).
+
+Estrategias (familias de la literatura, grid fijado ahora, elección solo en TRAIN):
+1. Momentum de series de tiempo (TSMOM): rebalance mensual,
+   pos = sign(ret de los últimos L meses excluyendo el último mes),
+   L ∈ {3, 6, 12}. Por activo y portafolio EW.
+2. Reversión de largo plazo: pos = −sign(ret de los últimos L meses),
+   L ∈ {36, 60}, rebalance mensual.
+3. Carry FX (solo EURUSD, limitación declarada): pos mensual =
+   sign(tasa3m_EUR − tasa3m_US) aplicada al retorno de EURUSD
+   (long la divisa de tasa alta). Sin grid (una sola definición).
+Costos: 5 pb por lado, plano, para todo (retail conservador; turnover mensual).
+Criterio de "vivo": Sharpe TEST neto > 0.4 Y mismo signo en train
+Y consistencia con la literatura publicada.
+
+## Reglas transversales
+- Todo resultado se reporta completo (grids enteros), no solo el ganador.
+- Ningún dato de test entra en ninguna decisión de ningún frente.
+- Costos siempre explícitos.
+
+================ FRENTE A: RESULTADOS ================
+
+filas train=74,760 val=29,280 test=27,125
+fit ('fwd_ret_1', 15, 0.03, 200, 0.6) iter=18 ic_va=0.0287 sh_va(q0)=1.35
+=== GRID COMPLETO (ordenado por Sharpe VALIDATION) — top 25 ===
+   target  leaves   lr  mcs  ff  tau_q  best_iter  ic_tr   ic_va  sh_tr  sh_va  ret_va  expo_va
+fwd_ret_4      15 0.03 1000 0.6    0.0          9 0.1090  0.0086   2.61   1.56  0.9899    1.000
+fwd_ret_4      15 0.10 1000 0.6    0.0          3 0.0974  0.0114   3.18   1.39  0.8203    1.000
+fwd_ret_4      31 0.10  200 0.9    0.5          2 0.0935  0.0089   4.91   1.39  0.5433    0.503
+fwd_ret_1      15 0.03  200 0.6    0.0         18 0.1012  0.0287   6.38   1.35  0.7656    1.000
+fwd_ret_4      63 0.03  200 0.6    0.0          1 0.1080 -0.0067   1.69   1.32  0.8170    1.000
+fwd_ret_4      15 0.10 1000 0.6    0.5          3 0.0974  0.0114   3.50   1.21  0.4836    0.559
+fwd_ret_4      15 0.03  200 0.9    0.0          2 0.0607 -0.0088   2.36   1.16  0.6474    1.000
+fwd_ret_4      63 0.03  200 0.9    0.0          6 0.1933  0.0151   5.15   1.16  0.5822    1.000
+fwd_ret_4      31 0.10  200 0.6    0.0          1 0.0775 -0.0091   2.86   1.16  0.6400    1.000
+fwd_ret_4      31 0.03  200 0.9    0.0          8 0.1261  0.0204   4.37   1.15  0.5952    1.000
+fwd_ret_4      31 0.10  200 0.9    0.7          2 0.0935  0.0089   4.98   1.13  0.3914    0.464
+fwd_ret_4      15 0.10  200 0.6    0.9          1 0.0600 -0.0011   2.47   1.12  0.5725    0.962
+fwd_ret_4      15 0.10  200 0.6    0.8          1 0.0600 -0.0011   2.47   1.12  0.5725    0.962
+fwd_ret_4      15 0.10  200 0.6    0.7          1 0.0600 -0.0011   2.47   1.12  0.5725    0.962
+fwd_ret_4      15 0.10  200 0.6    0.5          1 0.0600 -0.0011   2.47   1.12  0.5725    0.962
+fwd_ret_4      15 0.03  200 0.9    0.5          2 0.0607 -0.0088   3.72   1.09  0.4062    0.519
+fwd_ret_4      15 0.03  200 0.9    0.7          2 0.0607 -0.0088   3.72   1.09  0.4062    0.519
+fwd_ret_4      15 0.03  200 0.9    0.8          2 0.0607 -0.0088   3.72   1.09  0.4062    0.519
+fwd_ret_4      15 0.10  200 0.6    0.0          1 0.0600 -0.0011   2.52   1.08  0.5703    1.000
+fwd_ret_4      31 0.03  200 0.9    0.5          8 0.1261  0.0204   5.76   1.02  0.3597    0.501
+fwd_ret_4      15 0.03 1000 0.9    0.0          6 0.0970  0.0080   2.58   1.02  0.5024    1.000
+fwd_ret_1      15 0.03  200 0.9    0.0         10 0.0910  0.0269   4.98   1.01  0.4872    1.000
+fwd_ret_4      15 0.10  200 0.9    0.0          1 0.0455 -0.0080   2.33   1.00  0.5022    1.000
+fwd_ret_4      63 0.10  200 0.9    0.0          2 0.1656  0.0274   5.27   0.98  0.4304    1.000
+fwd_ret_4      31 0.03  200 0.6    0.0          3 0.1135  0.0015   3.02   0.94  0.4512    1.000
+
+=== distribución de sh_va ===
+count    240.000
+mean      -0.927
+std        1.575
+min       -5.850
+25%       -1.968
+50%       -0.615
+75%        0.302
+max        1.560
+
+>> CAMPEÓN elegido en VALIDATION:
+target       fwd_ret_4
+leaves              15
+lr                0.03
+mcs               1000
+ff                 0.6
+tau_q              0.0
+best_iter            9
+ic_tr            0.109
+ic_va           0.0086
+sh_tr             2.61
+sh_va             1.56
+ret_va          0.9899
+expo_va            1.0
+
+=== TEST (una sola pasada) ===
+IC test: -0.0272
+Estrategia test: {'sharpe': -1.77, 'ann_ret': -0.6385, 'expo': 1.0}
+B&H EW TRAIN: Sharpe 1.69, ret_ann 126.29%
+B&H EW VAL: Sharpe 1.32, ret_ann 81.86%
+B&H EW TEST: Sharpe -1.82, ret_ann -67.94%
+
+=== Importancia (gain) top 20 ===
+    feature     gain  splits  gain_pct
+ btc_ret_24 0.700836      19     32.54
+    atr_pct 0.166211       2      7.72
+      bb_bw 0.152271       4      7.07
+oi_val_volq 0.134782       5      6.26
+     ret_72 0.119524      10      5.55
+     glsr_z 0.107367       8      4.98
+   c_sma200 0.086443       8      4.01
+ smart_dumb 0.077013       4      3.58
+   rvol_168 0.058440       5      2.71
+ range_ma24 0.057454       5      2.67
+    ret_168 0.055928       3      2.60
+     ret_24 0.047620       5      2.21
+        dow 0.047451       6      2.20
+ rvol_ratio 0.041715       4      1.94
+    hod_cos 0.040277       5      1.87
+  cvd_div24 0.035871       5      1.67
+    hod_sin 0.028779       3      1.34
+     fund_z 0.028367       4      1.32
+    ema9_21 0.026124       4      1.21
+      ret_4 0.021814       2      1.01
+
+=== SHAP medio |contribución| top 20 (validation) ===
+glsr_z         0.856
+btc_ret_24     0.843
+ret_72         0.313
+hod_cos        0.280
+bb_bw          0.234
+oi_val_volq    0.218
+c_sma200       0.194
+smart_dumb     0.173
+dow            0.158
+atr_pct        0.151
+ret_24         0.124
+cvd_div24      0.111
+ema9_21        0.108
+rvol_ratio     0.106
+range_ma24     0.103
+btc_ret_1      0.097
+fund_z         0.094
+donch_168      0.073
+rvol_168       0.069
+ret_4          0.066 (en pb de retorno predicho)
+
+================ FRENTE B: RESULTADOS ================
+
+=== FLUJO TAKER imb_ma4 (contrarian, z168 umbral 1.0, congelada) ===
+era            sym              IC      t  ShBRUTO   ShNETO   to/yr
+E1 2017-2019   BTCUSDT     -0.0145   -2.1     0.18    -2.09    1924
+E2 2020-2022   BTCUSDT     -0.0356   -5.8     0.68    -2.15    1999
+E3 2023-2026   BTCUSDT     -0.0372   -6.5     0.68    -4.03    2063
+E1 2017-2019   ETHUSDT     -0.0258   -3.7     0.63    -1.31    1912
+E2 2020-2022   ETHUSDT     -0.0242   -3.9    -0.50    -2.87    2097
+E3 2023-2026   ETHUSDT     -0.0255   -4.5    -0.54    -4.08    1975
+  -- portafolio EW BTC+ETH (neto) --
+  E1 2017-2019   Sharpe neto  -2.28  ret anual  -63.22%
+  E2 2020-2022   Sharpe neto  -3.25  ret anual  -72.40%
+  E3 2023-2026   Sharpe neto  -5.23  ret anual  -71.05%
+
+=== REVERSIÓN A VWAP (contrarian, z168 umbral 1.0, congelada) ===
+era            sym              IC      t  ShBRUTO   ShNETO   to/yr
+E1 2017-2019   BTCUSDT     -0.0570   -8.2     1.32     0.06    1303
+E2 2020-2022   BTCUSDT     -0.0426   -6.9    -0.25    -1.94    1381
+E3 2023-2026   BTCUSDT     -0.0515   -9.0    -0.03    -2.82    1364
+E1 2017-2019   ETHUSDT     -0.0438   -6.3     0.96    -0.17    1384
+E2 2020-2022   ETHUSDT     -0.0267   -4.3    -0.81    -2.21    1431
+E3 2023-2026   ETHUSDT     -0.0462   -8.1    -0.24    -2.43    1377
+  -- portafolio EW BTC+ETH (neto) --
+  E1 2017-2019   Sharpe neto  -0.07  ret anual  -20.66%
+  E2 2020-2022   Sharpe neto  -2.30  ret anual  -72.15%
+  E3 2023-2026   Sharpe neto  -2.92  ret anual  -60.05%
+
+=== REVERSIÓN AL POC (contrarian, z168 umbral 1.0, congelada) ===
+era            sym              IC      t  ShBRUTO   ShNETO   to/yr
+E1 2017-2019   BTCUSDT     -0.0151   -2.2     0.63    -0.06     768
+E2 2020-2022   BTCUSDT     -0.0238   -3.9    -0.44    -1.39     776
+E3 2023-2026   BTCUSDT     -0.0327   -5.7     0.24    -1.36     807
+E1 2017-2019   ETHUSDT     -0.0185   -2.7     0.42    -0.17     739
+E2 2020-2022   ETHUSDT     -0.0150   -2.4    -0.75    -1.51     811
+E3 2023-2026   ETHUSDT     -0.0312   -5.5     0.03    -1.25     821
+  -- portafolio EW BTC+ETH (neto) --
+  E1 2017-2019   Sharpe neto  -0.14  ret anual  -23.99%
+  E2 2020-2022   Sharpe neto  -1.65  ret anual  -61.30%
+  E3 2023-2026   Sharpe neto  -1.49  ret anual  -38.86%
+
+================ FRENTE C: RESULTADOS ================
+=== Datos (mensual) ===
+  spx      1927-12-31 -> 2026-07-31  n=1184
+  eurusd   1999-01-31 -> 2026-07-31  n=331
+  gold     2000-08-31 -> 2026-07-31  n=312
+  wti      1986-01-31 -> 2026-06-30  n=486
+
+=== TSMOM sign(ret L meses, skip 1) — grid en TRAIN (EW de activos disponibles) ===
+   L  ShTRAIN  retTRAIN
+   3      0.1      -0.0
+   6     0.13     0.005
+  12     0.08   -0.0042
+>> elegido en TRAIN: L=6
+TSMOM L=6 EW  TRAIN: Sharpe 0.13, ret +0.50% | TEST: Sharpe 0.0, ret -0.77%
+  por activo (TRAIN | TEST):
+    spx      Sh   0.26 ret   +3.08%  |  Sh   0.23 ret   +2.40%
+    eurusd   Sh   0.16 ret   +1.14%  |  Sh  -0.07 ret   -0.96%
+    gold     Sh   0.39 ret   +5.49%  |  Sh   0.39 ret   +5.12%
+    wti      Sh   -0.3 ret  -14.29%  |  Sh  -0.22 ret  -20.02%
+
+=== REVERSIÓN LP  pos=-sign(ret L meses) — grid en TRAIN ===
+  36    -0.15   -0.0426
+  60    -0.11   -0.0288
+>> elegido en TRAIN: L=60
+REV L=60 EW  TRAIN: Sharpe -0.11, ret -2.88% | TEST: Sharpe -0.21, ret -2.91%
+    spx      Sh   -0.1 ret   -3.01%  |  Sh  -0.49 ret   -7.91%
+    eurusd   Sh  -0.17 ret   -1.55%  |  Sh   0.01 ret   -0.23%
+    gold     Sh  -0.73 ret  -11.32%  |  Sh  -0.49 ret   -8.85%
+    wti      Sh  -0.04 ret   -4.70%  |  Sh   0.14 ret   -3.11%
+
+=== CARRY EURUSD: pos = sign(eu3m − us3m), retorno = spot + diferencial/12 ===
+TRAIN 1999-01-31->2009-12-31: Sharpe 0.67, ret +6.43%
+TEST  2010-01-31->2025-12-31: Sharpe -0.14, ret -1.48%
+(exposición: 100%, cambios de signo: 4)
+
+=== B&H por activo (TRAIN | TEST) ===
+  spx      Sh   0.36 ret   +5.19%  |  Sh   0.88 ret  +12.21%
+  eurusd   Sh   0.26 ret   +2.14%  |  Sh  -0.12 ret   -1.35%
+  gold     Sh   0.94 ret  +15.81%  |  Sh   0.59 ret   +8.41%
+  wti      Sh   0.34 ret   +6.17%  |  Sh   0.18 ret   -0.60%
+
+================ VEREDICTO INTEGRADOR (2026-07-07) ================
+
+FRENTE A (ML, LightGBM, 41 features, 3 vías train/val/test):
+- Campeón elegido en validation (Sharpe val 1.56, tau_q=0, expo 1.0) = clon de
+  beta larga del periodo alcista de validation; B&H EW val era 1.32.
+- TEST (una pasada): IC -0.0272, Sharpe neto -1.77 (B&H test -1.82).
+- Brecha de sobreajuste estructural: IC train 0.11-0.19 vs IC val 0.01-0.03 en
+  TODO el grid; early stopping paraba en 1-20 árboles (no hay señal que aprender).
+- Mejor IC val del grid (0.0287, target 1h) implica ~1.7 pb/barra de edge bruto
+  vs 12 pb de costo ida-vuelta: corto por un orden de magnitud.
+- La importancia (gain 32% btc_ret_24) muestra que lo único que aprendió fue
+  régimen/beta de BTC — exactamente lo que ya murió como TSMOM.
+VEREDICTO A: MUERTO. El problema no era falta de sofisticación del buscador;
+es que en estos datos el ruido domina a cualquier señal accesible.
+
+FRENTE B (histórico extendido 2017-2026, spot 1h BTC/ETH, configs congeladas):
+- Flujo taker contrarian: el IC NO decayó (BTC -0.015 en E1 vs -0.037 en E3);
+  nunca fue cosechable: neto -2 a -5 de Sharpe en TODAS las eras (turnover ~2000x/año).
+- VWAP: el único con Sharpe BRUTO positivo en la era temprana (BTC 1.32, ETH
+  0.96 en 2017-2019) que desaparece después (bruto negativo en 2020+). Neto:
+  ~0 en 2017-2019 incluso con costos perp de hoy (0.06%); con el taker spot
+  real de 2017 (0.10%) habría sido negativo también entonces.
+- POC: mismo patrón, más débil.
+VEREDICTO B: el mercado joven SÍ era menos eficiente (en bruto), pero ni
+siquiera entonces el edge superaba los costos de un retail taker. Más años de
+datos no rescatan nada; confirman el decaimiento.
+
+FRENTE C (SPX/EURUSD/oro/WTI diario, décadas, train<2010/test>=2010):
+- TSMOM(6m, skip 1) EW: train 0.13, test 0.00 → muerto a nivel portafolio.
+  PERO por activo: oro 0.39->0.39, SPX 0.26->0.23 (débil y ESTABLE, consistente
+  con la literatura: el TSMOM publicado con Sharpe ~1 exige 50+ mercados de
+  futuros + escalado por volatilidad, no 4 activos sign-only).
+- Reversión LP: negativa en train y test → muerta (consistente con la evidencia
+  moderna de que se desvaneció post-1990s).
+- Carry EURUSD: train 0.67 (1999-2009), test -0.14 (2010+) → murió con la
+  convergencia de tasas a cero post-2008. Consistente con el "carry crash".
+VEREDICTO C: la única pista genuina de toda la investigación: momentum de
+mediano plazo en oro y SPX es débil pero estable entre décadas (0.2-0.4 de
+Sharpe por activo). NO es operable como reemplazo del bot (otro mercado, otra
+infraestructura, retornos ~3-5%/año por activo), pero es el único fenómeno que
+sobrevivió un split honesto en tres frentes.
+
+CONCLUSIÓN FINAL: ninguno de los tres frentes cambia la conclusión para ESTE
+proyecto (cripto intradía/swing, retail, taker, $0/mes): no hay edge operable.
+La respuesta a "¿ni con ML, ni con más años, ni con otros activos?" es:
+- ML: no — el buscador automático encontró solo beta y señales sub-costo.
+- Más años: no — el edge bruto temprano existió pero nunca pagó los costos.
+- Otros activos: ahí SÍ hay fenómenos persistentes (momentum multi-activo),
+  pero exigen otro mercado, horizonte mensual y esperar Sharpe ~0.3-0.5, no
+  un bot cripto. Si algún día se expande el alcance, esa es la única puerta
+  que esta investigación deja abierta.
+
+Suite del repo: 721 tests verdes (sin cambios en src/ ni backtest/).
+Infra de investigación: scratchpad (ml_a_dataset.py, ml_a_train.py,
+b_extended_history.py, c_multiasset.py, dl_spot_long.py, dl_multiasset.py).
