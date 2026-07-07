@@ -26,7 +26,8 @@ from src.quant.indicators import atr, ema, rsi, sma
 STRATEGY_NAME = "ema_cross_rsi"
 
 
-def _scores_from_indicators(ema_fast, ema_slow, rsi_vals, ema_weight):
+def _scores_from_indicators(ema_fast, ema_slow, rsi_vals, ema_weight,
+                            squash_factor):
     """Convierte valores de indicadores en componentes de score.
 
     Funciona igual con escalares (float) o con pd.Series gracias a numpy:
@@ -37,9 +38,11 @@ def _scores_from_indicators(ema_fast, ema_slow, rsi_vals, ema_weight):
         (raw_score, ema_diff_pct, ema_score, rsi_score) — sin clamp todavía.
     """
     # Spread porcentual entre EMAs, squash con tanh al rango (-1, 1).
-    # Factor 50: un spread del 1% da tanh(0.5)≈0.46; del 3% da tanh(1.5)≈0.91.
+    # squash_factor (config quant.score_squash_factor; histórico 50): un spread
+    # del 1% da tanh(0.5)≈0.46; del 3% da tanh(1.5)≈0.91. Vive en settings.yaml
+    # porque fija la ESCALA del score e interactúa con los umbrales de confluencia.
     ema_diff_pct = (ema_fast - ema_slow) / ema_slow
-    ema_score = np.tanh(ema_diff_pct * 50)
+    ema_score = np.tanh(ema_diff_pct * squash_factor)
 
     # RSI centrado en 50 y escalado a (-1, 1). Lineal: RSI=70 → +0.4, RSI=30 → -0.4.
     rsi_score = (rsi_vals - 50.0) / 50.0
@@ -77,7 +80,8 @@ def compute_signal_series(candles_df: pd.DataFrame, settings=None) -> pd.Series:
     ema_slow_s = _ma(close, q.ema_slow_period)
     rsi_s = rsi(close, q.rsi_period)
 
-    raw, _, _, _ = _scores_from_indicators(ema_fast_s, ema_slow_s, rsi_s, q.ema_weight)
+    raw, _, _, _ = _scores_from_indicators(
+        ema_fast_s, ema_slow_s, rsi_s, q.ema_weight, q.score_squash_factor)
 
     # Clamp defensivo idéntico al de compute_signal. np.clip conserva los NaN.
     return raw.clip(lower=-1.0, upper=1.0)
@@ -129,7 +133,7 @@ def compute_signal(candles_df: pd.DataFrame, symbol: str, settings=None) -> Sign
         return None
 
     raw_score, ema_diff_pct, ema_score, rsi_score = _scores_from_indicators(
-        last_ema_fast, last_ema_slow, last_rsi, q.ema_weight
+        last_ema_fast, last_ema_slow, last_rsi, q.ema_weight, q.score_squash_factor
     )
 
     # Clamp defensivo: la suma de componentes ya está en (-1,1), pero si los

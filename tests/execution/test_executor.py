@@ -351,3 +351,29 @@ async def test_snapshot_cuenta_posiciones_por_direccion():
     assert state.long_positions == 1
     assert state.short_positions == 1
     assert state.open_positions == 2
+
+
+# --- Auditoría 2026-07: el precio LIMIT-IOC se redondea a MÚLTIPLO de tick ---
+
+async def test_limit_ioc_redondea_a_multiplo_de_tick_no_potencia_de_10():
+    # Bug corregido: Decimal.quantize solo ajustaba los DECIMALES del precio; con
+    # un tick no-potencia-de-10 (0.5) producía un precio inválido que Binance
+    # rechaza por PRICE_FILTER. round_to_tick lo lleva al múltiplo más cercano.
+    filters = {
+        "BTCUSDT": SymbolFilters(symbol="BTCUSDT", tick_size="0.5",
+                                 step_size="0.001", min_qty="0.001",
+                                 min_notional="5"),
+        "ETHUSDT": FILTERS["ETHUSDT"],
+    }
+    ex = FakeFuturesExchange(wallet_balance=10_000.0, filters=filters,
+                             prices={"BTCUSDT": 1000.0, "ETHUSDT": 2000.0})
+    execu = Executor(ex, CFG, id_factory=counter_ids())
+    await execu.startup()
+    # mark=1000.3, cap=10bps → raw BUY limit = 1001.3003 → múltiplo de 0.5 = 1001.5
+    report = await execu.open_position(long_order(qty=1.0), mark_price=1000.3)
+    assert report.ok is True
+    entry_req = next(r for r in ex.sent if r.type == OrderType.LIMIT)
+    assert entry_req.price == pytest.approx(1001.5)
+    # Invariante general: el precio enviado es múltiplo EXACTO del tick.
+    from decimal import Decimal
+    assert Decimal(str(entry_req.price)) % Decimal("0.5") == 0

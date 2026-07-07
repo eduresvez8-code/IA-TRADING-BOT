@@ -56,6 +56,13 @@ class PortfolioState:
     halted: bool = False     # parada manual / discrepancia de reconciliación (cb c)
     long_positions: int = 0   # piernas LONG abiertas (cap de concentración direccional)
     short_positions: int = 0  # piernas SHORT abiertas (cap de concentración direccional)
+    # Umbral de obsolescencia del feed ESCALADO AL TIMEFRAME, estampado por quien
+    # posee el reloj (el orquestador: max(stale_feed_seconds, intervals×intervalo)).
+    # Sin esto, el veto stale_feed comparaba contra el absoluto (30s) y, con vela
+    # base de 1h, vetaba CUALQUIER trade de evento a mitad de vela (edad normal
+    # entre velas ≈ 3600s > 30s): el Fast Path habría nacido muerto. None →
+    # comportamiento legado (compara contra risk.stale_feed_seconds a secas).
+    stale_after_seconds: float | None = None
 
 
 @dataclass
@@ -130,8 +137,13 @@ class RiskManager:
         if state.halted:
             return RiskAssessment(False, "halted")
 
-        # Feed de precios obsoleto (circuit breaker a): no abrir a ciegas.
-        if state.feed_age_seconds > r.stale_feed_seconds:
+        # Feed de precios obsoleto (circuit breaker a): no abrir a ciegas. El
+        # umbral escala con el timeframe si el snapshot lo estampa (en vivo lo
+        # hace el orquestador); si no, cae al absoluto de la config.
+        stale_limit = (state.stale_after_seconds
+                       if state.stale_after_seconds is not None
+                       else r.stale_feed_seconds)
+        if state.feed_age_seconds > stale_limit:
             return RiskAssessment(False, "stale_feed")
 
         # Pérdida diaria sobre el WALLET: detiene entradas hasta el día UTC siguiente.

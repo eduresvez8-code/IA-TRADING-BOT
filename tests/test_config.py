@@ -1153,3 +1153,67 @@ def test_settings_yaml_event():
     assert s.event.markprice_min_ticks >= 2
     # Fase 2.5(ii): guardia de frescura del event_fetch.
     assert s.event.max_headline_age_seconds >= 1
+
+
+# --- Auditoría 2026-07: validadores cruzados nuevos + score_squash_factor ---
+
+def test_htf_no_multiplo_del_base_es_rechazado():
+    # El engine deriva el ratio HTF/base con división ENTERA: un HTF que no sea
+    # múltiplo exacto (1h → 90m daría ratio 1 truncado) rompería el resampleo
+    # del régimen EN SILENCIO. Debe morir al cargar la config.
+    from src.core.config import MarketConfig
+    with pytest.raises(ValidationError):
+        MarketConfig(symbols=["BTCUSDT"], timeframe="1h", htf_timeframe="90m",
+                     quote_assets=["USDT"])
+
+
+def test_htf_igual_o_menor_que_base_es_rechazado():
+    from src.core.config import MarketConfig
+    with pytest.raises(ValidationError):
+        MarketConfig(symbols=["BTCUSDT"], timeframe="1h", htf_timeframe="1h",
+                     quote_assets=["USDT"])
+    with pytest.raises(ValidationError):
+        MarketConfig(symbols=["BTCUSDT"], timeframe="4h", htf_timeframe="1h",
+                     quote_assets=["USDT"])
+
+
+def test_htf_multiplo_valido():
+    from src.core.config import MarketConfig
+    mc = MarketConfig(symbols=["BTCUSDT"], timeframe="1h", htf_timeframe="4h",
+                      quote_assets=["USDT"])
+    assert mc.htf_timeframe == "4h"
+
+
+def test_regime_htf_bars_insuficiente_es_rechazado():
+    # Con menos velas HTF que ema_slow+rsi, compute_signal devolvería None SIEMPRE
+    # y el régimen quedaría neutro en silencio (degradación invisible). El
+    # validador de Settings lo convierte en un fallo ruidoso al arrancar.
+    s = load_settings()
+    raw = s.model_dump()
+    raw["orchestrator"]["regime_htf_bars"] = (
+        s.quant.ema_slow_period + s.quant.rsi_period - 1)
+    from src.core.config import Settings
+    with pytest.raises(ValidationError):
+        Settings.model_validate(raw)
+
+
+def test_regime_htf_bars_del_repo_cubre_el_quant():
+    s = load_settings()
+    assert (s.orchestrator.regime_htf_bars
+            >= s.quant.ema_slow_period + s.quant.rsi_period)
+
+
+def test_score_squash_factor_en_settings_yaml():
+    # Antes era un 50 hardcodeado en strategy.py (violación de Cero Hardcoding).
+    s = load_settings()
+    assert s.quant.score_squash_factor == 50.0
+
+
+def test_score_squash_factor_invalido_es_rechazado():
+    from src.core.config import QuantConfig
+    with pytest.raises(ValidationError):
+        QuantConfig(ema_fast_period=9, ema_slow_period=21, rsi_period=14,
+                    ema_weight=0.6, score_squash_factor=0.0)
+    with pytest.raises(ValidationError):
+        QuantConfig(ema_fast_period=9, ema_slow_period=21, rsi_period=14,
+                    ema_weight=0.6, score_squash_factor=5000.0)

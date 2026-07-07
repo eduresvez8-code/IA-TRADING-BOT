@@ -211,6 +211,15 @@ async def live() -> int:
         print("⚠ faltan claves de Binance en .env — el modo en vivo necesita "
               "credenciales de la testnet de Futuros.")
         return 1
+    if not secrets.binance_testnet:
+        # Gate de seguridad NO NEGOCIABLE (CLAUDE.md): --live solo opera contra
+        # testnet. --preflight ya lo exigía, pero --live no lo verificaba: con
+        # BINANCE_TESTNET=false y claves reales habría operado capital real sin
+        # ninguna barrera. Capital real requiere decisión explícita de Eduardo y
+        # NO pasa por este comando.
+        print("⚠ BINANCE_TESTNET=false en .env — este bot solo opera contra la "
+              "testnet de Futuros. Pon BINANCE_TESTNET=true antes de --live.")
+        return 1
 
     # Datos: spot mainnet, públicos (sin claves). Órdenes: futuros testnet.
     data_client = await AsyncClient.create()

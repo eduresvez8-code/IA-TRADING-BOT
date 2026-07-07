@@ -36,8 +36,14 @@ from backtest.quant_hypotheses import (
 )
 from backtest.run_backtest import load_parquet
 
-ASSETS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT"]
-FUNDING_DIR = Path("data/funding")
+# Universo del research = el universo que opera el bot (market.symbols) y rutas de
+# datos desde storage. Antes eran literales duplicados aquí (violación de Cero
+# Hardcoding: "nunca hardcodear símbolos"); ahora una sola fuente de verdad en
+# settings.yaml. Los demás runners (run_ma_sweep/split, run_tsmom_split,
+# run_seasonality_reversion) importan ASSETS de aquí.
+_SETTINGS = load_settings()
+ASSETS = list(_SETTINGS.market.symbols)
+FUNDING_DIR = Path(_SETTINGS.storage.funding_dir)
 REPORTS_DIR = Path("backtest/reports")
 
 _AGG = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}

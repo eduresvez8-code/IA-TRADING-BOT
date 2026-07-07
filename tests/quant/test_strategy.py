@@ -137,3 +137,43 @@ class TestComputeSignalSeries:
         series = compute_signal_series(df)
         # ema_slow=21 → las primeras 20 posiciones no tienen EMA lenta válida.
         assert series.iloc[0] != series.iloc[0]  # NaN != NaN
+
+
+# --- Auditoría 2026-07: el squash tanh sale de la config (Cero Hardcoding) ---
+
+class TestScoreSquashFactor:
+    def test_factor_menor_comprime_el_score(self):
+        # Mismo dato, factor 5 vs 50: |tanh(5·x)| < |tanh(50·x)| para x≠0. Prueba
+        # que la fórmula LEE el parámetro de la config y no un 50 hardcodeado.
+        close = [100.0 + i for i in range(100)]
+        df = _make_df(close)
+        base = load_settings()
+        cfg50 = base.model_copy(deep=True)
+        cfg50.quant = QuantConfig(ma_type="ema", ema_fast_period=9,
+                                  ema_slow_period=21, rsi_period=14,
+                                  ema_weight=1.0, score_squash_factor=50.0)
+        cfg5 = base.model_copy(deep=True)
+        cfg5.quant = QuantConfig(ma_type="ema", ema_fast_period=9,
+                                 ema_slow_period=21, rsi_period=14,
+                                 ema_weight=1.0, score_squash_factor=5.0)
+        s50 = compute_signal(df, "BTCUSDT", settings=cfg50)
+        s5 = compute_signal(df, "BTCUSDT", settings=cfg5)
+        assert s50.score > 0 and s5.score > 0          # misma dirección
+        assert abs(s5.score) < abs(s50.score)          # factor menor comprime
+
+    def test_default_50_reproduce_comportamiento_historico(self):
+        # Regresión protegida: el default (50.0) debe dar EXACTAMENTE el mismo
+        # score que antes de extraer el factor a la config.
+        import numpy as np
+        close = [100.0 + i for i in range(100)]
+        df = _make_df(close)
+        cfg = load_settings().model_copy(deep=True)
+        cfg.quant = QuantConfig(ma_type="ema", ema_fast_period=9,
+                                ema_slow_period=21, rsi_period=14, ema_weight=1.0)
+        assert cfg.quant.score_squash_factor == 50.0
+        sig = compute_signal(df, "BTCUSDT", settings=cfg)
+        from src.quant.indicators import ema
+        f = ema(df["close"], 9).iloc[-1]
+        s = ema(df["close"], 21).iloc[-1]
+        expected = float(np.tanh((f - s) / s * 50))
+        assert sig.score == pytest.approx(expected)

@@ -96,10 +96,39 @@ def test_noticia_alineada_con_regimen_origina():
 
 
 def test_baja_confianza_reduce_aunque_confirme():
-    # Sentimiento que confirma pero con confianza baja → tamaño recortado.
+    # Sentimiento que confirma pero con confianza en la banda MEDIA
+    # [min_confidence_to_trade, low_confidence_threshold) → tamaño recortado.
+    # (Antes este test usaba conf=0.1, que en vivo el Risk Manager VETA en seco:
+    # el backtest era más permisivo que el bot real. Auditoría 2026-07.)
+    mid = (CFG.risk.min_confidence_to_trade + CFG.risk.low_confidence_threshold) / 2
     full = run_confluence(make_uptrend_df(), "BTCUSDT", "5m", [event(0.6, conf=0.9)], CFG)
-    low = run_confluence(make_uptrend_df(), "BTCUSDT", "5m", [event(0.6, conf=0.1)], CFG)
+    low = run_confluence(make_uptrend_df(), "BTCUSDT", "5m", [event(0.6, conf=mid)], CFG)
     assert low.trades[0].quantity < full.trades[0].quantity
+
+
+def test_confianza_bajo_el_piso_no_opera_como_en_vivo():
+    # Espejo del VETO DURO del Risk Manager (< min_confidence_to_trade no se
+    # arriesga capital). Sin él, el A/B del backtest quedaba sesgado al alza:
+    # abría trades que el bot en vivo jamás habría enviado.
+    below = CFG.risk.min_confidence_to_trade - 0.05
+    res = run_confluence(make_uptrend_df(), "BTCUSDT", "5m",
+                         [event(0.6, conf=below)], CFG)
+    assert len(res.trades) == 0
+
+
+def test_events_from_rows_preserva_event_kind():
+    # Sin esto, todo score histórico volvía como "none" y el bloqueo
+    # scheduled_macro_block era irreproducible offline (divergencia vivo↔backtest).
+    rows = [{"news_id": "m", "ts": int(T0.timestamp() * 1000), "score": 0.2,
+             "confidence": 0.9, "high_impact": True, "symbol_scope": ["*"],
+             "event_kind": "scheduled", "rationale": "FOMC"}]
+    evs = events_from_rows(rows)
+    assert evs[0][1].event_kind == "scheduled"
+    # Filas previas a la migración (sin la clave) caen al default "none".
+    old = [{"news_id": "o", "ts": int(T0.timestamp() * 1000), "score": 0.2,
+            "confidence": 0.9, "high_impact": False, "symbol_scope": ["*"],
+            "rationale": ""}]
+    assert events_from_rows(old)[0][1].event_kind == "none"
 
 
 # ------------------------------ walk-forward ------------------------------

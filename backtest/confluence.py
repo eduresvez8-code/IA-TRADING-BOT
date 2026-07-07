@@ -33,6 +33,10 @@ def events_from_rows(rows: list[dict]) -> list[SentimentEvent]:
         score = SentimentScore(
             news_id=r["news_id"], symbol_scope=r["symbol_scope"], score=r["score"],
             confidence=r["confidence"], high_impact=r["high_impact"],
+            # Sin esto, todo score histórico llegaba como "none" y el bloqueo
+            # scheduled_macro_block era IRREPRODUCIBLE offline (divergencia
+            # vivo↔backtest). El .get cubre filas previas a la migración.
+            event_kind=r.get("event_kind", "none"),
             rationale=r.get("rationale", ""), analyzed_at=ts,
         )
         events.append((ts, score))
@@ -83,7 +87,15 @@ def make_confluence_decider(symbol, sentiments, settings, *, allow_short):
         if sent is not None and sent.confidence < rk.low_confidence_threshold:
             size_factor *= rk.low_confidence_size_factor
 
+        # VETO DURO de confianza (espejo del Risk Manager en vivo): por debajo de
+        # min_confidence_to_trade no se arriesga capital. Sin esto, el backtest
+        # abría trades que el bot en vivo habría vetado → sesgo optimista del A/B.
+        conf_vetoed = (sent is not None
+                       and sent.confidence < rk.min_confidence_to_trade)
+
         if position_side is None:
+            if conf_vetoed:
+                return None
             if d.action == Action.LONG:
                 return ("enter", "LONG", size_factor)
             if d.action == Action.SHORT and allow_short:

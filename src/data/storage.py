@@ -86,9 +86,18 @@ CREATE TABLE IF NOT EXISTS sentiment_scores (
     confidence   REAL    NOT NULL,
     high_impact  INTEGER NOT NULL,
     symbol_scope TEXT    NOT NULL,  -- JSON, ej. ["BTC","ETH"] o ["*"]
+    event_kind   TEXT    NOT NULL DEFAULT 'none',  -- none | scheduled | shock
     rationale    TEXT
 )
 """
+
+# Migración suave para BDs creadas antes de que sentiment_scores tuviera
+# event_kind (auditoría 2026-07): sin la columna, el corpus histórico perdía la
+# etiqueta scheduled/shock y el backtest de confluencia no podía reproducir el
+# bloqueo de macros programados. ALTER falla si la columna ya existe → se ignora.
+_SCORES_MIGRATION = (
+    "ALTER TABLE sentiment_scores ADD COLUMN event_kind TEXT NOT NULL DEFAULT 'none'"
+)
 
 # Serie temporal de equity (dashboard). Una fila por ciclo del orquestador: sin
 # esto NO hay curva de capital (session_state es una sola fila). La PK por ts hace
@@ -163,6 +172,10 @@ class Storage:
         await self._db.execute(SESSION_SCHEMA)
         await self._db.execute(NEWS_SCHEMA)
         await self._db.execute(SCORES_SCHEMA)
+        try:
+            await self._db.execute(_SCORES_MIGRATION)
+        except aiosqlite.OperationalError:
+            pass  # la columna ya existe (BD nueva o ya migrada)
         await self._db.execute(EQUITY_SCHEMA)
         await self._db.execute(DECISIONS_SCHEMA)
         await self._db.execute(REALIZED_SCHEMA)
@@ -291,9 +304,13 @@ class Storage:
         # ts_ms es el published_at de la noticia (no analyzed_at): así el score
         # se alinea al instante en que la información estuvo disponible.
         await self._db.execute(
-            "INSERT OR REPLACE INTO sentiment_scores VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO sentiment_scores"
+            " (news_id, ts, score, confidence, high_impact, symbol_scope,"
+            "  event_kind, rationale)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (score.news_id, ts_ms, score.score, score.confidence,
-             int(score.high_impact), json.dumps(score.symbol_scope), score.rationale),
+             int(score.high_impact), json.dumps(score.symbol_scope),
+             score.event_kind, score.rationale),
         )
         await self._db.commit()
 
@@ -307,13 +324,15 @@ class Storage:
             clauses.append("ts <= ?"); params.append(until_ms)
         where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
         cur = await self._db.execute(
-            "SELECT news_id, ts, score, confidence, high_impact, symbol_scope, rationale"
+            "SELECT news_id, ts, score, confidence, high_impact, symbol_scope,"
+            " event_kind, rationale"
             f" FROM sentiment_scores{where} ORDER BY ts ASC", params,
         )
         rows = await cur.fetchall()
         return [
             {"news_id": r[0], "ts": r[1], "score": r[2], "confidence": r[3],
-             "high_impact": bool(r[4]), "symbol_scope": json.loads(r[5]), "rationale": r[6]}
+             "high_impact": bool(r[4]), "symbol_scope": json.loads(r[5]),
+             "event_kind": r[6], "rationale": r[7]}
             for r in rows
         ]
 

@@ -18,6 +18,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
+_TF_UNIT_MS = {"m": 60_000, "h": 3_600_000, "d": 86_400_000}
+
+
+def _timeframe_ms(tf: str) -> int:
+    """'5m' → 300000. Parser local (sin depender del SDK del exchange) para poder
+    validar la RELACIÓN entre timeframe y htf_timeframe al cargar la config."""
+    unit = tf[-1]
+    if unit not in _TF_UNIT_MS or not tf[:-1].isdigit():
+        raise ValueError(f"timeframe no soportado: {tf!r} (usa Nm/Nh/Nd)")
+    return int(tf[:-1]) * _TF_UNIT_MS[unit]
+
 
 class Secrets(BaseSettings):
     """Variables de .env. pydantic-settings las mapea por nombre."""
@@ -42,6 +53,27 @@ class MarketConfig(BaseModel):
     # código no asume "USDT". Solo operamos perps USD-M, así que por defecto en el
     # YAML es ["USDT"]; añadir USDC/otros aquí si algún día se opera ese quote.
     quote_assets: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def htf_multiplo_del_base(self) -> "MarketConfig":
+        # El engine deriva el ratio HTF/base con división ENTERA (interval_to_ms).
+        # Si el HTF no fuera múltiplo exacto del base (p.ej. 1h→90m), el ratio se
+        # truncaría en silencio y el resampleo del régimen quedaría mal formado.
+        # Fallar aquí, en el segundo 0, no tras abrir una posición.
+        base_ms = _timeframe_ms(self.timeframe)
+        htf_ms = _timeframe_ms(self.htf_timeframe)
+        if htf_ms <= base_ms:
+            raise ValueError(
+                f"htf_timeframe ({self.htf_timeframe}) debe ser mayor que "
+                f"timeframe ({self.timeframe})"
+            )
+        if htf_ms % base_ms != 0:
+            raise ValueError(
+                f"htf_timeframe ({self.htf_timeframe}) debe ser múltiplo exacto "
+                f"de timeframe ({self.timeframe}): el ratio de resampleo del "
+                f"régimen es una división entera"
+            )
+        return self
 
 
 class RiskConfig(BaseModel):
@@ -200,6 +232,12 @@ class QuantConfig(BaseModel):
     # El único cruce que sobrevivió OOS fue SMA 50/200 @ 4h; con ma_type="sma",
     # ema_weight=1.0 y periodos 50/200 el score = tanh(50·(SMA50−SMA200)/SMA200).
     ma_type: str = Field(default="ema")
+    # Factor del squash tanh: score = tanh(factor · spread_pct). Determina la ESCALA
+    # del score del quant y por tanto interactúa con quant_veto/confirm_threshold.
+    # Antes era un 50 hardcodeado en strategy.py (violación de Cero Hardcoding);
+    # default 50.0 = comportamiento histórico exacto. gt=0 (un factor ≤0 anularía o
+    # invertiría la señal); le=1000 ataja un typo que saturaría el tanh siempre.
+    score_squash_factor: float = Field(default=50.0, gt=0, le=1000.0)
 
     @field_validator("ma_type")
     @classmethod
@@ -871,6 +909,22 @@ class Settings(BaseModel):
     dashboard: DashboardConfig
     quant_matrix: QuantMatrixConfig
     quant_hypotheses: QuantHypothesesConfig
+
+    @model_validator(mode="after")
+    def regimen_htf_tiene_datos(self) -> "Settings":
+        # compute_signal exige ema_slow_period + rsi_period velas para emitir señal.
+        # Si regime_htf_bars fuera menor, el régimen HTF devolvería None SIEMPRE y
+        # el bot degradaría en silencio a "régimen neutro" (tamaño reducido) sin
+        # que nadie lo note. Cross-check al cargar: fallar ruidosamente, no degradar.
+        needed = self.quant.ema_slow_period + self.quant.rsi_period
+        if self.orchestrator.regime_htf_bars < needed:
+            raise ValueError(
+                f"orchestrator.regime_htf_bars ({self.orchestrator.regime_htf_bars}) "
+                f"debe ser ≥ quant.ema_slow_period + quant.rsi_period ({needed}): "
+                f"con menos velas HTF el régimen nunca calienta y queda neutro en "
+                f"silencio"
+            )
+        return self
 
 
 def load_settings(path: Path | None = None) -> Settings:

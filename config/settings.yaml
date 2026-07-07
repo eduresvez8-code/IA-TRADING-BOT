@@ -100,6 +100,13 @@ quant:
   ema_slow_period: 200  # SMA lenta
   rsi_period: 14        # sin efecto con ema_weight=1.0 (RSI pesa 0)
   ema_weight: 1.0       # 100% cruce de medias, 0% RSI → régimen de tendencia puro
+  # Factor del squash tanh del spread de medias: score = tanh(factor · spread%).
+  # Con 50: spread 1% → tanh(0.5)≈0.46; 3% → tanh(1.5)≈0.91. Determina la ESCALA
+  # del score y por tanto interactúa con los umbrales de la confluencia
+  # (quant_veto/confirm_threshold): si se cambia, recalibrar esos umbrales.
+  # Antes vivía hardcodeado en strategy.py (violación de Cero Hardcoding,
+  # corregida en la auditoría 2026-07). 50.0 = comportamiento histórico exacto.
+  score_squash_factor: 50.0
 
 backtest:
   # Costos: se cobran en CADA lado (entrada y salida). Una estrategia que solo

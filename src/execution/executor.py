@@ -26,14 +26,13 @@ from datetime import datetime, timezone
 from typing import Callable
 from uuid import uuid4
 
-from decimal import Decimal, ROUND_HALF_EVEN
-
 from src.core.config import Settings, load_settings
 from src.core.models import Order, OrderType, PositionSide, Side
 from src.data.binance_client import retry_with_backoff
 from src.data.storage import Storage
 from src.execution.exchange import FuturesExchange, OrderRequest, OrderResult
 from src.execution.translate import build_close_request, build_open_requests
+from src.risk.filters import round_to_tick
 from src.risk.manager import PortfolioState
 
 logger = logging.getLogger(__name__)
@@ -151,12 +150,13 @@ class Executor:
                 cap = self.cfg.execution.slippage_cap_bps / 10_000
                 raw = (mark_price * (1 + cap) if order.side == Side.BUY
                        else mark_price * (1 - cap))
-                # Cuantiza al tick_size del par (igual que los stops del Risk Manager).
+                # Redondeo al MÚLTIPLO de tick_size (round_to_tick, igual que los
+                # stops del Risk Manager). El antiguo Decimal.quantize solo ajustaba
+                # los DECIMALES: con un tick no-potencia-de-10 (p.ej. 0.5) producía
+                # un precio inválido que Binance rechaza por PRICE_FILTER.
                 sym_f = self.filters.get(order.symbol)
                 if sym_f is not None:
-                    limit_price = float(
-                        Decimal(str(raw)).quantize(sym_f.tick_size, rounding=ROUND_HALF_EVEN)
-                    )
+                    limit_price = float(round_to_tick(raw, sym_f.tick_size))
                 else:
                     limit_price = round(raw, 8)
 

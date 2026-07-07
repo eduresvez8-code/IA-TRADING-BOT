@@ -403,3 +403,38 @@ def test_pipeline_confluencia_a_orden_short():
     assert a.order.side == Side.SELL
     assert a.order.stop_loss > a.order.entry_price
     assert a.order.decision_reason == "regime_confirms"
+
+
+# --- Auditoría 2026-07: umbral de feed obsoleto escalado al timeframe ---
+
+def test_stale_feed_usa_umbral_escalado_si_esta_estampado():
+    # Con vela base de 1h, la edad NORMAL del feed entre velas es de hasta 3600s.
+    # El orquestador estampa stale_after_seconds = max(stale_feed_seconds,
+    # intervals × intervalo); el RM debe comparar contra ESE umbral, no contra el
+    # absoluto (30s), o vetaría cualquier trade de evento a mitad de vela.
+    rm = RiskManager(CFG)
+    state = healthy_state(
+        feed_age_seconds=1800.0,            # 30 min: normal a mitad de vela 1h
+        stale_after_seconds=7200.0,         # 2 × 3600s (intervals × intervalo)
+    )
+    a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
+                  state=state, filters=FINE)
+    assert a.approved is True
+
+
+def test_stale_feed_veta_si_supera_el_umbral_escalado():
+    rm = RiskManager(CFG)
+    state = healthy_state(feed_age_seconds=7300.0, stale_after_seconds=7200.0)
+    a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
+                  state=state, filters=FINE)
+    assert a.approved is False and a.reason == "stale_feed"
+
+
+def test_stale_feed_sin_estampar_conserva_el_umbral_absoluto():
+    # Compatibilidad: un snapshot sin stale_after_seconds (None) se compara contra
+    # risk.stale_feed_seconds, exactamente como antes de la auditoría.
+    rm = RiskManager(CFG)
+    state = healthy_state(feed_age_seconds=CFG.risk.stale_feed_seconds + 1)
+    a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
+                  state=state, filters=FINE)
+    assert a.approved is False and a.reason == "stale_feed"

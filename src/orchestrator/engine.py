@@ -232,7 +232,17 @@ class Orchestrator:
             return
 
         async with self._lock:  # sección crítica serializada
-            await self._cycle(sym, candle, now)
+            try:
+                await self._cycle(sym, candle, now)
+            except Exception as exc:
+                # Antes, una excepción del ciclo subía hasta stream_candles, que la
+                # trataba como caída del STREAM (reconexión + warning genérico): el
+                # error de lógica quedaba disfrazado de problema de red y se
+                # reintentaba en silencio cada vela. Aquí lo hacemos VISIBLE como
+                # alerta crítica y no derribamos el websocket (que está sano).
+                logger.exception("ciclo de %s falló", sym)
+                self.alerts.alert(AlertLevel.CRITICAL, "cycle_error",
+                                  f"{sym}: {type(exc).__name__}: {exc}")
 
     def _ingest_candle(self, sym: str, candle: Candle, now: datetime) -> None:
         self.last_candle_time[sym] = now
@@ -457,14 +467,40 @@ class Orchestrator:
         elif action == PositionAction.FLIP:
             # FLIP desacoplado: solo cerramos; la apertura inversa ocurre en el
             # ciclo siguiente, con snapshot fresco y sin colisión de margen.
-            await self.executor.close_position(sym, held, now=now)
-            self.expected.pop((sym, held), None)
-            self._in_flight.pop((sym, held), None)
-            self._entry_time.pop((sym, held), None)
-            self.alerts.alert(AlertLevel.INFO, "flip_close",
-                              f"{sym}: cerrada {held.value}; apertura inversa en el próximo ciclo")
+            if await self._close_leg(sym, held, now, context="flip"):
+                self.alerts.alert(AlertLevel.INFO, "flip_close",
+                                  f"{sym}: cerrada {held.value}; apertura inversa en el próximo ciclo")
 
         await self._persist_session(now)
+
+    async def _close_leg(self, sym: str, side: PositionSide, now: datetime,
+                         *, context: str) -> bool:
+        """Cierra una pierna vía executor y limpia el estado local. True si cerró.
+
+        Punto ÚNICO de cierre por decisión (flip/time-stop/evento). Motivo de
+        existir: `Executor.close_position` CANCELA las protectoras ANTES de enviar
+        el cierre a mercado; si ese cierre falla (red, rechazo), la pierna queda
+        viva y DESNUDA (sin SL) y nada volvía a protegerla — el error subía hasta
+        el supervisor del stream y se perdía como "reconexión". Aquí fallamos
+        CERRADO: HALT con causa `close_failed` (no auto-recuperable) + alerta
+        CRITICAL, y NO se toca `expected` (la reconciliación sigue siendo veraz:
+        la pierna sigue existiendo en el exchange).
+        """
+        try:
+            await self.executor.close_position(sym, side, now=now)
+        except Exception:
+            self.halted = True
+            self.halt_reason = "close_failed"
+            logger.exception("cierre de %s %s falló (%s)", sym, side.value, context)
+            self.alerts.alert(AlertLevel.CRITICAL, "close_failed",
+                              f"{sym} {side.value} ({context}): el cierre falló tras "
+                              f"cancelar las protectoras — posible pierna DESNUDA, "
+                              f"revisión manual requerida")
+            return False
+        self.expected.pop((sym, side), None)
+        self._in_flight.pop((sym, side), None)
+        self._entry_time.pop((sym, side), None)
+        return True
 
     async def _open(self, order, now: datetime, *, mark_price: float) -> None:
         key = (order.symbol, order.position_side)
@@ -497,6 +533,11 @@ class Orchestrator:
         state = await self.executor.snapshot_portfolio(now=now)
         last = self.last_candle_time.get(sym)
         state.feed_age_seconds = (now - last).total_seconds() if last else 0.0
+        # Umbral de obsolescencia ESCALADO al timeframe (mismo que check_feed_health).
+        # Sin estamparlo, el Risk Manager compararía contra el absoluto (30s) y
+        # vetaría con stale_feed cualquier evento a mitad de vela (edad normal
+        # entre velas cerradas ≈ 1 intervalo ≫ 30s con base 1h).
+        state.stale_after_seconds = self._stale_threshold_seconds()
         state.halted = self.halted
         return state
 
@@ -517,12 +558,10 @@ class Orchestrator:
         entered = self._entry_time.get(key)
         if entered is None or (now - entered) < max_hold * self._interval:
             return False
-        await self.executor.close_position(sym, key[1], now=now)
-        self.expected.pop(key, None)
-        self._in_flight.pop(key, None)
-        self._entry_time.pop(key, None)
-        self.alerts.alert(AlertLevel.INFO, "time_stop",
-                          f"{sym}: cerrada {key[1].value} por time-stop ({max_hold} velas)")
+        if await self._close_leg(sym, key[1], now, context="time_stop"):
+            self.alerts.alert(AlertLevel.INFO, "time_stop",
+                              f"{sym}: cerrada {key[1].value} por time-stop ({max_hold} velas)")
+        # True en ambos casos: si el cierre falló hay HALT y tampoco se opera.
         return True
 
     # ------------------------- Fast Path: consumo de eventos -------------------------
@@ -607,12 +646,9 @@ class Orchestrator:
                               f"{sym} {want.value} por evento ({decision.reason})")
         elif action == PositionAction.FLIP:
             # FLIP desacoplado, igual que el Slow Path: solo cerramos aquí.
-            await self.executor.close_position(sym, held, now=now)
-            self.expected.pop((sym, held), None)
-            self._in_flight.pop((sym, held), None)
-            self._entry_time.pop((sym, held), None)
-            self.alerts.alert(AlertLevel.INFO, "event_flip_close",
-                              f"{sym}: cerrada {held.value} por evento; inversa en el próximo ciclo")
+            if await self._close_leg(sym, held, now, context="event_flip"):
+                self.alerts.alert(AlertLevel.INFO, "event_flip_close",
+                                  f"{sym}: cerrada {held.value} por evento; inversa en el próximo ciclo")
         await self._persist_session(now)
 
     # ------------------------- Fast Path: productor + cola -------------------------

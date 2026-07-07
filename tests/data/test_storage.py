@@ -193,3 +193,53 @@ def test_parquet_roundtrip(tmp_path):
     s.save_history_parquet(df, "BTCUSDT", "5m")
     loaded = s.load_history_parquet("BTCUSDT", "5m")
     pd.testing.assert_frame_equal(loaded, df)
+
+
+# --- Auditoría 2026-07: event_kind persiste en sentiment_scores ---
+
+async def test_sentiment_score_event_kind_roundtrip(storage):
+    # Sin la columna, la etiqueta scheduled/shock se perdía al persistir y el
+    # backtest de confluencia no podía reproducir el bloqueo de macros (los
+    # scores históricos volvían todos como "none").
+    sc = SentimentScore(news_id="n-ek", symbol_scope=["*"], score=-0.6,
+                        confidence=0.9, high_impact=True, event_kind="scheduled",
+                        analyzed_at=NOW)
+    await storage.save_sentiment_score(sc, ts_ms=int(NOW.timestamp() * 1000))
+    rows = await storage.get_sentiment_scores()
+    row = next(r for r in rows if r["news_id"] == "n-ek")
+    assert row["event_kind"] == "scheduled"
+
+
+async def test_migracion_scores_de_bd_vieja_sin_event_kind(tmp_path):
+    # Una BD creada ANTES de la auditoría no tiene la columna: init() debe
+    # añadirla (ALTER) sin romper las filas existentes, que quedan en 'none'.
+    import aiosqlite
+
+    db_path = tmp_path / "vieja.db"
+    conn = await aiosqlite.connect(db_path)
+    await conn.execute(
+        "CREATE TABLE sentiment_scores ("
+        " news_id TEXT PRIMARY KEY, ts INTEGER NOT NULL, score REAL NOT NULL,"
+        " confidence REAL NOT NULL, high_impact INTEGER NOT NULL,"
+        " symbol_scope TEXT NOT NULL, rationale TEXT)"
+    )
+    await conn.execute(
+        "INSERT INTO sentiment_scores VALUES ('old1', 1, 0.5, 0.8, 0, '[\"*\"]', 'x')")
+    await conn.commit()
+    await conn.close()
+
+    s = await Storage(db_path, tmp_path / "candles").init()
+    try:
+        rows = await s.get_sentiment_scores()
+        assert rows[0]["news_id"] == "old1"
+        assert rows[0]["event_kind"] == "none"   # default de la migración
+        # Y una escritura nueva ya persiste su etiqueta real.
+        sc = SentimentScore(news_id="new1", symbol_scope=["BTC"], score=0.7,
+                            confidence=0.9, high_impact=True, event_kind="shock",
+                            analyzed_at=NOW)
+        await s.save_sentiment_score(sc, ts_ms=2)
+        rows = await s.get_sentiment_scores()
+        assert {r["news_id"]: r["event_kind"] for r in rows} == {
+            "old1": "none", "new1": "shock"}
+    finally:
+        await s.close()

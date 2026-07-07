@@ -880,3 +880,86 @@ async def test_portfolio_state_estampa_feed_age_y_halted():
     state = await orch._portfolio_state(SYMBOL, T0 + timedelta(seconds=42))
     assert state.feed_age_seconds == pytest.approx(42.0)
     assert state.halted is False
+
+
+# --------------- Auditoría 2026-07: cierre fallido → HALT (pierna desnuda) ---------------
+
+async def _raising_close(*args, **kwargs):
+    raise RuntimeError("red caída tras cancelar protectoras")
+
+
+async def test_flip_con_cierre_fallido_haltea_y_no_olvida_la_pierna():
+    # Executor.close_position CANCELA las protectoras antes del cierre a mercado:
+    # si el cierre falla, la pierna sigue viva y SIN stop. Antes, la excepción
+    # subía hasta el supervisor del stream y se perdía como "reconexión"; el bot
+    # seguía operando con una pierna desnuda. Ahora: HALT close_failed + alerta
+    # CRITICAL, y `expected` CONSERVA la pierna (la reconciliación sigue veraz).
+    ex, orch, rec, sig = await build()
+    sig.score = 0.8
+    orch.sentiment_store[SYMBOL] = _sent(0.6)
+    await feed(orch, [0, 1])                       # abre LONG
+    assert (SYMBOL, LONG) in orch.expected
+
+    orch.executor.close_position = _raising_close  # el cierre fallará
+    sig.score = -0.8
+    orch.sentiment_store[SYMBOL] = _sent(-0.7)
+    await feed(orch, [2])                          # FLIP → intenta cerrar → falla
+    assert orch.halted is True
+    assert orch.halt_reason == "close_failed"
+    assert (SYMBOL, LONG) in orch.expected         # NO se olvida la pierna viva
+    assert "close_failed" in rec.events()
+    assert "flip_close" not in rec.events()
+
+
+async def test_time_stop_con_cierre_fallido_haltea():
+    cfg = CFG.model_copy(deep=True)
+    cfg.orchestrator.max_position_hold_candles = 2
+    ex, execu, orch, rec, sig = make_env(cfg=cfg)
+    await orch.startup()
+    sig.score = 0.8
+    orch.sentiment_store[SYMBOL] = _sent(0.6)
+    await feed(orch, [0, 1])
+    assert (SYMBOL, LONG) in ex.positions
+
+    orch.executor.close_position = _raising_close
+    await feed(orch, [2, 3])                       # vence el hold → cierre falla
+    assert orch.halted is True and orch.halt_reason == "close_failed"
+    assert (SYMBOL, LONG) in orch.expected
+    assert "time_stop" not in rec.events()         # no se anuncia un cierre que no fue
+
+
+async def test_halt_por_cierre_fallido_no_se_auto_recupera():
+    # close_failed exige revisión humana: un feed sano NO lo levanta (a diferencia
+    # del halt por stale_feed).
+    ex, orch, rec, sig = await build()
+    orch.halted = True
+    orch.halt_reason = "close_failed"
+    orch.last_candle_time[SYMBOL] = T0
+    assert orch.check_feed_health(now=T0 + timedelta(seconds=1)) is True
+    assert orch.halted is True and orch.halt_reason == "close_failed"
+
+
+# --------------- Auditoría 2026-07: errores del ciclo visibles (cycle_error) ---------------
+
+async def test_excepcion_del_ciclo_emite_alerta_critical_y_no_revienta():
+    # Antes, un bug del ciclo subía hasta stream_candles y se disfrazaba de caída
+    # del websocket (reconexión silenciosa). Ahora se reporta como cycle_error.
+    def _boom(df, sym):
+        raise KeyError("bug simulado en la señal")
+
+    ex, execu, orch, rec, sig = make_env(signal_fn=_boom)
+    await orch.startup()
+    await feed(orch, [0, 1])                       # no debe propagar la excepción
+    assert "cycle_error" in rec.events()
+
+
+# --------------- Auditoría 2026-07: umbral stale escalado en el snapshot ---------------
+
+async def test_portfolio_state_estampa_umbral_stale_escalado():
+    # El RM compara feed_age contra el umbral ESCALADO al timeframe; el engine lo
+    # estampa en el snapshot. Sin esto, el Fast Path moría por stale_feed a mitad
+    # de vela (edad normal ≈ intervalo ≫ stale_feed_seconds).
+    ex, orch, rec, sig = await build()
+    orch.last_candle_time[SYMBOL] = T0
+    state = await orch._portfolio_state(SYMBOL, T0 + timedelta(seconds=42))
+    assert state.stale_after_seconds == pytest.approx(orch._stale_threshold_seconds())
