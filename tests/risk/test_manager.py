@@ -27,6 +27,11 @@ NOW = datetime(2026, 6, 13, 12, 0, tzinfo=timezone.utc)
 # confluencia→orden con el régimen confirmando, que requiere el quant encendido.
 CFG = load_settings().model_copy(deep=True)
 CFG.confluence.quant_regime_enabled = True
+# El repo en vivo corre con let_winners_run=true (sin techo fijo, 2026-07-07); este
+# archivo fija false para seguir probando a fondo la rama de cálculo de TP fijo
+# (sigue siendo código real y necesario). La rama let_winners_run=True tiene sus
+# propios tests dedicados más abajo.
+CFG.risk.let_winners_run = False
 L = CFG.risk.max_leverage  # 3
 
 # Filtros "sin fricción": paso/tick finísimos y sin mínimos → aíslan el sizing.
@@ -110,6 +115,41 @@ def test_orden_lleva_el_leverage_del_bot():
     a = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
                   state=healthy_state(), filters=FINE)
     assert a.order.leverage == CFG.risk.max_leverage
+
+
+# -------------------- let_winners_run: sin take-profit fijo --------------------
+# 2026-07-07: config real del repo (settings.yaml). El stop sigue acotando la
+# pérdida; la ganancia queda sin techo (sale por FLIP o time-stop, no por TP).
+
+def _cfg_let_winners_run():
+    c = CFG.model_copy(deep=True)
+    c.risk.let_winners_run = True
+    return c
+
+
+def test_let_winners_run_deja_take_profit_en_none():
+    rm = RiskManager(_cfg_let_winners_run())
+    long_ = rm.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
+                      state=healthy_state(), filters=FINE)
+    short_ = rm.assess(make_decision(Action.SHORT), price=1000.0, atr=50.0,
+                       state=healthy_state(), filters=FINE)
+    assert long_.approved is True and long_.order.take_profit is None
+    assert short_.approved is True and short_.order.take_profit is None
+    # El stop de pérdida NO se toca: sigue siendo el único techo de riesgo.
+    assert long_.order.stop_loss == pytest.approx(925.0)   # 1000 - 1.5*50
+    assert short_.order.stop_loss == pytest.approx(1075.0)  # 1000 + 1.5*50
+
+
+def test_let_winners_run_no_cambia_el_sizing():
+    # El riesgo en $ depende SOLO de la distancia al stop, nunca del take-profit:
+    # la cantidad debe ser IDÉNTICA con o sin techo fijo (misma entrada/ATR/riesgo).
+    rm_fijo = RiskManager(CFG)                    # let_winners_run=False en este archivo
+    rm_libre = RiskManager(_cfg_let_winners_run())
+    qty_fijo = rm_fijo.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
+                              state=healthy_state(), filters=FINE).order.quantity
+    qty_libre = rm_libre.assess(make_decision(Action.LONG), price=1000.0, atr=50.0,
+                                state=healthy_state(), filters=FINE).order.quantity
+    assert qty_libre == pytest.approx(qty_fijo)
 
 
 # ---------------------------- Position sizing ----------------------------

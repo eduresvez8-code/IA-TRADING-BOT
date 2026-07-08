@@ -214,11 +214,17 @@ class RiskManager:
         stop_loss = float(
             round_to_tick(entry - direction * stop_distance_raw, filters.tick_size)
         )
-        take_profit = float(
-            round_to_tick(
+        # "Dejar correr las ganancias": con let_winners_run, ningún techo fijo — el
+        # stop (arriba) sigue acotando la pérdida, pero la salida ganadora queda solo
+        # en manos del FLIP (señal revertida) o del time-stop. take_profit=None
+        # atraviesa Order → translate.build_open_requests (ya soporta None: no arma
+        # la orden TAKE_PROFIT_MARKET) → Executor (ya itera protectoras variables).
+        take_profit = (
+            None if r.let_winners_run else
+            float(round_to_tick(
                 entry + direction * r.take_profit_rr * stop_distance_raw,
                 filters.tick_size,
-            )
+            ))
         )
 
         # (4) Distancia REAL al stop, recalculada desde el SL ya redondeado, y
@@ -283,7 +289,9 @@ class RiskManager:
             quantity=float(qty_dec),
             entry_price=entry,
             stop_loss=stop_loss,
-            take_profit=take_profit if take_profit > 0 else None,
+            # take_profit ya es None si let_winners_run; si no, el filtro >0 se
+            # mantiene (defensivo: un valor no positivo por redondeo tampoco protege).
+            take_profit=take_profit if (take_profit is not None and take_profit > 0) else None,
             leverage=L,
             position_side=PositionSide.LONG if is_long else PositionSide.SHORT,
             decision_reason=decision.reason,

@@ -18,8 +18,20 @@ risk:
   atr_stop_multiplier: 1.5   # SL = entrada -/+ 1.5 * ATR(14)
   atr_period: 14
   # objetivo = RR × distancia_al_stop. Copia de simulación del backtest vive en
-  # backtest.take_profit_rr; esta es la del camino EN VIVO (Risk Manager).
+  # backtest.take_profit_rr; esta es la del camino EN VIVO (Risk Manager). Con
+  # let_winners_run=true este valor deja de aplicarse (queda tipado por si se
+  # reactiva el techo fijo sin tocar código).
   take_profit_rr: 2.0
+  # 2026-07-07 (decisión de Eduardo): "cortar pérdidas rápido, dejar correr las
+  # ganancias" — la lógica de los fondos de tendencia. Con true, el Risk Manager
+  # NO coloca take-profit fijo: el stop (atr_stop_multiplier) sigue siendo el
+  # único techo de RIESGO, pero la ganancia queda sin techo — la pierna solo
+  # cierra por stop, por FLIP (la señal se revierte) o por time-stop
+  # (orchestrator.max_position_hold_candles). Probado en la investigación: esta
+  # es la MISMA estructura de salida que usó el sweep de 240 cruces de medias
+  # (sin rescatar el edge) y la que sí sobrevivió en oro/SPX — cambia la FORMA
+  # del payoff, no crea dirección predictiva que no exista.
+  let_winners_run: true
   # Banda de confianza del sentimiento (tres tramos):
   #   < 0.5        → VETO: no se opera (Claude duda demasiado del titular)
   #   [0.5, 0.7)   → tamaño reducido (× low_confidence_size_factor)

@@ -93,6 +93,15 @@ class RiskConfig(BaseModel):
     atr_period: int = Field(ge=2)
     # Sprint 5: parámetros del Risk Manager en vivo.
     take_profit_rr: float = Field(gt=0)
+    # "Cortar pérdidas rápido, dejar correr las ganancias" (lógica de trend-following):
+    # con true, el Risk Manager NO coloca take-profit fijo (take_profit=None en la
+    # Order) — el stop de pérdida (atr_stop_multiplier) sigue intacto y sigue siendo
+    # el único techo de riesgo, pero la ganancia queda SIN TECHO: la pierna solo se
+    # cierra por el stop, por FLIP (la señal se revierte) o por time-stop. Con false
+    # (default histórico) se mantiene el take-profit fijo a take_profit_rr×riesgo.
+    # take_profit_rr NO deja de validarse: sigue siendo obligatorio para poder
+    # reactivar el techo fijo sin tocar código. Reversible en config, como todo gate.
+    let_winners_run: bool = Field(default=False)
     # Banda de confianza del sentimiento en tres tramos:
     #   confianza < min_confidence_to_trade        → VETO (no se opera; Claude duda
     #                                                 demasiado del titular).

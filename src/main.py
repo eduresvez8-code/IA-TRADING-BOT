@@ -50,9 +50,11 @@ def check() -> int:
     print(f"✓ confianza del sentimiento — <{rk.min_confidence_to_trade} VETO | "
           f"[{rk.min_confidence_to_trade},{rk.low_confidence_threshold}) ×"
           f"{rk.low_confidence_size_factor} | ≥{rk.low_confidence_threshold} pleno")
+    tp_desc = ("SIN TECHO (deja correr las ganancias; solo sale por SL/FLIP/time-stop)"
+               if settings.risk.let_winners_run else f"TP {settings.risk.take_profit_rr}×SL")
     print(f"✓ risk manager (Futuros USD-M) — máx {settings.risk.max_open_positions} "
           f"posiciones ({settings.risk.max_same_direction_positions} por dirección) | "
-          f"TP {settings.risk.take_profit_rr}×SL | "
+          f"{tp_desc} | "
           f"feed obsoleto >{settings.risk.stale_feed_seconds:.0f}s | "
           f"leverage máx {settings.risk.max_leverage}x | "
           f"margen máx {settings.risk.max_portfolio_margin_pct:.0f}%")

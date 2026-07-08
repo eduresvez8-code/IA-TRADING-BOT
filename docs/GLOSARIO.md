@@ -1195,3 +1195,16 @@ deriva al vuelo de las tablas base (single source of truth).
   añade una oportunidad de falso positivo aunque cada test individual sea
   honesto. Por eso el informe 2026-07-06 declara qué familias se definieron
   tras ver resultados previos (E2b tras E2) y descuenta sus conclusiones.
+- **Let winners run / expectativa asimétrica** (`risk.let_winners_run`,
+  2026-07-07): filosofía de los fondos de tendencia — cortar la pérdida rápido
+  (stop fijo) pero NO ponerle techo a la ganancia (sin take-profit fijo),
+  saliendo solo cuando la señal se revierte (FLIP) o por time-stop. Matemática:
+  `EV = %aciertos·ganancia_media − %fallos·pérdida_media` puede ser positivo
+  con un win rate bajo (p.ej. 20%) si la ganancia media es varias veces la
+  pérdida media. El pipeline (`Order.take_profit: float|None` →
+  `translate.build_open_requests` → `Executor`) ya soportaba `None` de punta a
+  punta desde antes; el flag solo hace que el Risk Manager lo produzca. Es
+  EXACTAMENTE la estructura de salida que ya se probó en el sweep de 240
+  cruces de medias (no rescató el edge en cripto) y en el momentum de oro/SPX
+  (donde sí sobrevivió, débilmente) — cambia la FORMA del payoff, no crea una
+  dirección predictiva que no exista.

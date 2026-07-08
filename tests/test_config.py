@@ -488,6 +488,27 @@ def test_risk_config_sprint5_valido():
     assert rc.stale_feed_seconds == 30
 
 
+def test_let_winners_run_default_es_false():
+    # Backward-compat: sin el flag explícito, el techo fijo (take_profit_rr) se
+    # mantiene — el default NO cambia el comportamiento histórico en silencio.
+    rc = RiskConfig(**_valid_risk_kwargs())
+    assert rc.let_winners_run is False
+
+
+def test_let_winners_run_se_puede_activar():
+    rc = RiskConfig(**_valid_risk_kwargs(let_winners_run=True))
+    assert rc.let_winners_run is True
+    # take_profit_rr sigue siendo obligatorio y válido aunque no se use: permite
+    # reactivar el techo fijo cambiando solo el flag, sin tocar código.
+    assert rc.take_profit_rr == 2.0
+
+
+def test_settings_yaml_let_winners_run_activo():
+    # 2026-07-07 (decisión de Eduardo): el repo corre SIN techo fijo de ganancia.
+    s = load_settings()
+    assert s.risk.let_winners_run is True
+
+
 def test_take_profit_rr_cero_es_rechazado():
     # Un RR de 0 pondría el take-profit en la propia entrada — sin sentido (gt=0).
     with pytest.raises(ValidationError):

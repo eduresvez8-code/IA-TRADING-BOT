@@ -66,8 +66,10 @@ def main() -> int:
         if a.approved:
             o = a.order
             notional = o.quantity * o.entry_price
+            # TP puede ser None (let_winners_run: sin techo fijo).
+            tp_str = f"{o.take_profit:.2f}" if o.take_profit is not None else "sin techo"
             print(f"    risk:        APROBADA {o.side.value} {o.leverage}x "
-                  f"qty={o.quantity:.4f} SL={o.stop_loss:.2f} TP={o.take_profit:.2f} "
+                  f"qty={o.quantity:.4f} SL={o.stop_loss:.2f} TP={tp_str} "
                   f"nocional={notional:.2f} margen={notional / o.leverage:.2f}\n")
         else:
             print(f"    risk:        VETADA ({a.reason})\n")

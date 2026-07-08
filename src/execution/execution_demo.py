@@ -45,8 +45,10 @@ async def _open(execu, rm, cfg, filt, sig, sent, label):
         return None
     report = await execu.open_position(a.order)
     o = report.order
+    # TP puede ser None (let_winners_run: sin techo fijo, solo corta el stop).
+    tp_str = f"{o.take_profit:.1f}" if o.take_profit is not None else "sin techo"
     print(f"    abierta {o.side.value}/{o.position_side.value} {o.leverage}x "
-          f"qty={o.quantity:.3f} SL={o.stop_loss:.1f} TP={o.take_profit:.1f} "
+          f"qty={o.quantity:.3f} SL={o.stop_loss:.1f} TP={tp_str} "
           f"→ entry={report.entry.status}, protectoras={len(report.protective)}")
     return a.order
 
