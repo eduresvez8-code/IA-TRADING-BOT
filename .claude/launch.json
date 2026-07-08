@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-don-pirry",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8791", "--directory", "/Users/eduardorestrepo/Desktop/Café/marca-don-pirry-cafe/web"],
+      "port": 8791
+    }
+  ]
+}
