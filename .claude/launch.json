@@ -6,6 +6,12 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "8791", "--directory", "/Users/eduardorestrepo/Desktop/Café/marca-don-pirry-cafe/web"],
       "port": 8791
+    },
+    {
+      "name": "bolsa-don-pirry",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8792", "--directory", "/Users/eduardorestrepo/Desktop/Café/marca-don-pirry-cafe"],
+      "port": 8792
     }
   ]
 }
