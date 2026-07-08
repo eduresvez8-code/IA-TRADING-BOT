@@ -96,30 +96,79 @@ diagnóstico de la ronda anterior: estas anomalías (estacionalidad, día-semana
 reversión RSI simple) no tienen dirección predictiva real en cripto — el
 techo fijo nunca fue la causa de la muerte.
 
+================ CORRECCIÓN (2026-07-08, mismo día): POR CRIPTO ================
+
+El ranking de arriba promediaba los 5 activos por configuración — Eduardo
+señaló correctamente que eso NO son "combinaciones cripto-quant", son
+carteras de 5 activos. Repetí el análisis SIN promediar: cada fila es un par
+(configuración, cripto) específico, ordenado SOLO por Sharpe de train (jamás
+por test), reportando su test tal cual salió.
+
+### Donchian — top 10 de 45 pares (9 configs × 5 activos) por train ###
+| entry | exit_ema | activo  | Sh train | Sh test | n1 | n2 |
+|-------|----------|---------|----------|---------|----|----|
+| 55    | 5        | BTCUSDT | +1.72    | -0.53   | 42 | 12 |
+| 55    | 20       | XRPUSDT | +1.61    | +0.53   | 28 | 30 |
+| 40    | 5        | BTCUSDT | +1.59    | -0.53   | 46 | 12 |
+| 40    | 20       | XRPUSDT | +1.55    | +0.52   | 35 | 37 |
+| 55    | 20       | BTCUSDT | +1.27    | -0.85   | 26 | 10 |
+| 40    | 20       | BTCUSDT | +1.23    | -0.85   | 29 | 10 |
+| 20    | 10       | SOLUSDT | +1.14    | +0.20   | 60 | 71 |
+Test positivo: 15/45 pares del universo completo (33%).
+
+### Posicionamiento glsr_z — 10 pares (2 configs × 5 activos) por train ###
+| z    | activo  | Sh train | Sh test | n1  | n2  |
+|------|---------|----------|---------|-----|-----|
+| z1.0 | SOLUSDT | +1.81    | +0.32   | 167 | 199 |
+| z0.5 | SOLUSDT | +1.50    | +0.12   | 205 | 278 |
+| z1.0 | BTCUSDT | +0.94    | -0.49   | 164 | 163 |
+Test positivo: 4/10 pares del universo completo (40%).
+
+DIAGNÓSTICO CLAVE: en un universo SIN edge, el ranking por train no debería
+predecir NADA del resultado en test — el hit rate del top-3-por-train debería
+parecerse al hit rate del universo completo. Donchian: top-3 por train da
+1/3 positivo (33%) — EXACTAMENTE el hit rate del universo (15/45=33%). Cero
+poder predictivo del ranking por train: es ruido puro, confirmado por su
+propia estructura interna, no solo por el signo del resultado. Posicionamiento:
+top-3 da 2/3 (67%) contra 40% del universo — con solo 3 muestras (y 2 de ellas
+el MISMO activo, SOL, a dos umbrales) esto no es una muestra suficiente para
+distinguirse de la suerte; no se sostiene como hallazgo.
+
+Los dos "aciertos" visibles (XRP+Donchian 55/20: test +0.53, n2=30; SOL+glsr
+z1.0: test +0.32, n2=199) NO son la respuesta correcta a "top-3 por train" —
+el verdadero #1 por train en ambas familias (BTC en los dos casos) MURIÓ en
+test. Reportar solo los que funcionaron sería exactamente el error de
+selección sobre el test set que ya nos costó caro con run_ma_split.py.
+
 ======================= LAS 3 "MEJORES" COMBINACIONES =======================
 
 De TODO lo probado con la estructura "cortar pérdidas + dejar correr" en
 CRIPTO, en esta ronda y en las anteriores (240 medias + TSMOM + lead-lag +
 Donchian + estacionalidad/DoW/RSI + posicionamiento), el ranking honesto por
-Sharpe de TEST (entre configuraciones elegidas correctamente por train) es:
+Sharpe de TEST — a nivel de CARTERA de 5 activos (protocolo de selección
+original, promediando) — es:
 
   1. SMA50/200 @ 1h (cruce de medias, ronda anterior): test +0.11
   2. Posicionamiento glsr_z1.0 (stop ATR real): test -0.17
   3. Donchian entry=40/exit_ema=20: test -0.18
 
-VEREDICTO SIN DIPLOMACIA: ninguna es operable. Solo la #1 es positiva, y
-+0.11 de Sharpe no es una estrategia — es ruido con un signo favorable por
-poco margen (compárese con el Sharaço test de comprar-y-esperar en el mismo
-periodo, que ronda 1.3-1.8 en tramos alcistas: un +0.11 activo, con costos y
-riesgo de ejecución real, no justifica el esfuerzo de operarlo). Las
-posiciones #2 y #3 son directamente negativas. "Cortar pérdidas rápido, dejar
-correr las ganancias" es la filosofía correcta EN GENERAL (por eso funciona
-en trend-following de otros mercados, como confirmó el momentum de oro/SPX en
+A nivel de PAR ESPECÍFICO (configuración, cripto), el #1-por-train de cada
+familia es: Donchian BTC 55/5 (test -0.53), Posicionamiento SOL z1.0
+(test +0.32). Ningún par individual elegido honestamente por train muestra
+un Sharpe de test que pase el listón (>0.5) con una muestra creíble.
+
+VEREDICTO SIN DIPLOMACIA: ninguna combinación —ni de cartera ni de par
+específico— es operable. Solo la #1 de cartera es positiva, y +0.11 de
+Sharpe no es una estrategia — es ruido con un signo favorable por poco
+margen (compárese con el Sharpe de comprar-y-esperar en el mismo periodo,
+que ronda 1.3-1.8 en tramos alcistas). "Cortar pérdidas rápido, dejar correr
+las ganancias" es la filosofía correcta EN GENERAL (por eso funciona en
+trend-following de otros mercados, como confirmó el momentum de oro/SPX en
 la ronda anterior) — pero en cripto intradía/swing con $0/mes de datos, ya se
-probó en CADA familia de señal disponible (con y sin techo de ganancia) y el
-resultado es el mismo: no hay dirección predictiva confiable a la que
-aplicarle esa estructura. Cambiar la forma del payoff no crea la señal que no
-existe debajo.
+probó en CADA familia de señal disponible, con y sin techo de ganancia, a
+nivel de cartera Y a nivel de cripto individual, y el resultado es el mismo:
+no hay dirección predictiva confiable a la que aplicarle esa estructura.
+Cambiar la forma del payoff no crea la señal que no existe debajo.
 
 CONCLUSIÓN INTEGRADORA: esta ronda no cambia la conclusión de las rondas
 anteriores. Con let_winners_run=true el bot en vivo tiene una estructura de

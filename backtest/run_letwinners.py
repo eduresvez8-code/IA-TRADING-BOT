@@ -131,6 +131,69 @@ def run_positioning_letwinners(cfg, engine):
     return results
 
 
+def run_donchian_por_activo(cfg, engine):
+    """Igual que run_donchian_letwinners, pero SIN promediar entre activos: cada
+    fila es un par (config, cripto) específico. Selección SOLO por train, entre
+    los 9×5=45 pares — no entre las 9 configs ya promediadas."""
+    qh = cfg.quant_hypotheses
+    print("\n### DONCHIAN sin techo — POR ACTIVO (sin promediar) ###")
+    pares = []
+    for entry in qh.donchian_entry_period_grid:
+        for exit_ema in qh.donchian_exit_ema_grid:
+            if exit_ema >= entry:
+                continue
+            for asset in ASSETS:
+                df = resample(load_parquet(asset, "1h"), "4h")
+                mid = len(df) // 2
+                s1, n1 = _donchian_sharpe(engine, cfg, df.iloc[:mid], asset, entry, exit_ema)
+                s2, n2 = _donchian_sharpe(engine, cfg, df.iloc[mid:], asset, entry, exit_ema)
+                pares.append((entry, exit_ema, asset, s1, s2, n1, n2))
+    pares.sort(key=lambda r: -r[3])  # orden SOLO por train
+    header = ["entry", "exit_ema", "activo", "Sh train", "Sh test", "n1", "n2"]
+    print("| " + " | ".join(header) + " | (top 10 por train)")
+    print("|" + "---|" * len(header))
+    for entry, exit_ema, asset, s1, s2, n1, n2 in pares[:10]:
+        print(f"| {entry} | {exit_ema} | {asset} | {s1:+.2f} | {s2:+.2f} | {n1} | {n2} |")
+    pos = sum(1 for r in pares if r[4] > 0)
+    print(f"Test positivo: {pos}/{len(pares)} pares del universo completo "
+          f"(referencia de ruido: cuántos 'aciertan' por puro azar)")
+    return pares
+
+
+def run_positioning_por_activo(cfg, engine):
+    """Igual que run_positioning_letwinners, pero SIN promediar: cada fila es
+    (umbral, cripto) específico. Selección SOLO por train, entre los 2×5=10 pares."""
+    pr = cfg.positioning_research
+    split_ts = pd.Timestamp(pr.train_test_split_date)
+    print("\n### POSICIONAMIENTO glsr_z contrarian — POR ACTIVO (sin promediar) ###")
+    per_symbol = {}
+    for sym in cfg.market.symbols:
+        px = pos_load_klines_1h(f"data/klines_taker/{sym}.parquet")
+        m = pos_load_metrics_1h(f"data/metrics/{sym}_metrics_5m.parquet",
+                                px.index, pr.metrics_ffill_limit_bars)
+        glsr_z = rolling_zscore(m["count_long_short_ratio"], pr.zscore_window_bars)
+        per_symbol[sym] = (px, glsr_z.to_numpy(dtype=float))
+
+    pares = []
+    for th in pr.entry_threshold_grid:
+        for sym, (px, glsr_z) in per_symbol.items():
+            mask_tr = px.index < split_ts
+            mask_te = ~mask_tr
+            s1, n1 = _zscore_sharpe(engine, cfg, px[mask_tr], sym, glsr_z[mask_tr], th)
+            s2, n2 = _zscore_sharpe(engine, cfg, px[mask_te], sym, glsr_z[mask_te], th)
+            pares.append((th, sym, s1, s2, n1, n2))
+    pares.sort(key=lambda r: -r[2])  # orden SOLO por train
+    header = ["z", "activo", "Sh train", "Sh test", "n1", "n2"]
+    print("| " + " | ".join(header) + " | (top 10 por train)")
+    print("|" + "---|" * len(header))
+    for th, sym, s1, s2, n1, n2 in pares[:10]:
+        print(f"| z{th} | {sym} | {s1:+.2f} | {s2:+.2f} | {n1} | {n2} |")
+    pos = sum(1 for r in pares if r[3] > 0)
+    print(f"Test positivo: {pos}/{len(pares)} pares del universo completo "
+          f"(referencia de ruido: cuántos 'aciertan' por puro azar)")
+    return pares
+
+
 def main() -> int:
     cfg = load_settings()
     engine = BacktestEngine(cfg)
@@ -139,6 +202,8 @@ def main() -> int:
     print("=" * 84)
     run_donchian_letwinners(cfg, engine)
     run_positioning_letwinners(cfg, engine)
+    run_donchian_por_activo(cfg, engine)
+    run_positioning_por_activo(cfg, engine)
     return 0
 
 
