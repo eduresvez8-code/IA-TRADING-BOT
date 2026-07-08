@@ -785,6 +785,11 @@ class QuantHypothesesConfig(BaseModel):
     donchian_take_profit_rr: float = Field(gt=0.0, le=10.0)
     # Salida por tiempo si no salta stop/TP/señal. ge=1 / le=500.
     donchian_max_hold_bars: int = Field(ge=1, le=500)
+    # Grids del estudio "dejar correr" (backtest/run_letwinners.py, 2026-07-08):
+    # barrido canal de entrada × EMA de salida con tp=None (sin techo de ganancia)
+    # y sin salida por tiempo. El runner descarta combos con exit_ema >= entry.
+    donchian_entry_period_grid: list[int] = Field(min_length=1)
+    donchian_exit_ema_grid: list[int] = Field(min_length=1)
 
     # --- H4 — Cruce de medias móviles (sweep) ---
     # Pares [fast, slow] a barrer. Cada par: 2 enteros, fast < slow, en [2, 400].
@@ -900,6 +905,25 @@ class QuantHypothesesConfig(BaseModel):
                 f"donchian_exit_ema ({v}) debe ser < donchian_entry_period ({entry})")
         return v
 
+    @field_validator("donchian_entry_period_grid")
+    @classmethod
+    def entry_grid_en_rango(cls, v: list[int]) -> list[int]:
+        # Mismos límites que donchian_entry_period: [5, 200].
+        for p in v:
+            if not (5 <= p <= 200):
+                raise ValueError(f"donchian_entry_period_grid: {p} fuera de [5, 200]")
+        return v
+
+    @field_validator("donchian_exit_ema_grid")
+    @classmethod
+    def exit_grid_en_rango(cls, v: list[int]) -> list[int]:
+        # Mismos límites que donchian_exit_ema: [2, 100]. La relación exit<entry
+        # se resuelve por combo en el runner (descarta los pares inválidos).
+        for p in v:
+            if not (2 <= p <= 100):
+                raise ValueError(f"donchian_exit_ema_grid: {p} fuera de [2, 100]")
+        return v
+
 
 class PositioningResearchConfig(BaseModel):
     """Investigación de posicionamiento (backtest/run_positioning.py, 2026-07).
@@ -932,6 +956,16 @@ class PositioningResearchConfig(BaseModel):
     # Huecos máximos a rellenar (ffill) al remuestrear métricas 5m → 1h. le=48:
     # más de 2 días de hueco ya no es "el último dato vigente", es inventar.
     metrics_ffill_limit_bars: int = Field(ge=0, le=48)
+    # --- Variante "dejar correr" (backtest/run_letwinners.py, 2026-07-08) ---
+    # Stop de riesgo real: entrada ∓ mult·ATR(risk.atr_period). El estudio
+    # original (threshold_positions) NO tenía freno de pérdida — esta variante
+    # añade el stop manteniendo la salida por reversión del z-score y SIN techo
+    # de ganancia (tp=None). Mismos límites que quant_hypotheses.atr_stop_mult.
+    atr_stop_mult: float = Field(ge=0.5, le=10.0)
+    # Banda de salida del z-score: la posición se cierra cuando el z vuelve a
+    # ±esto (0.0 = cuando cruza el cero: la "sorpresa" se disipó del todo).
+    # Debe ser menor que el umbral de entrada para que exista histéresis.
+    exit_zscore_abs: float = Field(ge=0.0, le=10.0)
 
     @field_validator("imbalance_ma_bars_grid")
     @classmethod

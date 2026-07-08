@@ -1,0 +1,132 @@
+"Cortar pérdidas rápido, dejar correr las ganancias" — barrido de los modelos
+NUNCA probados con esta estructura (2026-07-08)
+
+NOTA: la investigación original la corrió un agente (Fable 5) en un worktree
+aislado; la conexión se cortó antes de que pudiera escribir su informe final
+(el runner backtest/run_letwinners.py quedó referenciado pero sin crear).
+Verifiqué el código que sí quedó implementado (748 tests verdes: nuevos
+deciders en backtest/quant_hypotheses.py, backtest/positioning.py, runner
+actualizado backtest/run_seasonality_reversion.py, sin tocar risk/manager.py
+ni nada de ejecución en vivo), escribí el runner que faltaba
+(backtest/run_letwinners.py) reutilizando exactamente los mismos deciders ya
+verificados, y corrí los backtests yo mismo. Los números de este informe son
+de una corrida real, no reconstruidos de memoria.
+
+Protocolo (igual que siempre): split FIJO antes de mirar resultados (mitades
+para Donchian, igual que run_ma_split.py; fecha fija 2024-12-15 para
+posicionamiento, ya pre-registrada en config desde la ronda anterior),
+configuración elegida SOLO por train, test medido una vez, grid completo.
+
+================ YA PROBADO CON ESTA ESTRUCTURA (no se repite) ================
+
+TSMOM, cruces de medias (240 combos, backtest/run_ma_split.py), lead-lag,
+breakout/mean-reversion (backtest/archetypes.py) — TODOS ya usan tp=None de
+antes. Resultados documentados: TSMOM se evapora OOS; el "superviviente" de
+medias (SMA50/200@4h) resultó ser un artefacto de selección (rank 32/48 en el
+protocolo honesto — ver docs/research/2026-07-06 y finding-architecture-audit
+en memoria); lead-lag anti-predice y muere. El ÚNICO resultado positivo de
+TODA la investigación con esta estructura en cripto es SMA50/200@1h elegido
+honestamente por la 1ª mitad: Sharpe test +0.11 (débil).
+
+================ NUEVO — DONCHIAN sin techo (tp=None, sin time-stop) ================
+
+Grid: donchian_entry_period × donchian_exit_ema (9 combos válidos, exit<entry),
+4h, 5 activos, split por mitades.
+
+| entry | exit_ema | Sh train | Sh test | n1  | n2  |
+|-------|----------|----------|---------|-----|-----|
+| 40    | 20       | +0.92    | -0.18   | 163 | 129 |
+| 55    | 20       | +0.91    | -0.26   | 140 | 115 |
+| 40    | 10       | +0.86    | -0.15   | 205 | 145 |
+| 55    | 10       | +0.83    | -0.27   | 178 | 130 |
+| 40    | 5        | +0.68    | -0.20   | 252 | 167 |
+| 55    | 5        | +0.65    | -0.39   | 219 | 151 |
+| 20    | 10       | +0.55    | -0.58   | 304 | 203 |
+| 20    | 5        | +0.28    | -0.55   | 371 | 232 |
+| 10    | 5        | +0.11    | -0.57   | 519 | 273 |
+
+Elegida en train: entry=40/exit_ema=20 → train +0.92, test -0.18.
+TODAS las 9 configuraciones negativas en test. Quitar el techo de ganancia
+NO rescató Donchian — el problema nunca fue el cap, es que la ruptura no
+predice dirección de forma confiable en cripto.
+
+============ NUEVO — POSICIONAMIENTO con stop ATR real (tp=None) ============
+
+glsr_z contrarian ("fade al retail crowd" — la señal "casi viva" de la ronda
+anterior, train 2.01→test 0.30 SIN stop de riesgo real). Aquí se le añade un
+stop ATR de verdad (atr_stop_mult=2.0) manteniendo salida por reversión del
+z-score (exit_zscore_abs=0.0), 1h, 5 activos, split 2024-12-15.
+
+| config | Sh train | Sh test | n1   | n2   |
+|--------|----------|---------|------|------|
+| z1.0   | +0.89    | -0.17   | 911  | 1023 |
+| z0.5   | +0.57    | -0.43   | 1166 | 1370 |
+
+Elegida en train: z1.0 → train +0.89, test -0.17.
+HALLAZGO IMPORTANTE: con un stop de riesgo real, el resultado es PEOR que con
+la estructura original (z-score puro sin stop: train 2.01→test 0.30/0.34). El
+stop ATR, al cortar operaciones que habrían revertido solas dentro de la banda
+de tolerancia del z-score, resta más de lo que protege — la señal no tenía
+margen para pagar un stop de riesgo real además de sus propios costos. Esto
+DEBILITA aún más el caso de esta señal como "vigilable": ni siquiera con la
+filosofía que el dueño pidió mejora, empeora.
+
+======== NUEVO — ESTACIONALIDAD / DÍA-SEMANA / RSI-REVERSIÓN sin techo ========
+
+Antes estos deciders no pasaban stop/tp explícitos y el motor les aplicaba su
+default con TAKE-PROFIT FIJO (bt.take_profit_rr) — un bug de diseño que capaba
+las ganancias justo en la dirección opuesta a lo que se quería probar. Corregido:
+ahora stop ATR explícito + tp=None. Resultado: SIGUEN MUERTOS, con más fuerza
+si acaso.
+
+Hour-22h (5 activos): Sharpe full-sample -6.15 a -8.79; split OOS -5.80 a
+-9.33 en ambas mitades, TODOS "no estable" (negativo en las dos).
+
+DoW-Mon (5 activos): Sharpe full-sample -0.65 a -1.89; split OOS: BTC/SOL/BNB
+negativos en ambas mitades; ETH y XRP "mixto" (positivo débil en 1ª mitad,
+negativo en 2ª) — no es una señal, es ruido que por azar tuvo una mitad menos
+mala.
+
+RSI-rev (5 activos): Sharpe full-sample -0.00 a -1.03; split OOS mayormente
+negativo; BNB es el único "sí" estable pero con Sharpe ~0.00-0.03 — no es una
+señal, es indistinguible de no operar.
+
+Quitar el techo de ganancia NO rescató ninguna de las tres. Confirma el
+diagnóstico de la ronda anterior: estas anomalías (estacionalidad, día-semana,
+reversión RSI simple) no tienen dirección predictiva real en cripto — el
+techo fijo nunca fue la causa de la muerte.
+
+======================= LAS 3 "MEJORES" COMBINACIONES =======================
+
+De TODO lo probado con la estructura "cortar pérdidas + dejar correr" en
+CRIPTO, en esta ronda y en las anteriores (240 medias + TSMOM + lead-lag +
+Donchian + estacionalidad/DoW/RSI + posicionamiento), el ranking honesto por
+Sharpe de TEST (entre configuraciones elegidas correctamente por train) es:
+
+  1. SMA50/200 @ 1h (cruce de medias, ronda anterior): test +0.11
+  2. Posicionamiento glsr_z1.0 (stop ATR real): test -0.17
+  3. Donchian entry=40/exit_ema=20: test -0.18
+
+VEREDICTO SIN DIPLOMACIA: ninguna es operable. Solo la #1 es positiva, y
++0.11 de Sharpe no es una estrategia — es ruido con un signo favorable por
+poco margen (compárese con el Sharaço test de comprar-y-esperar en el mismo
+periodo, que ronda 1.3-1.8 en tramos alcistas: un +0.11 activo, con costos y
+riesgo de ejecución real, no justifica el esfuerzo de operarlo). Las
+posiciones #2 y #3 son directamente negativas. "Cortar pérdidas rápido, dejar
+correr las ganancias" es la filosofía correcta EN GENERAL (por eso funciona
+en trend-following de otros mercados, como confirmó el momentum de oro/SPX en
+la ronda anterior) — pero en cripto intradía/swing con $0/mes de datos, ya se
+probó en CADA familia de señal disponible (con y sin techo de ganancia) y el
+resultado es el mismo: no hay dirección predictiva confiable a la que
+aplicarle esa estructura. Cambiar la forma del payoff no crea la señal que no
+existe debajo.
+
+CONCLUSIÓN INTEGRADORA: esta ronda no cambia la conclusión de las rondas
+anteriores. Con let_winners_run=true el bot en vivo tiene una estructura de
+salida más sana (matemáticamente correcta si algún día aparece una señal real),
+pero ninguna señal probada hasta ahora — con o sin techo — genera valor
+esperado positivo en cripto con este presupuesto de datos.
+
+Infra: backtest/run_letwinners.py (nuevo), deciders modificados en
+backtest/quant_hypotheses.py y backtest/positioning.py, runner actualizado
+backtest/run_seasonality_reversion.py. 748 tests verdes.

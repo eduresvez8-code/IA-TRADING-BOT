@@ -349,6 +349,10 @@ quant_hypotheses:
   donchian_funding_max_8h_pct: 0.05
   donchian_take_profit_rr: 3.0        # TP = 3× la distancia del stop (Perplexity: 3*riesgo)
   donchian_max_hold_bars: 30          # salida por tiempo si no salta stop/TP/señal
+  # Estudio "dejar correr" (run_letwinners, 2026-07-08): grid entrada × EMA salida,
+  # con tp=None (sin techo) y sin salida por tiempo. Combos exit>=entry se descartan.
+  donchian_entry_period_grid: [10, 20, 40, 55]
+  donchian_exit_ema_grid: [5, 10, 20]
   # H4 — Cruce de medias móviles (sweep guiado por foros): pares fast/slow más citados
   # en cripto (9/21, golden cross 50/200, etc.), tipo (EMA rápida / SMA sin whipsaws) y
   # timeframe. Se EXCLUYE <1h: foros y nuestro propio hallazgo coinciden en que el ruido
@@ -389,3 +393,7 @@ positioning_research:
   cost_per_side_pct: 0.06             # comisión taker 0.04 + slippage 0.02 (aislado del motor)
   train_test_split_date: "2024-12-15T00:00:00Z"  # corte train/test FIJO (anti data-snooping)
   metrics_ffill_limit_bars: 12        # huecos 5m→1h a rellenar como máximo (12h)
+  # Variante "dejar correr" (run_letwinners, 2026-07-08): stop de riesgo real +
+  # salida por reversión del z-score, sin techo de ganancia (tp=None).
+  atr_stop_mult: 2.0                  # mismo stop que quant_hypotheses (ATR14 × 2)
+  exit_zscore_abs: 0.0                # salir cuando el z cruza el 0 (sorpresa disipada)

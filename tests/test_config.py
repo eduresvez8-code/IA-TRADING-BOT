@@ -186,6 +186,8 @@ def _valid_quant_hyp_kwargs(**overrides):
         donchian_funding_max_8h_pct=0.05,
         donchian_take_profit_rr=3.0,
         donchian_max_hold_bars=30,
+        donchian_entry_period_grid=[10, 20, 40, 55],
+        donchian_exit_ema_grid=[5, 10, 20],
         ma_cross_pairs=[[9, 21], [50, 200]],
         ma_cross_types=["ema", "sma"],
         ma_cross_timeframes=["1h", "4h", "1d"],
@@ -256,6 +258,24 @@ def test_quant_hyp_exit_ema_menor_que_canal_de_entrada():
     with pytest.raises(ValidationError):
         QuantHypothesesConfig(**_valid_quant_hyp_kwargs(
             donchian_entry_period=10, donchian_exit_ema=20))
+
+
+def test_quant_hyp_donchian_grids_del_repo_son_validos():
+    # Grids del estudio "dejar correr" (2026-07-08): cargan tipados y en rango.
+    qh = load_settings().quant_hypotheses
+    assert all(5 <= p <= 200 for p in qh.donchian_entry_period_grid)
+    assert all(2 <= p <= 100 for p in qh.donchian_exit_ema_grid)
+
+
+def test_quant_hyp_donchian_entry_grid_fuera_de_rango_es_rechazado():
+    # Canal de 3 velas no es un canal (rango [5, 200]).
+    with pytest.raises(ValidationError):
+        QuantHypothesesConfig(**_valid_quant_hyp_kwargs(donchian_entry_period_grid=[3]))
+
+
+def test_quant_hyp_donchian_exit_grid_fuera_de_rango_es_rechazado():
+    with pytest.raises(ValidationError):
+        QuantHypothesesConfig(**_valid_quant_hyp_kwargs(donchian_exit_ema_grid=[1]))
 
 
 def test_quant_hyp_ma_cross_del_repo_es_valido():
@@ -1251,6 +1271,8 @@ def _valid_positioning_kwargs(**overrides):
         cost_per_side_pct=0.06,
         train_test_split_date="2024-12-15T00:00:00Z",
         metrics_ffill_limit_bars=12,
+        atr_stop_mult=2.0,
+        exit_zscore_abs=0.0,
     )
     base.update(overrides)
     return base
@@ -1273,6 +1295,25 @@ def test_positioning_research_valida():
     from src.core.config import PositioningResearchConfig
     pr = PositioningResearchConfig(**_valid_positioning_kwargs())
     assert pr.zscore_window_days == 60
+    # Variante "dejar correr": stop de riesgo real + banda de salida del z.
+    assert pr.atr_stop_mult == 2.0
+    assert pr.exit_zscore_abs == 0.0
+
+
+def test_positioning_atr_stop_fuera_de_rango_es_rechazado():
+    # Stop a <0.5 ATR salta con el ruido normal; >10 es un typo.
+    from src.core.config import PositioningResearchConfig
+    with pytest.raises(ValidationError):
+        PositioningResearchConfig(**_valid_positioning_kwargs(atr_stop_mult=0.1))
+    with pytest.raises(ValidationError):
+        PositioningResearchConfig(**_valid_positioning_kwargs(atr_stop_mult=20.0))
+
+
+def test_positioning_exit_zscore_negativo_es_rechazado():
+    # La banda de salida es un valor ABSOLUTO: negativo no tiene sentido.
+    from src.core.config import PositioningResearchConfig
+    with pytest.raises(ValidationError):
+        PositioningResearchConfig(**_valid_positioning_kwargs(exit_zscore_abs=-1.0))
 
 
 def test_positioning_umbral_cero_es_rechazado():

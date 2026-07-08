@@ -121,3 +121,69 @@ def test_split_by_date_sin_solape_ni_hueco():
     assert len(tr) + len(te) == len(s)
     assert tr.index.max() < cut
     assert te.index.min() == cut  # el corte cae en TEST (>=), jamás en ambos
+
+
+# ---------- make_zscore_decider (variante "dejar correr", 2026-07-08) ----------
+
+def _mk(z, *, threshold=1.0, direction=-1, atr_mult=2.0, exit_zscore_abs=0.0,
+        closes=None, atrs=None):
+    from backtest.positioning import make_zscore_decider
+    z = np.asarray(z, dtype=float)
+    closes = np.full(len(z), 100.0) if closes is None else np.asarray(closes, float)
+    atrs = np.full(len(z), 5.0) if atrs is None else np.asarray(atrs, float)
+    return make_zscore_decider(closes, atrs, z, threshold=threshold,
+                               direction=direction, atr_mult=atr_mult,
+                               exit_zscore_abs=exit_zscore_abs)
+
+
+def test_zscore_decider_contrarian_entra_long_con_stop_y_sin_techo():
+    # z cae bajo −th en i=1 (activación fresca) → LONG con stop = close − 2·ATR
+    # y tp None: la ganancia no tiene techo, solo el stop corta.
+    d = _mk([0.0, -1.5, -1.2])
+    dec = d(1, None, 0.0, 0)
+    assert dec == ("enter", "LONG", 1.0, 100.0 - 2.0 * 5.0, None)
+
+
+def test_zscore_decider_momentum_entra_long_en_z_positivo():
+    d = _mk([0.0, 1.5], direction=1)
+    dec = d(1, None, 0.0, 0)
+    assert dec is not None and dec[1] == "LONG"
+    # Contrarian con el mismo z → SHORT (fade), con stop por ENCIMA del close.
+    d2 = _mk([0.0, 1.5], direction=-1)
+    dec2 = d2(1, None, 0.0, 0)
+    assert dec2[1] == "SHORT" and dec2[3] == 100.0 + 2.0 * 5.0
+
+
+def test_zscore_decider_no_reentra_mientras_la_condicion_persista():
+    # La condición sigue activa en i=2 (no es activación fresca): si el stop nos
+    # sacó, NO se reentra hasta un cruce nuevo — evita churn de reentradas a costo.
+    d = _mk([0.0, -1.5, -1.4, -0.5, -1.6])
+    assert d(1, None, 0.0, 0) is not None     # activación fresca
+    assert d(2, None, 0.0, 0) is None         # persiste → no reentrar
+    assert d(3, None, 0.0, 0) is None         # dentro de la banda → nada
+    assert d(4, None, 0.0, 0) is not None     # cruce NUEVO → entrada válida
+
+
+def test_zscore_decider_sale_cuando_el_z_revierte_al_cero():
+    # LONG contrarian (vive en z<0): sostiene mientras z<0, sale cuando z ≥ 0.
+    d = _mk([0.0, -1.5, -0.8, 0.1])
+    assert d(1, None, 0.0, 0) is not None
+    assert d(2, "LONG", 0.0, 0) is None        # z sigue negativo → dejar correr
+    assert d(3, "LONG", 0.0, 0) == ("exit",)   # z cruzó el 0 → sorpresa disipada
+
+
+def test_zscore_decider_nan_no_opina():
+    # NaN en z: ni entra ni fuerza salida (sin dato no se adivina).
+    d = _mk([np.nan, np.nan])
+    assert d(0, None, 0.0, 0) is None
+    assert d(1, "LONG", 0.0, 0) is None
+
+
+def test_zscore_decider_atr_invalido_no_entra():
+    d = _mk([0.0, -1.5], atrs=[np.nan, np.nan])
+    assert d(1, None, 0.0, 0) is None
+
+
+def test_zscore_decider_direccion_invalida_es_rechazada():
+    with pytest.raises(ValueError):
+        _mk([0.0], direction=0)

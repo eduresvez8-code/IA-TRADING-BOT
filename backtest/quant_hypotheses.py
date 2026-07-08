@@ -233,7 +233,7 @@ def make_donchian_decider(closes: np.ndarray, atrs: np.ndarray,
                           funding_frac: np.ndarray, *, entry_period: int,
                           exit_ema_period: int, funding_min_frac: float,
                           funding_max_frac: float, atr_mult: float,
-                          take_profit_rr: float, max_hold_bars: int):
+                          take_profit_rr: float | None, max_hold_bars: int | None):
     """H3 — Ruptura Donchian 4h + banda de funding (SIN el gate de OI).
 
     LONG  si close rompe el máximo de los `entry_period` cierres previos Y el
@@ -241,6 +241,12 @@ def make_donchian_decider(closes: np.ndarray, atrs: np.ndarray,
     SHORT si close rompe el mínimo previo Y el funding ≤ -min.
     Stop ATR + take-profit a `take_profit_rr`× el riesgo (gestionados por el motor).
     Salida adicional: cruce de la EMA rápida en contra, o `max_hold_bars` velas.
+
+    Variante "dejar correr" (2026-07-08): `take_profit_rr=None` NO coloca techo de
+    ganancia (tp=None → el motor solo vigila el stop) y `max_hold_bars=None` quita
+    la salida por tiempo. La pierna sale SOLO por el cruce de la EMA rápida en
+    contra (trailing de tendencia) o por el stop ATR — la estructura "cortar
+    pérdidas rápido, dejar correr las ganancias".
     OJO: la confirmación por open interest de la receta original se OMITE — Binance
     no sirve histórico de OI gratis. Esto prueba una versión PARCIAL de la hipótesis.
     """
@@ -267,18 +273,23 @@ def make_donchian_decider(closes: np.ndarray, atrs: np.ndarray,
                 stop = _stop_level("LONG", closes[i], atrs[i], atr_mult)
                 if stop is None:
                     return None
-                tp = closes[i] + take_profit_rr * (closes[i] - stop)
+                # rr=None → sin techo de ganancia: el motor solo vigila el stop.
+                tp = (closes[i] + take_profit_rr * (closes[i] - stop)
+                      if take_profit_rr is not None else None)
                 return ("enter", "LONG", 1.0, stop, tp)
             if closes[i] < donchian_low[i] and fr <= -funding_min_frac:
                 stop = _stop_level("SHORT", closes[i], atrs[i], atr_mult)
                 if stop is None:
                     return None
-                tp = closes[i] - take_profit_rr * (stop - closes[i])
+                tp = (closes[i] - take_profit_rr * (stop - closes[i])
+                      if take_profit_rr is not None else None)
                 return ("enter", "SHORT", 1.0, stop, tp)
             return None
 
-        # Salida por tiempo (backstop) o por cruce de la EMA rápida en contra.
-        if st["entry_bar"] is not None and (i - st["entry_bar"]) >= max_hold_bars:
+        # Salida por tiempo (backstop, solo si está configurada) o por cruce
+        # de la EMA rápida en contra.
+        if (max_hold_bars is not None and st["entry_bar"] is not None
+                and (i - st["entry_bar"]) >= max_hold_bars):
             return ("exit",)
         if position_side == "LONG" and closes[i] < ema_exit[i]:
             return ("exit",)
@@ -360,10 +371,18 @@ def _utc_dt(ts):
     return pd.Timestamp(ts).tz_localize("UTC") if pd.Timestamp(ts).tzinfo is None else pd.Timestamp(ts)
 
 
-def make_hour_seasonality_decider(entry_open_hour: int, hold_hours: int):
+def make_hour_seasonality_decider(closes: np.ndarray, atrs: np.ndarray, *,
+                                  entry_open_hour: int, hold_hours: int,
+                                  atr_mult: float):
     """H6 — Estacionalidad horaria: LONG en la APERTURA de `entry_open_hour` UTC,
-    sostener `hold_hours` velas 1h, salir por señal. Sin predecir precio: apuesta a
-    un patrón de flujo por hora del día (SSRN 4081000). Stop ATR del motor = freno.
+    sostener `hold_hours` velas 1h, salir cuando la ventana horaria pasó. Sin
+    predecir precio: apuesta a un patrón de flujo por hora del día (SSRN 4081000).
+
+    Estructura de salida (2026-07-08, "dejar correr"): stop ATR EXPLÍCITO
+    (close ∓ mult·ATR de la vela de decisión) como único freno de pérdida y
+    tp=None — sin techo de ganancia. Antes estos deciders no pasaban stop/tp y
+    el motor les aplicaba su default con take-profit FIJO (bt.take_profit_rr);
+    eso capaba las ganancias, justo lo contrario de la filosofía a probar.
 
     Como el motor decide al cierre de i y ejecuta en la apertura de i+1: para entrar
     en la apertura de la hora H hay que señalar cuando la vela i es la hora (H-1);
@@ -376,7 +395,10 @@ def make_hour_seasonality_decider(entry_open_hour: int, hold_hours: int):
         h = _utc_dt(ts).hour
         if position_side is None:
             if h == signal_in:
-                return ("enter", "LONG", 1.0)   # stop/tp None → ATR del motor
+                stop = _stop_level("LONG", closes[i], atrs[i], atr_mult)
+                if stop is None:
+                    return None
+                return ("enter", "LONG", 1.0, stop, None)  # tp None → sin techo
             return None
         if h == signal_out:
             return ("exit",)
@@ -385,10 +407,14 @@ def make_hour_seasonality_decider(entry_open_hour: int, hold_hours: int):
     return decider
 
 
-def make_dow_decider(entry_weekday: int, hold_days: int):
+def make_dow_decider(closes: np.ndarray, atrs: np.ndarray, *,
+                     entry_weekday: int, hold_days: int, atr_mult: float):
     """H7 — Efecto día-de-la-semana en velas DIARIAS: LONG el día `entry_weekday`
-    (0=lunes), sostener `hold_days` velas. El motor entra en la apertura del día
-    siguiente al de la señal, así que señalamos el día previo al de entrada deseado.
+    (0=lunes), sostener `hold_days` velas; la salida es "el día pasó" (reversión
+    de la condición de entrada). El motor entra en la apertura del día siguiente
+    al de la señal, así que señalamos el día previo al de entrada deseado.
+
+    Igual que H6: stop ATR explícito + tp=None (sin techo de ganancia).
     """
     signal_in = (entry_weekday - 1) % 7
 
@@ -396,7 +422,10 @@ def make_dow_decider(entry_weekday: int, hold_days: int):
         wd = _utc_dt(ts).dayofweek
         if position_side is None:
             if wd == signal_in:
-                return ("enter", "LONG", 1.0)
+                stop = _stop_level("LONG", closes[i], atrs[i], atr_mult)
+                if stop is None:
+                    return None
+                return ("enter", "LONG", 1.0, stop, None)
             return None
         # Salir tras hold_days: señalamos hold_days-1 días después de la entrada real.
         if wd == (entry_weekday - 1 + hold_days) % 7:
@@ -407,11 +436,17 @@ def make_dow_decider(entry_weekday: int, hold_days: int):
 
 
 def make_rsi_reversion_decider(closes: np.ndarray, rsi_vals: np.ndarray,
-                               trend_sma: np.ndarray, *, oversold: float,
-                               overbought: float):
+                               trend_sma: np.ndarray, atrs: np.ndarray, *,
+                               oversold: float, overbought: float,
+                               atr_mult: float):
     """H8 — Reversión a la media: LONG cuando RSI<oversold Y close>SMA (comprar el
-    dip DENTRO de una tendencia alcista de fondo), salir cuando RSI>overbought. El
-    filtro SMA evita 'cazar el cuchillo' en tendencia bajista. Stop ATR del motor.
+    dip DENTRO de una tendencia alcista de fondo), salir cuando RSI>overbought
+    (la condición de entrada se revirtió: de sobreventa a sobrecompra). El
+    filtro SMA evita 'cazar el cuchillo' en tendencia bajista.
+
+    Igual que H6/H7: stop ATR explícito + tp=None. La ganancia no tiene techo:
+    si el rebote se convierte en tendencia, la posición sigue hasta que el RSI
+    cruce a sobrecompra o salte el stop.
     """
     def decider(i, position_side, score, ts):
         r = rsi_vals[i]
@@ -419,7 +454,10 @@ def make_rsi_reversion_decider(closes: np.ndarray, rsi_vals: np.ndarray,
             return None
         if position_side is None:
             if r < oversold and closes[i] > trend_sma[i]:
-                return ("enter", "LONG", 1.0)
+                stop = _stop_level("LONG", closes[i], atrs[i], atr_mult)
+                if stop is None:
+                    return None
+                return ("enter", "LONG", 1.0, stop, None)
             return None
         if r > overbought:
             return ("exit",)

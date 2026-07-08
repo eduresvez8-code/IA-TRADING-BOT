@@ -49,20 +49,31 @@ def main() -> int:
     print("=" * 82)
 
     # Deciders-fábrica por familia (reciben el df del tramo para indicadores causales).
-    def mk_hour(_df):
+    # Desde 2026-07-08 los tres deciders llevan stop ATR explícito + tp=None
+    # ("dejar correr"): necesitan closes/atrs del tramo.
+    def mk_hour(df):
+        closes = df["close"].to_numpy(dtype=float)
+        atrs = atr(df, cfg.risk.atr_period).to_numpy()
         return make_hour_seasonality_decider(
-            qh.seasonality_entry_open_hour_utc, qh.seasonality_hold_hours)
+            closes, atrs, entry_open_hour=qh.seasonality_entry_open_hour_utc,
+            hold_hours=qh.seasonality_hold_hours, atr_mult=qh.atr_stop_mult)
 
-    def mk_dow(_df):
-        return make_dow_decider(qh.dow_entry_weekday, qh.dow_hold_days)
+    def mk_dow(df):
+        closes = df["close"].to_numpy(dtype=float)
+        atrs = atr(df, cfg.risk.atr_period).to_numpy()
+        return make_dow_decider(
+            closes, atrs, entry_weekday=qh.dow_entry_weekday,
+            hold_days=qh.dow_hold_days, atr_mult=qh.atr_stop_mult)
 
     def mk_rsi(df):
         closes = df["close"].to_numpy(dtype=float)
         rsi_vals = rsi(df["close"], qh.rsi_reversion_period).to_numpy()
         trend = sma(df["close"], qh.rsi_reversion_trend_sma).to_numpy()
+        atrs = atr(df, cfg.risk.atr_period).to_numpy()
         return make_rsi_reversion_decider(
-            closes, rsi_vals, trend,
-            oversold=qh.rsi_reversion_oversold, overbought=qh.rsi_reversion_overbought)
+            closes, rsi_vals, trend, atrs,
+            oversold=qh.rsi_reversion_oversold,
+            overbought=qh.rsi_reversion_overbought, atr_mult=qh.atr_stop_mult)
 
     families = [
         (f"Hour-{qh.seasonality_entry_open_hour_utc}h", "1h", lambda a: load_parquet(a, "1h"), mk_hour),

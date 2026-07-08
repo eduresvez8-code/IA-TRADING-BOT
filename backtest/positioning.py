@@ -71,6 +71,75 @@ def threshold_positions(z: pd.Series, threshold: float, direction: int) -> pd.Se
     return pd.Series(pos, index=z.index).fillna(0.0)
 
 
+def make_zscore_decider(closes: np.ndarray, atrs: np.ndarray, z: np.ndarray, *,
+                        threshold: float, direction: int, atr_mult: float,
+                        exit_zscore_abs: float):
+    """Decider para BacktestEngine: umbral de z-score + stop ATR real, sin techo.
+
+    Traducción de `threshold_positions()` a la estructura "cortar pérdidas
+    rápido, dejar correr las ganancias" (2026-07-08). Diferencias deliberadas:
+
+      1. ENTRADA fresca: solo cuando la condición |z|>threshold se ACTIVA
+         (pasa de falsa en la vela previa a verdadera). Evita el churn de
+         reentradas inmediatas tras un stop mientras el z sigue extremo —
+         el mismo diseño que make_funding_decider.
+      2. STOP de riesgo real: close ∓ atr_mult·ATR de la vela de decisión.
+         threshold_positions no tenía freno de pérdida; aquí el tamaño lo
+         dimensiona el motor por la distancia al stop (riesgo fijo % equity).
+      3. SALIDA por reversión: la posición se sostiene MIENTRAS la condición
+         persista y se cierra cuando el z vuelve a ±exit_zscore_abs (con 0.0:
+         cuando cruza el cero — la "sorpresa" se disipó). tp=None → la
+         ganancia no tiene techo además del stop.
+
+    direction=+1 (momentum): z>th → LONG, z<−th → SHORT.
+    direction=−1 (contrarian): z>th → SHORT, z<−th → LONG.
+    NaN en z → sin señal (jamás se adivina).
+    """
+    if direction not in (1, -1):
+        raise ValueError(f"direction debe ser +1 o -1, no {direction!r}")
+
+    def _raw_side(i: int) -> str | None:
+        zi = z[i]
+        if math.isnan(zi):
+            return None
+        if zi > threshold:
+            return "LONG" if direction == 1 else "SHORT"
+        if zi < -threshold:
+            return "SHORT" if direction == 1 else "LONG"
+        return None
+
+    def _stop(side: str, i: int) -> float | None:
+        a = atrs[i]
+        if a is None or math.isnan(a) or a <= 0:
+            return None
+        return closes[i] - atr_mult * a if side == "LONG" else closes[i] + atr_mult * a
+
+    def decider(i, position_side, score, ts):
+        side = _raw_side(i)
+        if position_side is None:
+            # Entrada fresca: la condición no estaba activa en la vela previa.
+            if side is None or (i > 0 and _raw_side(i - 1) == side):
+                return None
+            stop = _stop(side, i)
+            if stop is None:
+                return None
+            return ("enter", side, 1.0, stop, None)   # tp None → sin techo
+        # Sosteniendo: salir cuando el z revierte a la banda de salida.
+        zi = z[i]
+        if math.isnan(zi):
+            return None
+        # ¿Qué signo de z sostiene la posición? LONG con dir=+1 vive en z>0;
+        # LONG con dir=−1 vive en z<0 (se compró el pánico) — y viceversa.
+        holds_positive_z = (position_side == "LONG") == (direction == 1)
+        if holds_positive_z and zi <= exit_zscore_abs:
+            return ("exit",)
+        if not holds_positive_z and zi >= -exit_zscore_abs:
+            return ("exit",)
+        return None
+
+    return decider
+
+
 def net_strategy_returns(pos: pd.Series, ret: pd.Series,
                          cost_per_side: float) -> pd.Series:
     """PnL por barra NETO de costos: pos_t · ret_{t+1} − |Δpos_t| · costo_lado.
