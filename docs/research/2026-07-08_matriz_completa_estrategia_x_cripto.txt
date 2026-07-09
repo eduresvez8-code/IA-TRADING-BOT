@@ -1,0 +1,95 @@
+Matriz COMPLETA estrategia × cripto (2026-07-08) — respuesta a "¿probaste todas
+las combinaciones? serían 75"
+
+Interpretación: ~14 familias de estrategia distintas × 5 criptos (BTC/ETH/SOL/
+XRP/BNB) ≈ 70-75 "combinaciones" a nivel grueso. Pero la mayoría de familias
+tienen su propio grid de parámetros (lookbacks, umbrales, pares de medias), así
+que el número REAL de pares (config, cripto) probados en esta sesión es mucho
+mayor: ~497. Esta es la cuenta honesta, familia por familia, con el número de
+positivos en TEST como referencia de ruido (base esperada por puro azar: 50%).
+
+Protocolo idéntico en todo: split fijo ANTES de mirar resultados (mitades para
+TSMOM/MA-cross/funding/Donchian, fecha fija 2024-12-15 para posicionamiento,
+walk-forward de 4 folds para pares/VWAP/squeeze/carry), config elegida SOLO por
+train (o por folds internos en el caso walk-forward), test/hold-out medido una
+vez, grid completo reportado — nunca reordenar por la columna de resultado.
+
+============================ RESUMEN POR FAMILIA ============================
+
+Familia                        | Combos | Test+  | %    | Veredicto
+--------------------------------|--------|--------|------|------------------
+TSMOM (5 lookbacks × 5 activos) |     25 |  16/25 |  64% | Alto %, pero n2 de
+                                 |        |        |      | 1-11 trades: ruido
+                                 |        |        |      | estadístico, no señal
+Funding extremo (5 activos)     |      5 |    1/5 |  20% | BTC/ETH/SOL: ~0
+                                 |        |        |      | trades (no testeable)
+Donchian sin techo (9×5)        |     45 |  15/45 |  33% | Por debajo del 50%
+MA-cross (48 configs × 5)       |    240 |  14/240|  5.8%| El peor de todos —
+                                 |        |        |      | muy por debajo del 50%
+Posicionamiento glsr_z (2×5)    |     10 |   4/10 |  40% | Por debajo del 50%
+Posicionamiento resto (12×2×5)  |    120 |  10/120|  8.3%| smart_dumb SOL/XRP
+                                 |        |        |      | positivos, PERO
+                                 |        |        |      | negativos en BTC/ETH/
+                                 |        |        |      | BNB — signo opuesto
+                                 |        |        |      | en 3/5, no es señal
+                                 |        |        |      | universal, descartado
+Lead-lag (3 lags × 4 targets)   |     12 |   0/12  |   0% | Muerto, anti-predice
+Estacionalidad Hour-22h (5)     |      5 |    0/5  |   0% | Muerto en ambas mitades
+Día-semana DoW (5)              |      5 |    0/5  |   0% | 2/5 mixto, 0 en test
+Reversión RSI (5)               |      5 |    1/5  |  20% | Solo BNB ~0.02 (ruido)
+Pares cointegración (10 pares)  |     10 |   0/10  |   0% | IC>0: momentum, no
+                                 |        |        |      | reversión (hipótesis
+                                 |        |        |      | al revés)
+VWAP reversión (5)              |      5 |    0/5  |   0% | Ninguno pasa Regla Oro
+Squeeze volatilidad (5)         |      5 |    0/5  |   0% | Ninguno pasa Regla Oro
+Carry de funding (5)            |      5 |    2/5  |  40% | BTC/ETH pasan Regla
+                                 |        |        |      | Oro; BNB NEGATIVO
+
+TOTAL: 497 pares (config, cripto) probados. Positivos en test: 63/497 = 12.7%
+— muy por debajo del 50% que esperarías de puro azar. Esto es tan informativo
+como si fuera muy por ENCIMA: significa que las configuraciones que "ganan" en
+entrenamiento sistemáticamente predicen MAL el resultado fuera de muestra — el
+sobreajuste domina, no hay estructura real que generalice.
+
+===================== LAS "MEJORES" — Y POR QUÉ NO LO SON =====================
+
+De los 497 pares, los que muestran train Y test positivos con muestra decente:
+
+1. TSMOM 90-126d en varios activos (train+test positivos en 5/5 activos a esos
+   lookbacks) — pero n2 (trades en test) entre 2 y 11. Con tan pocos trades el
+   intervalo de confianza del Sharpe es enorme; "positivo" no es distinguible
+   de "tuvo suerte con pocas apuestas". NO ES OPERABLE.
+
+2. smart_dumb|mom en SOL (train+1.49→test+1.09, n2=275) y XRP (train+0.96→
+   test+0.74, n2=262) — muestra grande, Sharpe real. PERO smart_dumb|mom es
+   NEGATIVO y sustancial en BTC (-1.81), ETH (-1.40) y BNB (-1.46) — signo
+   OPUESTO en 3 de 5 activos con estructura de mercado similar. Un efecto
+   económico real (dinero inteligente lidera al retail) debería verse igual en
+   activos comparables; que se invierta en el 60% de ellos es la firma de un
+   patrón hallado por azar al escanear muchas combinaciones, no una señal
+   universal. DESCARTADO tras el chequeo de consistencia.
+
+3. Carry BTC/ETH — el único que pasa TODOS los criterios (walk-forward 4/4,
+   t-stat>2, PF>1.15) de forma limpia y sin contradicción cruzada. Pero es
+   yield estructural modesto (~3.7-3.8%/año neto), no predicción de dirección
+   — y ya documentado como "el candidato con mejor caso, pero modesto y con
+   Sharpe potencialmente engañoso" en [[finding-carry-funding]].
+
+4. Donchian 40/20 en XRP (train+1.55→test+0.52, n2=37) — pasa el filtro de
+   muestra, pero es 1 de 45 pares; el 33% de hit rate general de Donchian dice
+   que encontrar 1-2 positivos de tamaño razonable es exactamente lo esperado
+   por azar en un pool de 45.
+
+VEREDICTO FINAL: de ~497 combinaciones estrategia×cripto probadas en TODA la
+investigación (4+ rondas), la única que sobrevive cada chequeo de rigor
+(walk-forward, consistencia entre activos, tamaño de muestra) es el carry de
+funding en BTC/ETH — y es cosecha de prima modesta, no predicción. Todo lo
+demás que "se ve bien" en una mirada superficial falla al aplicar exactamente
+las mismas preguntas que ya nos costó aprender a hacer en esta sesión: ¿el
+train predice el test mejor que el azar? ¿es consistente entre activos
+similares? ¿hay suficientes trades para que el Sharpe signifique algo? Ninguna
+estrategia de PREDICCIÓN DE DIRECCIÓN pasa las tres.
+
+Infra: backtest/run_full_matrix.py (nuevo — MA-cross y posicionamiento
+completo por activo, split de funding-extremo que nunca existió). 748 tests
+verdes, nada de trading en vivo tocado.
