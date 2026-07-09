@@ -143,7 +143,11 @@ edge:
 # --- Laboratorio de estrategia (Sprint de investigación quant) ---
 # Escáner multi-activo de arquetipos. Todo parámetro vive aquí (cero hardcoding).
 scan:
-  symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "LINKUSDT"]
+  # 2026-07-08: corregido LINKUSDT→BNBUSDT — había quedado desincronizado de
+  # market.symbols (el universo cambió, esta lista no se actualizó). Afecta a
+  # las 4 familias de backtest/quant_matrix.py (pares, VWAP, squeeze, carry):
+  # nunca habían visto BNB, y sí veían LINK, que ni siquiera está en el bot.
+  symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT"]
   history_days: 1095            # ~3 años de histórico a descargar/backtestear
   walk_forward_folds: 4         # tramos contiguos para el test de consistencia
   edge_profit_factor_min: 1.15  # PF mínimo (con expectancy>0) para declarar "edge"
@@ -363,7 +367,9 @@ quant_hypotheses:
   ma_cross_allow_short: true          # simétrico (long/short), como el resto de la matriz
   # --- H5 — Lead-lag cascade (Perplexity rank 4/5, Guo 2024): BTC lidera, alt sigue ---
   leadlag_leader: "BTCUSDT"           # el activo que lidera el movimiento
-  leadlag_target_assets: ["ETHUSDT", "SOLUSDT"]  # los que (supuestamente) siguen
+  # 2026-07-08: ampliado de [ETH,SOL] a los 4 restantes del universo — nunca se
+  # había probado si XRP/BNB siguen a BTC con el mismo mecanismo.
+  leadlag_target_assets: ["ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT"]  # los que (supuestamente) siguen
   leadlag_lag_hours_grid: [6, 24, 72]  # lags del retorno de BTC que probamos (JSON)
   leadlag_regime_sma: 200             # SMA200 1h: líder y target deben coincidir en dirección
   leadlag_allow_short: true           # simétrico (long/short)

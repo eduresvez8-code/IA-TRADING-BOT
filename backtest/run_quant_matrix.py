@@ -34,14 +34,21 @@ from backtest.vwap import simulate_vwap
 # --------------------------------- Familia B ---------------------------------
 
 def _run_pairs(cfg, cdir: Path) -> list[dict]:
+    # Alineación por FECHA (open_time), no por posición: los símbolos no
+    # comparten necesariamente el mismo rango exacto (p.ej. BNB se descargó
+    # después, con 120 velas y 9 días más que BTC/ETH/SOL/XRP). Combinar
+    # np.ndarray de longitudes distintas en un DataFrame por posición rompía
+    # con ValueError; el join por fecha (inner: solo timestamps en TODOS los
+    # símbolos) es lo correcto para calcular un spread entre dos piernas.
     series = {}
     for sym in cfg.scan.symbols:
         path = cdir / f"{sym}_1h.parquet"
         if path.exists():
-            series[sym] = np.log(pd.read_parquet(path)["close"].to_numpy(dtype=float))
+            df = pd.read_parquet(path).set_index("open_time")
+            series[sym] = np.log(df["close"])
     if len(series) < 2:
         return []
-    log_prices = pd.DataFrame(series)
+    log_prices = pd.DataFrame(series).dropna(how="any")
     rows = []
     for st in run_pairs_all(log_prices, cfg.quant_matrix):
         rows.append({
