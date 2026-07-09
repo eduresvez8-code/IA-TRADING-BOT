@@ -1,0 +1,97 @@
+Barrido en BOLSA (acciones) — 2026-07-08
+
+CONTEXTO: Eduardo pidió probar con acciones. Reutilizamos toda la
+infraestructura de backtest ya construida para cripto (motor sin look-ahead,
+deciders de MA-cross/TSMOM/RSI-reversión/día-de-semana), con datos diarios
+2010-2026 vía yfinance (gratis). Nueva dependencia dev: yfinance.
+
+===================== ERROR CORREGIDO A MITAD DE CAMINO =====================
+
+Primer intento: elegí 10 acciones "conocidas" (AAPL, MSFT, NVDA, JPM, XOM, JNJ,
+WMT, KO, CAT, TSLA). Resultado: 93-94% de las combinaciones positivas en test
+— sospechosamente alto comparado con el 5-40% de cripto. Verificación de
+comprar-y-mantener reveló la causa: NVDA +415%/año en el periodo de prueba,
+TSLA +203%/año — elegí GANADORES CONOCIDOS con retrospectiva (NVDA y TSLA no
+eran grandes empresas en 2010; se eligieron sabiendo lo que pasó después). Es
+sesgo de supervivencia clásico, en su forma más grave.
+
+CORREGIDO: nueva selección = las 10 mayores empresas de EE.UU. por
+capitalización REAL en enero 2010 (XOM, MSFT, WMT, GE, JNJ, PG, T, BAC, CVX,
+IBM) — incluye perdedores reales (GE, T) sin usar información del futuro.
+Todo lo que sigue usa esta selección corregida.
+
+============================ RESUMEN POR FAMILIA ============================
+
+Familia            | Combos | Test+  | %    | Nota
+--------------------|--------|--------|------|----------------------------------
+MA-cross (16×10)    |    160 | 109/160| 68%  | Por encima de azar, pero MUCHOS
+                    |        |        |      | pierden contra buy-and-hold
+TSMOM (5×10)        |     50 |  38/50 | 76%  | Igual — hay que comparar con B&H
+RSI-reversión (10)  |     10 |   9/10 | 90%  | Alto hit rate, requiere diagnóstico
+DoW-Mon LARGO (10)  |     10 |   0/10 |  0%  | Negativo en TODAS, train Y test —
+                    |        |        |      | señal clara, en la dirección
+                    |        |        |      | opuesta a la probada
+
+Familias excluidas (no aplican a acciones): Donchian (exige funding rate, es
+un concepto de futuros perpetuos), estacionalidad horaria (las acciones no
+operan 24/7).
+
+=================== CHEQUEO CLAVE: ¿SUPERA A COMPRAR-Y-MANTENER? ===================
+
+Sharpe de comprar-y-mantener (test, 2ª mitad, mismo periodo): XOM +0.55, MSFT
++0.80, WMT +0.92, GE +0.76, JNJ +0.70, PG +0.63, T +0.30, BAC +0.50, CVX +0.46,
+IBM +0.62. Es un mercado alcista fuerte y genuino para grandes caps 2010-2026
+— no es sesgo de selección esta vez (la lista es objetiva de 2010).
+
+La mayoría de los "positivos" de MA-cross/TSMOM en la tabla de arriba SON
+MÁS BAJOS que el buy-and-hold del mismo ticker en el mismo periodo — la
+estrategia solo captura una fracción del alza de fondo por estar dentro y
+fuera del mercado (exposición parcial a una tendencia real), no aporta una
+ventaja predictiva propia. Mismo patrón que "el modelo ML de cripto aprendió
+solo beta" (finding-final-frontiers).
+
+===================== DIAGNÓSTICO RIGUROSO (bootstrap + concentración) =====================
+
+TSMOM-252d JNJ (el mejor por Sharpe de curva de equity, test +0.89):
+  Bootstrap 90% CI del Sharpe por operación: [-0.90, -0.08] — ENTERAMENTE
+  NEGATIVO pese al Sharpe de curva de equity positivo (divergencia entre
+  medir por curva de capital vs. por retorno de cada operación individual).
+  90% de la ganancia viene de solo 4 operaciones (9% del total). Sub-periodo:
+  negativo en ambas mitades del test (-0.21, -1.17). NO ES REAL.
+
+DoW-Mon INVERTIDO (evitar/cortocircuitar la exposición hacia el fin de
+semana), agregado de las 10 acciones, 3500 operaciones en test:
+  Bootstrap 90% CI: [+0.18, +0.24] — ENTERAMENTE POSITIVO, excluye el cero.
+  Concentración: el 10% de las operaciones aporta solo 42% de la ganancia
+  (vs. 75-90% en TODO lo que se ha descartado en cripto Y en el resto de
+  acciones) — la ganancia está repartida, no es una racha de suerte.
+  Sub-periodo: positivo en AMBAS mitades del test (+0.175, +0.247), la
+  segunda incluso más fuerte que la primera — sin señales de decaimiento
+  reciente.
+
+============================ VEREDICTO, CON MATICES ============================
+
+Es el ÚNICO candidato de TODA la investigación (cripto + acciones, cientos de
+combinaciones) que pasa las tres pruebas simultáneas: bootstrap significativo,
+sin concentración sospechosa, estable dentro y fuera de muestra.
+
+PERO, con la misma honestidad de siempre:
+1. Es el "efecto fin de semana / lunes" — una anomalía ACADÉMICAMENTE
+   DOCUMENTADA desde los años 1980 (French 1980, Lakonishok & Smidt 1988). Que
+   aparezca aquí no es un descubrimiento nuevo, es una replicación.
+2. La literatura también documenta que esta anomalía se ha DEBILITADO con el
+   tiempo al hacerse pública — nuestro chequeo de sub-periodo (ambas mitades
+   del test positivas, sin decaer) es tranquilizador pero cubre solo 2018-2026;
+   no hay garantía de que sobreviva publicada y arbitrada en adelante.
+3. Es una estrategia CORTA (shortear antes del fin de semana). No modelamos
+   costos de préstamo de acciones (borrow fee) ni riesgo de short squeeze,
+   que sí existen en shorting real de acciones — nuestro modelo de costos
+   fue calibrado para futuros perpetuos cripto (taker fee + slippage), no
+   necesariamente representa fielmente el costo de cortos en acciones.
+4. Esto NO tiene nada que ver con el bot cripto de Eduardo — es otro mercado,
+   otra clase de activo, otra infraestructura de ejecución (broker de
+   acciones con margen para shorts, no Binance Futuros).
+
+Infra: backtest/run_stocks.py (nuevo), data/stocks/*.parquet (10 tickers,
+2010-2026). yfinance añadido como dependencia dev. 748 tests verdes, nada de
+trading en vivo (cripto) tocado.
