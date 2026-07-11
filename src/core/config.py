@@ -54,6 +54,9 @@ class Secrets(BaseSettings):
 
     broker_api_key: str = ""
     broker_api_secret: str = ""
+    # Financial Modeling Prep (fundamentales/earnings, 2026-07-25): verificación
+    # gratuita de point-in-time ANTES de considerar cualquier proveedor de pago.
+    fmp_api_key: str = ""
 
 
 class MarketConfig(BaseModel):
