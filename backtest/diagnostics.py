@@ -60,6 +60,48 @@ def bootstrap_sharpe_ci(returns, periods_per_year: float, *, iterations: int,
     return (float(lo), float(hi))
 
 
+def max_drawdown(returns) -> float:
+    """Peor caída pico-a-valle de la curva de capital, como fracción positiva.
+
+    A diferencia del Sharpe (penaliza TODA la volatilidad, incluso subidas
+    rápidas), esto mide solo el dolor real: cuánto llegó a caer el capital
+    desde su máximo previo. curva = producto acumulado de (1+r); drawdown_t =
+    curva_t / máximo_hasta_t − 1 (≤0); devolvemos |mínimo| (0 = nunca cayó).
+    """
+    r = np.asarray(returns, dtype=float)
+    r = r[~np.isnan(r)]
+    if len(r) == 0:
+        return 0.0
+    curve = np.cumprod(1.0 + r)
+    running_max = np.maximum.accumulate(curve)
+    drawdown = curve / running_max - 1.0
+    return float(-drawdown.min())
+
+
+def calmar_ratio(returns, periods_per_year: float) -> float:
+    """CAGR / |drawdown máximo| — retorno anual por unidad de PEOR caída.
+
+    La métrica que Faber (2007) usa para justificar el timing de tendencia:
+    un viaje más suave puede valer la pena aunque el retorno total sea
+    similar o algo menor, porque el drawdown (no la volatilidad total) es lo
+    que de verdad empuja a alguien a vender en pánico. 0 si no hubo caída
+    (drawdown=0, sin riesgo que dividir) o sin datos suficientes.
+    """
+    r = np.asarray(returns, dtype=float)
+    r = r[~np.isnan(r)]
+    if len(r) < 2:
+        return 0.0
+    years = len(r) / periods_per_year
+    if years <= 0:
+        return 0.0
+    total_return = float(np.prod(1.0 + r) - 1.0)
+    cagr = (1.0 + total_return) ** (1.0 / years) - 1.0
+    dd = max_drawdown(r)
+    if dd == 0.0:
+        return 0.0
+    return float(cagr / dd)
+
+
 def concentration_top_decile(pnls) -> float:
     """Fracción de la ganancia neta total aportada por el top 10% de unidades.
 

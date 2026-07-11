@@ -223,6 +223,107 @@ def _gate_daily(test_r: pd.Series, trades: list[float], cfg: Settings,
 
 
 # ---------------------------------------------------------------------------
+# Selección por familia (config elegida SOLO por train) — reutilizada por
+# run_sp500_research.py (gate de 5 criterios) Y por run_sp500_drawdown_
+# analysis.py (Calmar/drawdown, 2026-07-25): AMBOS deben ver EXACTAMENTE la
+# misma config ganadora y la misma serie de test — una sola fuente de verdad,
+# nunca dos selecciones que puedan desincronizarse.
+# ---------------------------------------------------------------------------
+
+def select_tsmom_index(cfg: Settings, d: dict, cut: pd.Timestamp,
+                       per_side: float) -> tuple[str, pd.Series, float]:
+    rc = cfg.research
+    rows = []
+    for L in rc.tsmom_index.lookback_months_grid:
+        w = tsmom_index_weights(d["spy_mclose"], L)
+        r = _drop_warmup_months(
+            monthly_strategy_returns(w, d["spy_hold_m"], d["cash_m"], per_side), w)
+        rows.append({"L": L, **_monthly_row(r, cut), "_w": w})
+    best = max(rows, key=lambda x: x["sh_train"])
+    return f"L={best['L']}", best["test"], MONTHS_PER_YEAR
+
+
+def select_ma_timing(cfg: Settings, d: dict, cut: pd.Timestamp,
+                     per_side: float) -> tuple[str, pd.Series, float]:
+    rc = cfg.research
+    rows3 = []
+    for N in rc.ma_timing.sma_days_grid:
+        w = ma_timing_monthly_weights(d["spy"], N)
+        r = _drop_warmup_months(
+            monthly_strategy_returns(w, d["spy_hold_m"], d["cash_m"], per_side), w)
+        rows3.append({"config": f"SMA{N}@fin-de-mes", "freq": "M",
+                      **_monthly_row(r, cut), "_w": w})
+    for fast, slow in rc.ma_timing.cross_pairs:
+        pos = golden_cross_daily_position(d["spy"], fast, slow)
+        r = daily_strategy_returns(pos, d["spy_hold_d"], d["tbill_d"], per_side)
+        rows3.append({"config": f"cruce{fast}/{slow}@diario", "freq": "D",
+                      **_daily_row(r, cut), "_pos": pos})
+    best3 = max(rows3, key=lambda x: x["sh_train"])
+    freq = MONTHS_PER_YEAR if best3["freq"] == "M" else TRADING_DAYS_PER_YEAR
+    return best3["config"], best3["test"], freq
+
+
+def select_rsi_reversion(cfg: Settings, d: dict, cut: pd.Timestamp,
+                         per_side: float) -> tuple[str, pd.Series, float]:
+    rc = cfg.research
+    rows4 = []
+    for e in rc.rsi_reversion.entry_grid:
+        for x in rc.rsi_reversion.exit_grid:
+            pos = rsi_reversion_daily_position(
+                d["spy"], rsi_period=rc.rsi_reversion.rsi_period,
+                entry_below=e, exit_above=x,
+                trend_sma_days=rc.rsi_reversion.trend_sma_days)
+            r = daily_strategy_returns(pos, d["spy_hold_d"], d["tbill_d"], per_side)
+            rows4.append({"entry": e, "exit": x, **_daily_row(r, cut), "_pos": pos})
+    best4 = max(rows4, key=lambda x: x["sh_train"])
+    return (f"entry<{best4['entry']},exit>{best4['exit']}", best4["test"],
+            TRADING_DAYS_PER_YEAR)
+
+
+def select_dual_momentum(cfg: Settings, d: dict, cut: pd.Timestamp,
+                         per_side: float) -> tuple[str, pd.Series, float]:
+    rc = cfg.research
+    bond_hold_m = monthly_hold_returns(d["bond"])
+    assets_m = pd.concat({"equity": d["spy_hold_m"]["asset"], "bond": bond_hold_m},
+                         axis=1).dropna()
+    cash_m5 = monthly_cash_returns(d["tbill_d"], assets_m.index)
+    w5 = dual_momentum_weights(d["spy_mclose"].reindex(assets_m.index),
+                               last_close_by_month(d["bond"]).reindex(assets_m.index),
+                               cash_m5, rc.dual_momentum.lookback_months)
+    r5 = _drop_warmup_months(
+        monthly_strategy_returns(w5, assets_m, cash_m5, per_side), w5)
+    row5 = _monthly_row(r5, cut)
+    return f"L={rc.dual_momentum.lookback_months}", row5["test"], MONTHS_PER_YEAR
+
+
+def select_xs_momentum(cfg: Settings, d: dict, cut: pd.Timestamp,
+                       per_side: float) -> tuple[str, pd.Series, float]:
+    rc = cfg.research
+    xs = build_xs_matrices(cfg)
+    members_by_month = build_members_by_month(cfg, xs["close"].index)
+    xs_hold = xs_monthly_hold_returns(xs["open"], xs["lastclose"])
+    min_hist_months = math.ceil(rc.xs_momentum.min_history_days
+                                / (TRADING_DAYS_PER_YEAR / MONTHS_PER_YEAR))
+    cash_xs = monthly_cash_returns(d["tbill_d"], xs["close"].index)
+    rows1 = []
+    for L in rc.xs_momentum.lookback_months_grid:
+        for S in rc.xs_momentum.skip_months_grid:
+            for N in rc.xs_momentum.top_n_grid:
+                w, cov = xs_momentum_weights(
+                    xs["close"], members_by_month, lookback_months=L,
+                    skip_months=S, top_n=N,
+                    min_history_months=min_hist_months,
+                    min_coverage=rc.xs_momentum.min_coverage)
+                r = _drop_warmup_months(
+                    monthly_strategy_returns(w, xs_hold, cash_xs, per_side), w)
+                rows1.append({"L": L, "S": S, "N": N, **_monthly_row(r, cut),
+                              "_w": w, "_cov": cov})
+    best1 = max(rows1, key=lambda x: x["sh_train"])
+    return (f"L={best1['L']},S={best1['S']},N={best1['N']}", best1["test"],
+            MONTHS_PER_YEAR)
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 

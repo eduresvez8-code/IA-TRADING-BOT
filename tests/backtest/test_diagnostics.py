@@ -11,9 +11,11 @@ import pytest
 
 from backtest.diagnostics import (
     bootstrap_sharpe_ci,
+    calmar_ratio,
     concentration_top_decile,
     evaluate_gate,
     halves_stability,
+    max_drawdown,
     sharpe,
 )
 
@@ -92,6 +94,44 @@ def test_concentracion_jackpot_cerca_de_uno():
 def test_concentracion_sin_ganancia_es_nan():
     assert np.isnan(concentration_top_decile([-1.0, -2.0]))
     assert np.isnan(concentration_top_decile([]))
+
+
+# ---------- drawdown máximo y Calmar ----------
+
+def test_max_drawdown_valor_a_mano():
+    # curva: 1.10 (+10%) → 0.88 (-20%) → 0.924 (+5%). Pico previo a la caída:
+    # 1.10. Valle: 0.88. Caída = 0.88/1.10 - 1 = -0.20 → drawdown = 0.20.
+    # La recuperación posterior (+5%) no borra la PEOR caída ya registrada.
+    r = [0.10, -0.20, 0.05]
+    assert max_drawdown(r) == pytest.approx(0.20)
+
+
+def test_max_drawdown_monotono_es_cero():
+    # Nunca cae por debajo de un máximo previo → sin drawdown.
+    assert max_drawdown([0.01, 0.02, 0.03]) == 0.0
+
+
+def test_max_drawdown_vacio_es_cero():
+    assert max_drawdown([]) == 0.0
+
+
+def test_calmar_valor_a_mano():
+    # r=[+100%, -20%], 1 periodo/año (2 "años"): curva 1→2.0→1.6.
+    # drawdown = 1.6/2.0 - 1 = -0.20 → dd=0.20. CAGR = 1.6**(1/2) - 1.
+    # Calmar = CAGR / dd.
+    r = [1.0, -0.20]
+    expected_cagr = 1.6 ** 0.5 - 1.0
+    assert calmar_ratio(r, 1.0) == pytest.approx(expected_cagr / 0.20)
+
+
+def test_calmar_sin_drawdown_es_cero():
+    # Sin caída no hay denominador con sentido (no se divide entre 0).
+    assert calmar_ratio([0.01, 0.02, 0.03], 252) == 0.0
+
+
+def test_calmar_pocos_datos_es_cero():
+    assert calmar_ratio([0.01], 252) == 0.0
+    assert calmar_ratio([], 252) == 0.0
 
 
 # ---------- mitades ----------
