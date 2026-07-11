@@ -38,6 +38,15 @@ más backtests sobre este periodo. Cualquier pre-registro nuevo a partir de
 aquí debe ser sobre datos FUERA de esta ventana (forward real) o declarar
 explícitamente por qué reabre la búsqueda pese a esta nota de cierre.
 
+**Datos de pago (evaluado y descartado, 2026-07-25):** se verificó que FMP
+(Financial Modeling Prep) da fundamentales point-in-time genuinos incluso en
+su tier gratis (`docs/research/`, ver `src/data/verify_fmp.py`), pero antes
+de pagar se probó la premisa con un proxy gratis: ¿le ganan a B&H SPY los
+ETFs profesionales de Value/Quality (VTV, QUAL) en 2015-2026? Ninguno pasó
+el gate (`2026-07-25_factor_etf_proxy_resultados.md`). **No se recomienda
+pagar por fundamentales point-in-time** — el problema no es la calidad del
+dato disponible, es que el factor no tuvo tracción en este periodo.
+
 ## Comandos
 
 ```bash
