@@ -2,16 +2,33 @@
 
 Antes de pagar CUALQUIER proveedor de fundamentales/earnings, hay que
 confirmar que el dato distingue la fecha de PUBLICACIÓN del reporte
-(`fillingDate`/`acceptedDate`) de la fecha de FIN DE PERIODO (`date`). Si
-solo existe la fecha de fin de periodo, usarla como si fuera la fecha en que
-la información estuvo disponible es exactamente el sesgo de look-ahead que
-mató el hallazgo de 2026-07-06 (`finding-architecture-audit`) — el reporte
-del Q4 2020 no existía el 31-dic-2020, existió cuando la empresa lo PRESENTÓ
-semanas después.
+(`filingDate`/`acceptedDate`) de la fecha de FIN DE PERIODO (`date`). Si solo
+existe la fecha de fin de periodo, usarla como si fuera la fecha en que la
+información estuvo disponible es exactamente el sesgo de look-ahead que mató
+el hallazgo de 2026-07-06 (`finding-architecture-audit`) — el reporte del Q4
+2020 no existía el 31-dic-2020, existió cuando la empresa lo PRESENTÓ semanas
+después.
+
+Cubre 5 endpoints (todos accesibles en el tier gratis, verificado a mano):
+    - income-statement, balance-sheet-statement, cash-flow-statement: SÍ
+      traen su propia filingDate/acceptedDate.
+    - key-metrics, ratios (P/E, P/B, ROE...): NO traen su propia fecha de
+      filing — su `date` es el fin de año fiscal. Hay que CRUZARLOS con la
+      filingDate del income-statement del MISMO periodo, o se cuela el mismo
+      look-ahead que este script existe para detectar. Este script hace ese
+      cruce explícitamente y lo marca si falla.
+    - earnings (reemplaza a earnings-surprises, que está retirado/404): SÍ
+      trae fecha de anuncio real, pero su campo `lastUpdated` sugiere que FMP
+      puede revisar valores después — riesgo residual menor, declarado.
+    - key-metrics/ratios SOLO responden con period="annual" en el tier
+      gratis (period="quarter" da 402). Todos los endpoints están limitados
+      a 5 periodos por respuesta (5 años en anual, ~15 meses en trimestral)
+      — el tier gratis alcanza para VERIFICAR la estructura del dato, no
+      para un backtest real (que necesita décadas de historia).
 
 Este script NO decide nada por sí solo: imprime la evidencia (fechas crudas,
-el lag en días) para que la decisión de comprar o no un proveedor de pago se
-tome viendo los datos reales, no una promesa de marketing.
+el lag en días, si el cruce con filingDate funcionó) para que la decisión de
+pagar un proveedor se tome viendo datos reales, no promesas de marketing.
 
 Uso (requiere FMP_API_KEY en .env — tier gratis, 250 llamadas/día, $0):
 
@@ -31,6 +48,9 @@ from src.core.config import load_secrets
 # cuentas sin suscripción previa a esa fecha — la API vigente es /stable/,
 # con el ticker como query param `symbol=`, no como segmento de la URL.
 BASE_URL = "https://financialmodelingprep.com/stable"
+# Tope real del tier gratis en TODOS los endpoints probados (verificado a
+# mano: limit=8 y limit=30 devuelven 402 "must be between 0 and 5").
+FREE_TIER_MAX_LIMIT = 5
 # Tickers de muestra: sin relación con el universo del protocolo SP500 (esto
 # es solo verificación de la FORMA del dato, no un experimento de estrategia
 # — no hay resultado de test que contaminar aquí).
@@ -57,16 +77,33 @@ def _get(url: str, params: dict) -> object:
     return r.json()
 
 
-def fetch_income_statements(ticker: str, api_key: str, limit: int = 4) -> list[dict]:
-    url = f"{BASE_URL}/income-statement"
-    data = _get(url, {"symbol": ticker, "period": "quarter", "limit": limit, "apikey": api_key})
+def fetch_statement(endpoint: str, ticker: str, api_key: str, *,
+                    period: str = "quarter", limit: int = FREE_TIER_MAX_LIMIT) -> list[dict]:
+    """income-statement / balance-sheet-statement / cash-flow-statement — las
+    3 comparten forma y traen filingDate/acceptedDate propios."""
+    url = f"{BASE_URL}/{endpoint}"
+    data = _get(url, {"symbol": ticker, "period": period, "limit": limit, "apikey": api_key})
     return data if isinstance(data, list) else []
 
 
-def fetch_earnings_surprises(ticker: str, api_key: str, limit: int = 8) -> list[dict]:
-    url = f"{BASE_URL}/earnings-surprises"
-    data = _get(url, {"symbol": ticker, "apikey": api_key})
-    return data[:limit] if isinstance(data, list) else []
+def fetch_key_metrics(ticker: str, api_key: str, limit: int = FREE_TIER_MAX_LIMIT) -> list[dict]:
+    """SOLO period='annual' funciona en el tier gratis — 'quarter' da 402."""
+    url = f"{BASE_URL}/key-metrics"
+    data = _get(url, {"symbol": ticker, "period": "annual", "limit": limit, "apikey": api_key})
+    return data if isinstance(data, list) else []
+
+
+def fetch_ratios(ticker: str, api_key: str, limit: int = FREE_TIER_MAX_LIMIT) -> list[dict]:
+    url = f"{BASE_URL}/ratios"
+    data = _get(url, {"symbol": ticker, "period": "annual", "limit": limit, "apikey": api_key})
+    return data if isinstance(data, list) else []
+
+
+def fetch_earnings(ticker: str, api_key: str, limit: int = FREE_TIER_MAX_LIMIT) -> list[dict]:
+    """Reemplaza a earnings-surprises (retirado, devuelve 404 vacío)."""
+    url = f"{BASE_URL}/earnings"
+    data = _get(url, {"symbol": ticker, "limit": limit, "apikey": api_key})
+    return data if isinstance(data, list) else []
 
 
 def fetch_company_profile(ticker: str, api_key: str) -> dict:
@@ -87,6 +124,97 @@ def _lag_days(period_end: str, filed: str) -> int | None:
         return None
 
 
+def _check_statement(label: str, endpoint: str, ticker: str, api_key: str,
+                     counters: dict) -> None:
+    print(f"\n--- {ticker}: {label} ---")
+    try:
+        rows = fetch_statement(endpoint, ticker, api_key)
+    except FetchError as e:
+        print(f"  {e}")
+        counters["any_fetch_failed"] = True
+        return
+    if not rows:
+        print("  (sin datos)")
+        counters["any_fetch_failed"] = True
+        return
+    print(f"  {'fin de periodo':<14} {'filingDate':<12} {'acceptedDate':<22} {'lag (días)'}")
+    for row in rows:
+        period = row.get("date", "?")
+        filing = row.get("filingDate")
+        accepted = row.get("acceptedDate", "?")
+        filed = filing or accepted
+        lag = _lag_days(period, filed) if filed and filed != "?" else None
+        flag = ""
+        if lag is None:
+            flag = "  <- SIN filingDate/acceptedDate: sospechoso"
+            counters["rows_suspicious"] += 1
+        elif lag <= 0:
+            flag = "  <- lag <= 0: SOSPECHOSO (publicado antes del fin de periodo?)"
+            counters["rows_suspicious"] += 1
+        else:
+            counters["rows_ok"] += 1
+            if lag > 120:
+                flag = "  <- lag > 120 días: revisar (¿10-K anual, o error?)"
+        print(f"  {period:<14} {str(filing):<12} {str(accepted):<22} "
+              f"{lag if lag is not None else '?':<10}{flag}")
+
+
+def _check_key_metrics_and_ratios(ticker: str, api_key: str, counters: dict) -> None:
+    """key-metrics/ratios NO traen su propia fecha de filing — se cruzan con
+    el income-statement anual del MISMO fiscalYear para obtener la fecha
+    point-in-time real. Si el cruce falla, se marca sospechoso: usar el
+    `date` (fin de año fiscal) de estos endpoints directamente SERÍA
+    exactamente el look-ahead que este script existe para atajar."""
+    print(f"\n--- {ticker}: key-metrics + ratios (anual, cruzados con filingDate) ---")
+    try:
+        income = fetch_statement("income-statement", ticker, api_key, period="annual")
+        metrics = fetch_key_metrics(ticker, api_key)
+        ratios = fetch_ratios(ticker, api_key)
+    except FetchError as e:
+        print(f"  {e}")
+        counters["any_fetch_failed"] = True
+        return
+    filing_by_year = {row.get("fiscalYear"): row.get("filingDate") for row in income}
+    if not metrics and not ratios:
+        print("  (sin datos)")
+        counters["any_fetch_failed"] = True
+        return
+    print(f"  {'fiscalYear':<11} {'fin FY':<12} {'filingDate (cruzado)':<20} "
+          f"{'ROE':<8} {'P/E':<8} {'P/B'}")
+    for m, r in zip(metrics, ratios):
+        fy = m.get("fiscalYear")
+        filing = filing_by_year.get(fy)
+        if filing is None:
+            print(f"  {fy!s:<11} {m.get('date', '?'):<12} {'SIN CRUCE — sospechoso':<20} "
+                  f"{'?':<8} {'?':<8} ?")
+            counters["rows_suspicious"] += 1
+            continue
+        counters["rows_ok"] += 1
+        roe = m.get("returnOnEquity")
+        pe = r.get("priceToEarningsRatio")
+        pb = r.get("priceToBookRatio")
+        print(f"  {fy!s:<11} {m.get('date', '?'):<12} {filing:<20} "
+              f"{roe:<8.2f} {pe:<8.2f} {pb:.2f}" if all(v is not None for v in (roe, pe, pb))
+              else f"  {fy!s:<11} {m.get('date', '?'):<12} {filing:<20} (algún valor None)")
+
+
+def _check_earnings(ticker: str, api_key: str, counters: dict) -> None:
+    print(f"\n--- {ticker}: earnings (reemplaza earnings-surprises, retirado) ---")
+    try:
+        rows = fetch_earnings(ticker, api_key)
+    except FetchError as e:
+        print(f"  {e}")
+        return
+    if not rows:
+        print("  (sin datos)")
+        return
+    for row in rows:
+        revised = " <- lastUpdated distinto de la fecha de anuncio: posible revisión retroactiva" \
+            if row.get("lastUpdated") and row.get("lastUpdated") != row.get("date") else ""
+        print(f"  fecha={row.get('date')}  epsActual={row.get('epsActual')}  "
+              f"epsEstimated={row.get('epsEstimated')}  lastUpdated={row.get('lastUpdated')}{revised}")
+
+
 def main() -> int:
     secrets = load_secrets()
     if not secrets.fmp_api_key:
@@ -104,88 +232,54 @@ def main() -> int:
     try:
         profile = fetch_company_profile("AAPL", secrets.fmp_api_key)
         key_works = bool(profile)
-        print(f"  clave funciona: {'SÍ' if key_works else 'respuesta vacía, dudoso'} "
-              f"(companyName={profile.get('companyName', '?')})" if profile else "  respuesta vacía")
+        if profile:
+            print(f"  clave funciona: SÍ (companyName={profile.get('companyName', '?')})")
+        else:
+            print("  respuesta vacía")
     except FetchError as e:
         key_works = False
         print(f"  {e}")
 
     # Contadores fail-closed: el veredicto final exige haber visto datos
     # REALES (rows_ok > 0) — nunca asume "bien" solo porque nada falló.
-    rows_ok = 0
-    rows_suspicious = 0
-    any_fetch_failed = False
+    counters = {"rows_ok": 0, "rows_suspicious": 0, "any_fetch_failed": False}
 
-    for ticker in SAMPLE_TICKERS:
-        print(f"\n--- {ticker}: estados financieros trimestrales ---")
-        try:
-            rows = fetch_income_statements(ticker, secrets.fmp_api_key)
-        except FetchError as e:
-            print(f"  {e}")
-            any_fetch_failed = True
-            continue
-        if not rows:
-            print("  (sin datos — plan gratis puede no cubrir este endpoint)")
-            any_fetch_failed = True
-            continue
-        print(f"  {'fin de periodo':<14} {'fillingDate':<14} {'acceptedDate':<22} {'lag (días)'}")
-        for row in rows:
-            period = row.get("date", "?")
-            filling = row.get("fillingDate") or row.get("filingDate")
-            accepted = row.get("acceptedDate", "?")
-            # La API "stable" ya no expone fillingDate en algunos planes —
-            # acceptedDate (timestamp real de aceptación SEC) sirve igual de
-            # bien como fecha point-in-time; se usa como respaldo, no como
-            # ausencia de dato.
-            filed = filling or accepted
-            lag = _lag_days(period, filed) if filed and filed != "?" else None
-            flag = ""
-            if lag is None:
-                flag = "  <- SIN fillingDate: sospechoso"
-                rows_suspicious += 1
-            elif lag <= 0:
-                flag = "  <- lag <= 0: SOSPECHOSO (publicado antes del fin de periodo?)"
-                rows_suspicious += 1
-            else:
-                rows_ok += 1
-                if lag > 120:
-                    flag = "  <- lag > 120 días: revisar (¿10-K anual con lag normal, o error?)"
-            print(f"  {period:<14} {filed:<14} {accepted:<22} {lag if lag is not None else '?':<10}{flag}")
-
-        print(f"\n--- {ticker}: earnings surprises ---")
-        try:
-            surprises = fetch_earnings_surprises(ticker, secrets.fmp_api_key)
-        except FetchError as e:
-            print(f"  {e}")
-            continue
-        if not surprises:
-            print("  (sin datos — plan gratis puede no cubrir este endpoint)")
-        for s in surprises[:4]:
-            print(f"  fecha={s.get('date', '?')}  actual={s.get('actualEarningResult', '?')}  "
-                  f"estimado={s.get('estimatedEarning', '?')}")
+    if key_works:
+        for ticker in SAMPLE_TICKERS:
+            _check_statement("income-statement (trimestral)", "income-statement",
+                             ticker, secrets.fmp_api_key, counters)
+            _check_statement("balance-sheet-statement (trimestral)", "balance-sheet-statement",
+                             ticker, secrets.fmp_api_key, counters)
+            _check_statement("cash-flow-statement (trimestral)", "cash-flow-statement",
+                             ticker, secrets.fmp_api_key, counters)
+            _check_key_metrics_and_ratios(ticker, secrets.fmp_api_key, counters)
+            _check_earnings(ticker, secrets.fmp_api_key, counters)
 
     print("\n" + "=" * 86)
+    rows_ok, rows_suspicious = counters["rows_ok"], counters["rows_suspicious"]
     if not key_works:
         print("VEREDICTO: INCONCLUSO — ni el endpoint más básico (/profile) respondió. La")
         print("clave puede estar mal copiada, sin activar, o el plan gratis cambió. Revisar")
         print("el dashboard de FMP antes de sacar cualquier conclusión sobre point-in-time.")
     elif rows_ok == 0:
-        print("VEREDICTO: INCONCLUSO — la clave funciona (perfil OK) pero NINGÚN estado")
-        print("financiero se pudo verificar (0 filas válidas). El tier gratis probablemente")
-        print("NO incluye income-statement/earnings-surprises. No se puede afirmar nada sobre")
-        print("point-in-time sin ver datos reales — no comprar el plan de pago basándose en")
-        print("promesas de marketing sin haber visto esto funcionar.")
+        print("VEREDICTO: INCONCLUSO — la clave funciona (perfil OK) pero NINGÚN registro se")
+        print("pudo verificar. No se puede afirmar nada sobre point-in-time sin ver datos")
+        print("reales — no comprar el plan de pago basándose en promesas de marketing.")
     elif rows_suspicious > 0:
-        print(f"VEREDICTO: {rows_suspicious} registro(s) sin fillingDate válido o con lag <= 0")
-        print(f"de {rows_ok + rows_suspicious} vistos. NO comprar el plan de pago sin resolver")
-        print("esto primero — point-in-time no está garantizado con lo visto aquí.")
+        print(f"VEREDICTO: {rows_suspicious} registro(s) sospechoso(s) de {rows_ok + rows_suspicious}")
+        print("vistos (sin fecha de filing, lag imposible, o sin cruce ratios<->filingDate).")
+        print("NO comprar el plan de pago sin resolver esto primero.")
     else:
-        print(f"VEREDICTO: {rows_ok} registros con fillingDate presente y lag positivo y")
-        print("razonable. Buena señal para point-in-time — igual conviene revisar más")
-        print("tickers/periodos antes de comprometer presupuesto, esto es una muestra pequeña.")
-    if any_fetch_failed and rows_ok > 0:
-        print("(nota: algún ticker falló al descargar pese a que otros sí funcionaron — revisar")
-        print(" arriba cuál y por qué antes de generalizar el veredicto a todo el universo.)")
+        print(f"VEREDICTO: {rows_ok} registros verificados con fecha de filing real y lag")
+        print("positivo/razonable (income-statement, balance-sheet, cash-flow, Y el cruce")
+        print("key-metrics/ratios<->filingDate). Buena señal para point-in-time. El tier")
+        print("gratis alcanza para verificar la ESTRUCTURA del dato, pero tope de 5 periodos")
+        print("por endpoint — NO alcanza para un backtest real (hacen falta décadas). Los")
+        print("valores de 'earnings' pueden revisarse retroactivamente (ver lastUpdated) —")
+        print("riesgo residual menor a declarar en cualquier pre-registro futuro.")
+    if counters["any_fetch_failed"] and rows_ok > 0:
+        print("(nota: algún endpoint/ticker falló pese a que otros sí funcionaron — revisar")
+        print(" arriba cuál y por qué antes de generalizar el veredicto.)")
     return 0
 
 
