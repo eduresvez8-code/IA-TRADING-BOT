@@ -1,182 +1,92 @@
-"""Tests de los contratos de datos.
+"""Tests de los contratos de datos (src/core/models.py).
 
-Estos tests protegen las invariantes del sistema: si alguien (humano o IA)
-relaja una validación en models.py, esto falla y lo delata.
+Regla del repo: models.py no se modifica sin actualizar este archivo en el
+mismo cambio.
 """
 
 from datetime import datetime, timezone
-from decimal import Decimal
 
 import pytest
 from pydantic import ValidationError
 
-from src.core.models import (
-    Candle,
-    EventIntent,
-    Order,
-    OrderType,
-    PositionSide,
-    SentimentScore,
-    Side,
-    Signal,
-    SymbolFilters,
-)
+from src.core.models import Action, Candle, Decision, Order, Side, Signal
 
-NOW = datetime(2026, 6, 12, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 7, 11, 12, 0, tzinfo=timezone.utc)
 
 
-def make_candle(**overrides):
-    base = dict(
-        symbol="BTCUSDT", timeframe="5m", open_time=NOW,
-        open=100.0, high=110.0, low=95.0, close=105.0, volume=1234.5,
-    )
-    base.update(overrides)
-    return Candle(**base)
-
+# ---------- Candle ----------
 
 def test_candle_valida():
-    c = make_candle()
+    c = Candle(symbol="SPY", timeframe="1d", open_time=NOW,
+               open=100.0, high=101.0, low=99.0, close=100.5, volume=1e6)
     assert c.closed is True
-    assert c.open_time.tzinfo is not None
 
 
-def test_candle_rechaza_timestamp_naive():
+def test_candle_rechaza_open_time_naive():
     with pytest.raises(ValidationError, match="timezone"):
-        make_candle(open_time=datetime(2026, 6, 12, 12, 0))  # sin tzinfo
+        Candle(symbol="SPY", timeframe="1d",
+               open_time=datetime(2026, 7, 11, 12, 0),  # sin tz
+               open=100.0, high=101.0, low=99.0, close=100.5, volume=1e6)
 
 
-def test_signal_score_fuera_de_rango():
+def test_candle_normaliza_a_utc():
+    from datetime import timedelta, timezone as tz
+    bogota = tz(timedelta(hours=-5))
+    c = Candle(symbol="SPY", timeframe="1d",
+               open_time=datetime(2026, 7, 11, 7, 0, tzinfo=bogota),
+               open=100.0, high=101.0, low=99.0, close=100.5, volume=1e6)
+    assert c.open_time.tzinfo == timezone.utc
+    assert c.open_time.hour == 12
+
+
+# ---------- Signal ----------
+
+def test_signal_score_fuera_de_rango_no_pasa():
     with pytest.raises(ValidationError):
-        Signal(symbol="BTCUSDT", score=1.5, strategy="ema_cross", timestamp=NOW)
+        Signal(symbol="SPY", score=1.5, strategy="x", timestamp=NOW)
 
 
-def make_order(**overrides):
-    base = dict(
-        symbol="BTCUSDT", side=Side.BUY, quantity=0.01,
-        entry_price=100_000.0, stop_loss=98_500.0,
-        decision_reason="test", created_at=NOW,
-    )
+# ---------- Decision ----------
+
+def test_decision_valida():
+    d = Decision(symbol="SPY", action=Action.LONG, score=0.8,
+                 size_factor=1.0, reason="tsmom_12m", timestamp=NOW)
+    assert d.action == Action.LONG
+
+
+def test_decision_size_factor_acotado():
+    with pytest.raises(ValidationError):
+        Decision(symbol="SPY", action=Action.LONG, score=0.8,
+                 size_factor=1.5, reason="x", timestamp=NOW)
+
+
+# ---------- Order ----------
+
+def _order_kwargs(**overrides):
+    base = dict(symbol="SPY", side=Side.BUY, quantity=10.0, entry_price=100.0,
+                stop_loss=95.0, take_profit=None, decision_reason="test",
+                created_at=NOW)
     base.update(overrides)
-    return Order(**base)
+    return base
 
 
-def test_orden_compra_valida():
-    o = make_order()
-    assert o.stop_loss < o.entry_price
+def test_order_valida_sin_take_profit():
+    o = Order(**_order_kwargs())
+    assert o.take_profit is None
 
 
-def test_orden_compra_con_stop_por_encima_es_invalida():
-    # Un SL por encima de la entrada en una compra no protege nada.
-    with pytest.raises(ValidationError, match="stop_loss"):
-        make_order(stop_loss=101_000.0)
+def test_order_stop_de_compra_debe_proteger_abajo():
+    with pytest.raises(ValidationError, match="menor que entry_price"):
+        Order(**_order_kwargs(stop_loss=105.0))
 
 
-def test_orden_venta_con_stop_por_debajo_es_invalida():
-    with pytest.raises(ValidationError, match="stop_loss"):
-        make_order(side=Side.SELL, stop_loss=98_500.0)
+def test_order_stop_de_venta_debe_proteger_arriba():
+    with pytest.raises(ValidationError, match="mayor que entry_price"):
+        Order(**_order_kwargs(side=Side.SELL, stop_loss=95.0))
+    o = Order(**_order_kwargs(side=Side.SELL, stop_loss=105.0))
+    assert o.stop_loss == 105.0
 
 
-def test_orden_sin_stop_loss_no_existe():
-    # El campo es obligatorio: no hay órdenes sin SL en este sistema.
+def test_order_cantidad_positiva():
     with pytest.raises(ValidationError):
-        Order(symbol="BTCUSDT", side=Side.BUY, quantity=0.01,
-              entry_price=100_000.0, decision_reason="test", created_at=NOW)
-
-
-def test_orden_leverage_por_defecto_y_explicito():
-    # Por defecto 1 (sin apalancar); en Futuros el Risk Manager lo fija.
-    assert make_order().leverage == 1
-    assert make_order(leverage=3).leverage == 3
-
-
-def test_orden_leverage_cero_es_invalido():
-    with pytest.raises(ValidationError):
-        make_order(leverage=0)
-
-
-def test_orden_position_side_por_defecto_es_both():
-    # Sin especificar (one-way / sin hedge), el cubo es BOTH.
-    assert make_order().position_side == PositionSide.BOTH
-
-
-def test_apertura_long_con_buy_es_valida():
-    o = make_order(side=Side.BUY, position_side=PositionSide.LONG)
-    assert o.position_side == PositionSide.LONG
-
-
-def test_apertura_long_con_sell_es_incoherente():
-    # Abrir LONG con SELL no es una apertura válida en hedge mode.
-    with pytest.raises(ValidationError):
-        make_order(side=Side.SELL, position_side=PositionSide.LONG)
-
-
-def test_apertura_short_con_buy_es_incoherente():
-    # make_order usa side=BUY con un SL válido de compra; solo el position_side
-    # SHORT lo hace incoherente (aísla el validador de apertura del de SL).
-    with pytest.raises(ValidationError, match="position_side SHORT"):
-        make_order(position_side=PositionSide.SHORT)
-
-
-def test_order_type_y_position_side_enums():
-    assert OrderType.STOP_MARKET.value == "STOP_MARKET"
-    assert PositionSide.SHORT.value == "SHORT"
-
-
-def test_symbol_filters_coerce_a_decimal():
-    # Los strings de exchangeInfo deben quedar como Decimal exacto (no float).
-    f = SymbolFilters(symbol="BTCUSDT", tick_size="0.01", step_size="0.0001",
-                      min_qty="0.0001", min_notional="5")
-    assert f.tick_size == Decimal("0.01")
-    assert f.step_size == Decimal("0.0001")
-    assert f.min_notional == Decimal("5")
-
-
-def test_symbol_filters_tick_size_cero_es_invalido():
-    # Un tickSize de 0 haría imposible cuantizar el precio (gt=0).
-    with pytest.raises(ValidationError):
-        SymbolFilters(symbol="BTCUSDT", tick_size="0", step_size="0.0001",
-                      min_qty="0", min_notional="5")
-
-
-def make_sentiment(**overrides):
-    base = dict(news_id="n1", symbol_scope=["BTC"], score=0.5, confidence=0.8,
-                analyzed_at=NOW)
-    base.update(overrides)
-    return SentimentScore(**base)
-
-
-def test_sentiment_event_kind_por_defecto_es_none():
-    # Una noticia sin clasificar (o sentimiento de mercado tipo Fear&Greed) no es
-    # ni macro ni shock: el default no debe bloquear nada en la confluencia.
-    assert make_sentiment().event_kind == "none"
-
-
-def test_sentiment_event_kind_valores_validos():
-    assert make_sentiment(event_kind="scheduled").event_kind == "scheduled"
-    assert make_sentiment(event_kind="shock").event_kind == "shock"
-
-
-def test_sentiment_event_kind_invalido_es_rechazado():
-    # El Literal cierra el dominio: un valor libre (typo) muere en la frontera.
-    with pytest.raises(ValidationError):
-        make_sentiment(event_kind="hack")
-
-
-# ------------------------------ EventIntent (Plan V2 §2.3) ------------------------------
-
-
-def test_event_intent_valido():
-    # El intent resuelve el scope a UN símbolo y lleva el SentimentScore íntegro.
-    sent = make_sentiment(symbol_scope=["BTCUSDT", "ETHUSDT"], event_kind="shock")
-    intent = EventIntent(symbol="BTCUSDT", sentiment=sent)
-    assert intent.symbol == "BTCUSDT"
-    assert intent.sentiment.event_kind == "shock"
-    assert intent.sentiment.score == 0.5
-
-
-def test_event_intent_valida_el_sentiment_anidado():
-    # El SentimentScore anidado debe seguir validándose (score fuera de rango).
-    with pytest.raises(ValidationError):
-        EventIntent(symbol="BTCUSDT",
-                    sentiment=dict(news_id="n", symbol_scope=["BTC"], score=2.0,
-                                   confidence=0.8, analyzed_at=NOW))
+        Order(**_order_kwargs(quantity=0.0))

@@ -1,0 +1,128 @@
+Investigación S&P 500 — resultados del protocolo pre-registrado (2026-07-11)
+
+CONTEXTO: pivote total del proyecto (decisión de Eduardo): bot puramente
+cuantitativo sobre el S&P 500, diario, $0/mes, buscando rentabilidad razonable
+y sostenible. Protocolo COMPLETO fijado antes de correr nada en
+docs/research/2026-07-11_protocolo_sp500.md y config/settings.yaml (research),
+congelado por test. Salida cruda: 2026-07-11_sp500_resultados_raw.txt.
+
+Datos: yfinance (SPY total-return, ^GSPC, ^IRX, VUSTX) + membresía histórica
+punto-en-el-tiempo del índice (repo fja05680/sp500, 1996→hoy, 2713 snapshots).
+Universo: 1202 tickers que alguna vez fueron miembros; 770 con precios en
+yfinance, 432 deslistados SIN datos (el sesgo residual se midió, ver Familia 1).
+Split: TRAIN < 2015-01-01 UTC ≤ TEST (medido UNA vez por familia).
+Costos: 0 comisión + 2 pb/lado; estrés 5 pb. Cash devenga T-bill (^IRX).
+Selección de config: SOLO por Sharpe de train. Grid completo reportado.
+
+============================ LA VARA (comprar y mantener) ============================
+
+B&H SPY (retorno total, mismo periodo de test 2015-2026):
+    mensual: Sharpe +0.90 (retorno anual +15.1%)  |  diario: Sharpe +0.85
+    (train 1993-2014: +0.67 mensual / +0.56 diario)
+
+El test coincidió con una década excepcional del índice. Esa es exactamente la
+vara que una estrategia activa long-only tenía que superar — y es la
+alternativa real de un clic que Eduardo puede ejecutar.
+
+============================ RESUMEN POR FAMILIA ============================
+
+Familia (config elegida por train) | Sh train | Sh test | vs B&H | Criterios que falla
+-----------------------------------|----------|---------|--------|--------------------
+2. TSMOM índice (L=12m)            |  +1.03   |  +0.79  | 0.90   | concentración (85%), vs B&H
+3. MA timing (SMA200 fin de mes)   |  +1.12   |  +0.67  | 0.90   | concentración (93%), vs B&H
+4. RSI-2 (entry<10, exit>70)       |  +1.27   |  +0.81  | 0.85   | SOLO vs B&H (la más cercana)
+5. Dual momentum (L=12m, sin grid) |  +0.81   |  +0.57  | 0.90   | concentración (113%), vs B&H
+1. XS momentum (L=3,S=1,N=50)      |  +0.51   |  +0.80  | 0.90   | concentración (86%), vs B&H
+
+(los grids completos — 3+3+4+1+12 = 23 configuraciones — están en el raw; la
+columna de test se reporta entera, la selección fue solo por train)
+
+Detalle de los gates (config elegida, test una vez):
+
+FAMILIA 2 — TSMOM índice: Sharpe test +0.79, bootstrap CI [+0.30,+1.35] OK,
+  mitades +0.54/+1.11 OK, concentración 85% FALLA, vs B&H +0.90 FALLA.
+  Estrés 5 pb: +0.79 (insensible: opera poco).
+FAMILIA 3 — SMA200: +0.67, CI [+0.18,+1.22] OK, mitades +0.43/+0.90 OK,
+  concentración 93% FALLA, vs B&H FALLA. Estrés: +0.66.
+FAMILIA 4 — RSI-2: +0.81, CI [+0.30,+1.56] OK, concentración 54% OK (la única),
+  mitades +0.44/+1.24 OK, vs B&H diario +0.85 FALLA por 0.04. 93 trades en
+  test. Estrés 5 pb: +0.74 (sensible a costos: opera ~9 veces/año con ~8
+  días/trade). ES EL MEJOR CANDIDATO — Y NO PASA EL LISTÓN.
+FAMILIA 5 — Dual momentum: +0.57, CI [+0.10,+1.09] OK, mitades +0.12/+1.11 OK,
+  concentración 113% FALLA (el top-decil de meses supera la ganancia total:
+  hay muchos meses negativos), vs B&H FALLA. Estrés: +0.57.
+FAMILIA 1 — XS momentum punto-en-el-tiempo: +0.80, CI [+0.29,+1.34] OK,
+  mitades +0.61/+0.97 OK, concentración 86% FALLA, vs B&H FALLA. Estrés: +0.78.
+  Cobertura de precios: 88% media en test (≥ piso de operabilidad del 85%),
+  pero solo 57% en train (por eso el train arranca en ~2003: los meses con
+  cobertura <60% se excluyen por protocolo). Nota de honestidad: los 432
+  deslistados sin datos inflan al alza justo esta familia; con cobertura de
+  train tan baja, su Sharpe de train (+0.2 a +0.5 en todo el grid) es además
+  el MÁS débil de las 5 familias — no hay señal de que el factor UMD publicado
+  sea cosechable en este universo con estos datos.
+
+NO probado por no ser verificable a $0/mes (declarado en el protocolo, misma
+práctica que OI/long-short en cripto): factor value/calidad (exige
+fundamentales punto-en-el-tiempo, de pago) y cualquier estrategia corta
+(borrow fee sin fuente gratis; el efecto fin de semana queda documentado en
+2026-07-08 como replicación académica, no como estrategia operable).
+
+============================ PATRONES TRANSVERSALES ============================
+
+1. TODAS las familias muestran Sharpe de test positivo (+0.57 a +0.81) — y
+   TODAS por debajo del B&H (+0.85/+0.90). Es el mismo patrón visto en cripto
+   y en las 10 acciones de 2010: el timing long-only captura una FRACCIÓN del
+   alza del mercado, no añade una ventaja sobre él. En un test alcista, estar
+   a veces en cash cuesta más de lo que protege.
+2. La concentración >60% en las familias mensuales no es casual: el retorno
+   de las acciones está concentrado en pocos meses buenos; una estrategia que
+   entra y sale hereda esa concentración SIN derecho a los peores-mejores días
+   que el B&H sí captura completos.
+3. El único criterio donde el timing brilla es el drawdown/estabilidad (todas
+   las mitades positivas, bootstrap significativo) — las estrategias de
+   tendencia REDUCEN el dolor, no aumentan el retorno. Eso coincide con la
+   literatura seria de TSMOM/Faber: son herramientas de gestión de riesgo,
+   no de alfa.
+
+============================ VEREDICTO FINAL ============================
+
+NINGUNA de las 5 familias pre-registradas pasa los 5 criterios. Según el
+criterio de parada declarado ANTES de correr nada: la búsqueda SE DETIENE
+aquí — no se generan variantes ad-hoc "para seguir intentando".
+
+El resultado del proyecto es el aburrido y honesto: para un retail con $0/mes
+de datos, la evidencia (4 meses de cripto + esta ronda de acciones) dice que
+NO hay un edge de timing/predicción accesible que supere a comprar y mantener
+el índice. La alternativa razonable y sostenible — el "ingreso pasivo" real —
+es la indexación pasiva: aportes periódicos a un ETF del S&P 500 (SPY/VOO/
+IVV), sin cronometrar el mercado, con la T-bill/fondo monetario para el cash.
+Eso ES lo que la evidencia académica recomienda para la mayoría de los casos,
+y es lo que estos números confirman de primera mano.
+
+Si algún día se retoma la búsqueda activa: (a) el mejor candidato fue RSI-2
+10/70 sobre SPY — pasó 4/5 criterios y quedó a 0.04 de Sharpe del B&H, PERO
+marcado como "no pasa el listón"; su edge se erosiona con costos (5 pb → 0.74)
+y su función real sería reducir drawdown, no batir al índice; (b) cualquier
+experimento nuevo exige pre-registro NUEVO fechado en docs/research/ antes de
+correrlo (regla permanente de CLAUDE.md).
+
+============================ ESTADO DEL CÓDIGO ============================
+
+- Purga completa del híbrido cripto: src/sentiment, src/decision,
+  src/execution, src/orchestrator, src/dashboard, clientes Binance, scope,
+  storage SQLite, watchdog/scripts .command (repo y HOME), datos cripto.
+  Planes viejos en docs/archive/. La investigación cripto (docs/research/) y
+  el GLOSARIO se conservan íntegros.
+- Conservado y reutilizado: backtest/engine.py (motor OHLCV, intacto),
+  backtest/metrics.py, deciders genéricos (backtest/deciders.py),
+  src/quant/indicators.py + strategy.py, filosofía del Risk Manager
+  (reescrito para acciones cash: sin apalancamiento, sin cortos, acciones
+  enteras, kill switch con latch).
+- Nuevo: capa de datos S&P 500 (src/data/sp500.py: membresía punto-en-el-
+  tiempo + descarga idempotente), diagnósticos anti-sobreajuste
+  (backtest/diagnostics.py: bootstrap/concentración/mitades/gate), las 5
+  familias (backtest/sp500_families.py), runner del protocolo
+  (backtest/run_sp500_research.py), config nueva (settings.yaml + config.py
+  con el pre-registro tipado), CLAUDE.md reescrito con el protocolo
+  anti-sobreajuste como regla permanente.
+- Suite: 190 tests, todos verdes. Smoke test: uv run python -m src.main --check.

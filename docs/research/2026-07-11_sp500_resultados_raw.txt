@@ -1,0 +1,108 @@
+======================================================================================
+PROTOCOLO S&P 500 — corrida pre-registrada 2026-07-11
+split: TRAIN < 2015-01-01T00:00:00Z ≤ TEST | costos 2 pb/lado (estrés 5 pb) | cash = T-bill
+======================================================================================
+
+B&H SPY (retorno total):
+  mensual: train +0.67 | test +0.90 (ret anual test +15.1%)
+  diario : train +0.56 | test +0.85
+
+======================================================================================
+FAMILIA 2 — TSMOM índice (SPY, mensual, long/cash, excluye último mes)
+| L | Sh train | Sh test | n_tr | n_te |
+|---|---|---|---|---|
+| 3 | +0.79 | +0.68 | 259 | 138 |
+| 6 | +1.01 | +0.78 | 256 | 138 |
+| 12 | +1.03 | +0.79 | 250 | 138 |
+>> elegida por TRAIN: L=12 (Sh train +1.03)
+    Sharpe test          : +0.79   (umbral > 0.5)          → SÍ
+    Bootstrap CI 90%     : [+0.30, +1.35] (excluir 0)     → SÍ
+    Concentración top10% : 85%   (< 60%)             → no
+    Mitades del test     : +0.54 / +1.11 (ambas > 0)      → SÍ
+    vs B&H SPY           : +0.79 vs +0.90 (superarlo)     → no
+    >>> PASA LOS 5: NO
+    estrés 5 pb: Sharpe test +0.79
+
+======================================================================================
+FAMILIA 3 — timing por media móvil (SPY, long/cash)
+| config | freq | Sh train | Sh test | n_tr | n_te |
+|---|---|---|---|---|---|
+| SMA100@fin-de-mes | M | +0.91 | +0.59 | 258 | 138 |
+| SMA200@fin-de-mes | M | +1.12 | +0.67 | 253 | 138 |
+| cruce50/200@diario | D | +0.86 | +0.64 | 5522 | 2895 |
+>> elegida por TRAIN: SMA200@fin-de-mes (Sh train +1.12)
+    Sharpe test          : +0.67   (umbral > 0.5)          → SÍ
+    Bootstrap CI 90%     : [+0.18, +1.22] (excluir 0)     → SÍ
+    Concentración top10% : 93%   (< 60%)             → no
+    Mitades del test     : +0.43 / +0.90 (ambas > 0)      → SÍ
+    vs B&H SPY           : +0.67 vs +0.90 (superarlo)     → no
+    >>> PASA LOS 5: NO
+    estrés 5 pb: Sharpe test +0.66
+
+======================================================================================
+FAMILIA 4 — reversión RSI-2 (SPY, diario, long/cash, filtro SMA200)
+| entry | exit | Sh train | Sh test | n_tr | n_te |
+|---|---|---|---|---|---|
+| 5.0 | 50.0 | +1.03 | +0.93 | 5522 | 2895 |
+| 5.0 | 70.0 | +1.11 | +0.85 | 5522 | 2895 |
+| 10.0 | 50.0 | +1.11 | +0.82 | 5522 | 2895 |
+| 10.0 | 70.0 | +1.27 | +0.81 | 5522 | 2895 |
+>> elegida por TRAIN: entry<10.0, exit>70.0 (Sh train +1.27)
+    trades en test: 93
+    Sharpe test          : +0.81   (umbral > 0.5)          → SÍ
+    Bootstrap CI 90%     : [+0.30, +1.56] (excluir 0)     → SÍ
+    Concentración top10% : 54%   (< 60%)             → SÍ
+    Mitades del test     : +0.44 / +1.24 (ambas > 0)      → SÍ
+    vs B&H SPY           : +0.81 vs +0.85 (superarlo)     → no
+    >>> PASA LOS 5: NO
+    estrés 5 pb: Sharpe test +0.74
+
+======================================================================================
+FAMILIA 5 — rotación dual-momentum (SPY vs bono vs T-bill, mensual, sin grid)
+única config (L=12m): Sh train +0.81 | Sh test +0.57 | n 251/138
+    Sharpe test          : +0.57   (umbral > 0.5)          → SÍ
+    Bootstrap CI 90%     : [+0.10, +1.09] (excluir 0)     → SÍ
+    Concentración top10% : 113%   (< 60%)             → no
+    Mitades del test     : +0.12 / +1.11 (ambas > 0)      → SÍ
+    vs B&H SPY           : +0.57 vs +0.90 (superarlo)     → no
+    >>> PASA LOS 5: NO
+    estrés 5 pb: Sharpe test +0.57
+
+======================================================================================
+FAMILIA 1 — momentum cross-sectional (universo punto-en-el-tiempo)
+| L | S | N | Sh train | Sh test | n_tr | n_te |
+|---|---|---|---|---|---|---|
+| 3 | 0 | 30 | +0.47 | +0.74 | 87 | 139 |
+| 3 | 0 | 50 | +0.47 | +0.72 | 87 | 139 |
+| 3 | 1 | 30 | +0.47 | +0.80 | 87 | 139 |
+| 3 | 1 | 50 | +0.51 | +0.80 | 87 | 139 |
+| 6 | 0 | 30 | +0.33 | +0.91 | 87 | 139 |
+| 6 | 0 | 50 | +0.43 | +0.86 | 87 | 139 |
+| 6 | 1 | 30 | +0.23 | +0.82 | 87 | 139 |
+| 6 | 1 | 50 | +0.34 | +0.84 | 87 | 139 |
+| 12 | 0 | 30 | +0.31 | +0.87 | 87 | 139 |
+| 12 | 0 | 50 | +0.36 | +0.88 | 87 | 139 |
+| 12 | 1 | 30 | +0.20 | +0.77 | 87 | 139 |
+| 12 | 1 | 50 | +0.25 | +0.82 | 87 | 139 |
+>> elegida por TRAIN: L=3 S=1 N=50 (Sh train +0.51)
+    cobertura punto-en-el-tiempo: train media 57% | test media 88% (piso de operabilidad pre-registrado: 85%)
+    Sharpe test          : +0.80   (umbral > 0.5)          → SÍ
+    Bootstrap CI 90%     : [+0.29, +1.34] (excluir 0)     → SÍ
+    Concentración top10% : 86%   (< 60%)             → no
+    Mitades del test     : +0.61 / +0.97 (ambas > 0)      → SÍ
+    vs B&H SPY           : +0.80 vs +0.90 (superarlo)     → no
+    >>> PASA LOS 5: NO
+    estrés 5 pb: Sharpe test +0.78
+    operabilidad por supervivencia: cobertura OK
+
+======================================================================================
+VEREDICTO (5 familias, config elegida por train, test medido una vez):
+  TSMOM índice     L=12                   Sh test +0.79 vs B&H +0.90 → no pasa
+  MA timing        SMA200@fin-de-mes      Sh test +0.67 vs B&H +0.90 → no pasa
+  RSI-2            entry<10.0,exit>70.0   Sh test +0.81 vs B&H +0.85 → no pasa
+  Dual momentum    L=12                   Sh test +0.57 vs B&H +0.90 → no pasa
+  XS momentum      L=3,S=1,N=50           Sh test +0.80 vs B&H +0.90 → no pasa
+
+  NINGUNA familia pasa el listón pre-registrado. Según el criterio de
+  parada del protocolo: se DETIENE la búsqueda y el veredicto honesto es
+  indexación pasiva (comprar y mantener el índice), no un bot de timing.

@@ -1208,3 +1208,52 @@ deriva al vuelo de las tablas base (single source of truth).
   cruces de medias (no rescató el edge en cripto) y en el momentum de oro/SPX
   (donde sí sobrevivió, débilmente) — cambia la FORMA del payoff, no crea una
   dirección predictiva que no exista.
+
+## Pivote S&P 500 (2026-07-11)
+
+- **Membresía punto-en-el-tiempo (point-in-time)**: la lista de qué acciones
+  componían el índice EN CADA FECHA histórica, no la lista de hoy. Usar la de
+  hoy retroactivamente es sesgo de supervivencia: solo miras a los que
+  sobrevivieron (la lección del error NVDA/TSLA de 2026-07-08). Fuente gratis:
+  repo GitHub `fja05680/sp500` (`src/data/sp500.py`).
+- **Cobertura punto-en-el-tiempo**: fracción de los miembros del índice en una
+  fecha cuyos precios SÍ tenemos (yfinance no guarda muchas empresas
+  deslistadas). Es el termómetro del sesgo de supervivencia RESIDUAL: los que
+  faltan son justo los muertos, así que una cartera long-only medida sobre los
+  que quedan se infla al alza. Se mide con `coverage_report` y el protocolo
+  fija un piso de operabilidad (85% en test).
+- **Retorno total vs retorno de precio**: el retorno total reinvierte los
+  dividendos; el de precio no. Comparar una estrategia contra ^GSPC (precio)
+  le regala ~2%/año de ventaja ficticia — el benchmark correcto es SPY con
+  `auto_adjust=True` (dividendos reinvertidos).
+- **T-bill / ^IRX**: letra del Tesoro de EE.UU. a 13 semanas; su yield es "lo
+  que paga el cash". Una estrategia que pasa tiempo fuera del mercado DEBE
+  devengar esto en el backtest (protocolo §3) — con tasas al 4-5% (2023-25),
+  ignorarlo castiga injustamente al timing.
+- **Momentum cross-sectional (Jegadeesh-Titman 1993)**: rankear MUCHAS
+  acciones por su retorno pasado (formación de L meses, saltando el último —
+  el "skip" — por la reversión de corto plazo) y comprar las top-N. Es el
+  "momentum factor" (UMD) académico. Distinto del TSMOM: aquí se compara cada
+  acción CONTRA LAS DEMÁS, no contra su propio pasado.
+- **Timing por media móvil (Faber 2007)**: estar en el índice solo cuando el
+  precio cierra el mes por encima de su media móvil (SMA 10 meses ≈ 200 días);
+  si no, cash. En la literatura y en nuestro test: reduce drawdowns, NO supera
+  el retorno del buy-and-hold en mercados alcistas.
+- **RSI-2 (Connors 2008)**: reversión de cortísimo plazo — comprar el índice
+  cuando el RSI de 2 días está en pánico (<10) PERO el cierre sigue sobre la
+  SMA200 (el dip dentro de la tendencia), salir cuando el RSI se normaliza
+  (>70). Fue nuestro mejor candidato (4/5 criterios) y aun así no superó al
+  B&H (+0.81 vs +0.85).
+- **Dual momentum / GEM (Antonacci 2014)**: rotación mensual entre acciones,
+  bonos y cash: sostienes el activo con mejor retorno de 12 meses SOLO si
+  supera al T-bill; si nada lo supera, cash. "Momentum relativo" (qué activo)
+  + "momentum absoluto" (¿mejor que el cash?).
+- **Pre-registro**: declarar por escrito split, grids, criterios de éxito y
+  regla de parada ANTES de mirar un solo resultado (config `research` +
+  documento fechado en docs/research/). Es la versión formal del protocolo
+  anti-sobreajuste: lo que no está pre-registrado no se puede "encontrar".
+- **Indexación pasiva**: comprar y mantener el índice completo (ETF tipo
+  SPY/VOO) con aportes periódicos, sin intentar cronometrar entradas/salidas.
+  Tras ~500 combinaciones en cripto y 23 configuraciones en acciones con
+  protocolo honesto, es el veredicto vigente del proyecto: ninguna estrategia
+  activa probada superó al índice neto de costos en el test.

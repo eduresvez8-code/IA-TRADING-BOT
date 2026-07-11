@@ -25,7 +25,7 @@ def bars_per_year(timeframe: str) -> float:
     """Cuántas velas de `timeframe` caben en un año.
 
     Anualizar Sharpe/Sortino requiere saber cuántas observaciones hay por año.
-    timeframe es la notación de Binance: '1m', '5m', '15m', '1h', '4h', '1d'.
+    timeframe en notación compacta: '1m', '5m', '15m', '1h', '4h', '1d'.
 
         '5m' → 525600 / 5   = 105120
         '1h' → 525600 / 60  = 8760

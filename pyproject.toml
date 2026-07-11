@@ -1,33 +1,26 @@
 [project]
 name = "ia-trading"
-version = "0.1.0"
-description = "Bot de trading híbrido: análisis técnico + sentimiento de noticias (Claude)"
+version = "0.2.0"
+description = "Bot cuantitativo S&P 500: investigación/backtest con protocolo anti-sobreajuste"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "pandas>=2.2",
     "numpy",
-    "python-binance>=1.0.29",
-    "aiosqlite>=0.20",
-    "vaderSentiment>=3.3.2",
-    "feedparser>=6.0",
     "httpx>=0.27",
     "pydantic>=2.8",
     "pydantic-settings>=2.4",
     "pyyaml>=6.0",
-    "anthropic>=0.40",
     "pyarrow>=17.0",
+    "yfinance>=1.5.1",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3",
-    "pytest-asyncio>=0.24",
-    "yfinance>=1.5.1",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-asyncio_mode = "auto"
 
 [build-system]
 requires = ["hatchling"]

@@ -1,405 +1,108 @@
-# Configuración de la estrategia y el riesgo.
+# Configuración del bot cuantitativo S&P 500.
 # Todo lo que NO es un secreto vive aquí (los secretos van en .env).
-# Cambiar un parámetro de trading nunca debe requerir tocar código.
+# Cambiar un parámetro de trading/investigación nunca debe requerir tocar código.
+#
+# IMPORTANTE (protocolo anti-sobreajuste): la sección `research` es el
+# PRE-REGISTRO del protocolo de investigación — split, grids y criterios de
+# éxito se fijaron ANTES de mirar cualquier resultado (2026-07-11, ver
+# docs/research/2026-07-11_protocolo_sp500.md). Cambiarlos después de ver
+# resultados invalida la validación entera.
 
 market:
-  symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT"]   # DOGE fuera (2026-06-26): meme de cola gorda + peor fricción, nunca validado en la matriz quant
-  timeframe: "1h"            # vela base (subida de 5m: el régimen SMA200 @ 4h necesita
-                             # 920 velas base = 230·(4h/1h), cabe en 1 backfill <1000)
-  htf_timeframe: "4h"        # régimen SMA 50/200 @ 4h (único cruce que sobrevivió OOS)
-  quote_assets: ["USDT"]     # quotes para derivar el activo base (BTCUSDT→BTC) al resolver scope de noticias
+  benchmark_symbol: "SPY"    # ETF del S&P 500: retorno TOTAL (auto_adjust reinvierte dividendos)
+  index_symbol: "^GSPC"      # índice de PRECIO (historia larga desde 1927, sin dividendos)
+  tbill_symbol: "^IRX"       # T-bill 13 semanas (yield anualizado %): retorno del cash
+  timeframe: "1d"            # velas diarias — nada intradía (lección cripto: ruido+costos)
+
+data:
+  dir: "data/sp500"                    # raíz de los parquet descargados
+  start_date: "1990-01-01"             # inicio de la descarga (constituyentes: cobertura real desde ~1996)
+  # Constituyentes HISTÓRICOS del índice (anti sesgo de supervivencia): CSV con
+  # la membresía punto-en-el-tiempo, gratis. El downloader resuelve el archivo
+  # más reciente del repo vía la API de GitHub.
+  constituents_repo: "fja05680/sp500"
+  batch_size: 50                       # tickers por llamada de descarga (yfinance agrupa)
+  pause_seconds: 1.0                   # pausa entre lotes (cortesía con el rate limit)
+  extra_symbols: ["VUSTX"]             # proxy bonos Tesoro largo (fondo Vanguard, 1986→): pata defensiva de la rotación
 
 risk:
-  risk_per_trade_pct: 1.0    # % del capital arriesgado por operación
-  max_open_positions: 5      # 5 símbolos en el universo; tope simultáneo conservador
-  max_same_direction_positions: 3  # acota concentración por correlación: máx 3 perps en el mismo sentido
-  max_daily_loss_pct: 3.0    # al tocarlo, el bot se detiene hasta el día siguiente
-  max_drawdown_pct: 10.0     # kill switch: requiere reinicio manual
-  atr_stop_multiplier: 1.5   # SL = entrada -/+ 1.5 * ATR(14)
+  # Contexto ACCIONES (cuenta cash, sin apalancamiento, sin funding):
+  risk_per_trade_pct: 0.5    # % del capital arriesgado por operación (dist. al stop)
+  max_open_positions: 10     # tope de posiciones simultáneas
+  max_daily_loss_pct: 2.0    # al tocarlo, no se abren entradas hasta el día siguiente
+  max_drawdown_pct: 15.0     # kill switch: latcha, requiere reset manual
+  atr_stop_multiplier: 2.0   # SL = entrada − 2·ATR(14) (acciones diarias: 1.5 era de cripto 5m)
   atr_period: 14
-  # objetivo = RR × distancia_al_stop. Copia de simulación del backtest vive en
-  # backtest.take_profit_rr; esta es la del camino EN VIVO (Risk Manager). Con
-  # let_winners_run=true este valor deja de aplicarse (queda tipado por si se
-  # reactiva el techo fijo sin tocar código).
-  take_profit_rr: 2.0
-  # 2026-07-07 (decisión de Eduardo): "cortar pérdidas rápido, dejar correr las
-  # ganancias" — la lógica de los fondos de tendencia. Con true, el Risk Manager
-  # NO coloca take-profit fijo: el stop (atr_stop_multiplier) sigue siendo el
-  # único techo de RIESGO, pero la ganancia queda sin techo — la pierna solo
-  # cierra por stop, por FLIP (la señal se revierte) o por time-stop
-  # (orchestrator.max_position_hold_candles). Probado en la investigación: esta
-  # es la MISMA estructura de salida que usó el sweep de 240 cruces de medias
-  # (sin rescatar el edge) y la que sí sobrevivió en oro/SPX — cambia la FORMA
-  # del payoff, no crea dirección predictiva que no exista.
-  let_winners_run: true
-  # Banda de confianza del sentimiento (tres tramos):
-  #   < 0.5        → VETO: no se opera (Claude duda demasiado del titular)
-  #   [0.5, 0.7)   → tamaño reducido (× low_confidence_size_factor)
-  #   ≥ 0.7        → tamaño pleno
-  min_confidence_to_trade: 0.5      # piso duro: por debajo no se arriesga capital
-  low_confidence_threshold: 0.7     # techo de la banda de tamaño reducido
-  low_confidence_size_factor: 0.5   # multiplicador en la banda media
-  # Circuit breaker (a): precio más viejo que esto (s) → no abrir nuevas entradas.
-  stale_feed_seconds: 30
-  # Feed obsoleto = sin vela por más de stale_feed_intervals × intervalo (o
-  # stale_feed_seconds, el mayor). Escala con el timeframe: en 5m son 10 min.
-  stale_feed_intervals: 2.0
-  # --- Futuros USD-M: apalancamiento y margen ---
-  # Auto-límite de apalancamiento. Aunque el exchange permita 20x+, el bot jamás
-  # usa más de esto. Nada de apalancamiento de casino.
-  max_leverage: 3
-  # Margen inicial agregado máximo como % del wallet_balance. El (100 - este)% es
-  # colchón para fluctuaciones de PnL no realizado y comisiones de liquidación.
-  max_portfolio_margin_pct: 85.0
-  # --- Sizing de evento (Fase 2.4): modo event del Risk Manager ---
-  # Presupuesto base menor para trades de evento (más inciertos que el Slow Path).
-  # Debe ser ≤ risk_per_trade_pct (validador cruzado en config.py).
-  event_risk_per_trade_pct: 0.5
-  # Stop más ancho en eventos: la volatilidad intra-noticia supera el ATR(14) de
-  # mercado tranquilo. Debe ser ≥ atr_stop_multiplier (validador cruzado).
-  # El stop ancho NO sube el riesgo: qty = risk/stop → qty baja, no el riesgo.
-  event_atr_stop_multiplier: 2.5
-  # Ventana para la línea base de volatilidad (mediana del ATR, no media: robusta
-  # contra el spike que intentamos medir). ge=2, le=500.
-  vol_regime_lookback: 20
-  # Techo del ratio ATR_now/ATR_baseline antes de aplicar vol_damp.
-  # vol_damp = min(1, cap/ratio) → para ratio ≤ cap no hay recorte.
-  # gt=1.0 garantiza un mínimo de holgura antes de recortar (le=10 ataja un typo).
-  vol_expansion_cap: 2.0
-
-confluence:
-  # Régimen 1h: dos umbrales asimétricos (ver ConfluenceConfig). El score 1h vive
-  # comprimido en ~[-0.3,+0.3]; calibrados sobre |score| histórico de 3 años.
-  quant_veto_threshold: 0.15       # |régimen|≥esto y OPUESTO → veta (defensivo, ~p50)
-  quant_confirm_threshold: 0.35    # |régimen|≥esto y A FAVOR → tamaño pleno (ofensivo, ~p82)
-  sentiment_confirm_threshold: 0.3 # |sentimiento| mínimo para originar la dirección
-  reduced_size_factor: 0.5         # tamaño al operar sin confirmación de sentimiento
-  # Binance Futuros USD-M: los cortos son nativos. En vivo va en true → el bot
-  # opera de forma simétrica (LONG y SHORT). El gate sigue siendo config: poner
-  # false lo volvería long-only sin tocar código.
-  allow_short: true
-  # TTL del sentimiento EN VIVO (segundos). Pasado esto desde analyzed_at, el
-  # score caduca y se trata como "sin noticia". CON BASE 1h: las decisiones ocurren
-  # al cierre de cada vela de 1h, así que el TTL debe cubrir ese hueco o la noticia
-  # caducaría antes del cierre y NUNCA originaría (error silencioso). 5400s = 90 min
-  # → una noticia fresca sobrevive hasta el siguiente cierre de 1h con margen.
-  sentiment_ttl_seconds: 5400
-  # Interruptor del quant como RÉGIMEN. 2026-06-26: APAGADO (false) → la noticia
-  # opera sola, a tamaño pleno, sin que la tendencia 1h vete ni reduzca (reason
-  # `news_only`). Modo "solo noticias" para aislar el edge event-driven en testnet.
-  # Poner true restaura el veto/confirm/sizing por régimen sin tocar código.
-  quant_regime_enabled: true
-
-sentiment:
-  enabled: true                # Slow Path ON (Opción 2): noticias originan, régimen 1h confirma — validación testnet 2026-06-21
-  rss_feeds:
-    - "https://www.coindesk.com/arc/outboundfeeds/rss/"
-    - "https://decrypt.co/feed"
-    - "https://theblock.co/rss.xml"
-    - "https://beincrypto.com/feed/"
-  poll_interval_seconds: 120
-  fetch_timeout_seconds: 10   # timeout por feed; feeds paralelos → total = max(individuales)
-  claude_model: "claude-haiku-4-5-20251001"
-  heuristic_weight: 0.7        # peso del diccionario cripto vs. VADER (VADER = 1 - esto)
-  escalate_score_threshold: 0.3  # |score_local| >= esto → llamar a Claude
-  max_news_age_hours: 24         # ignorar noticias más viejas que esto
+  take_profit_rr: 2.0        # solo si let_winners_run=false (techo fijo de ganancia)
+  let_winners_run: true      # sin techo: sale por señal o stop (estructura trend-following)
+  allow_short: false         # cuenta cash: sin cortos (borrow/margen fuera de alcance $0)
+  allow_fractional_shares: false  # brokers clásicos: acciones enteras (floor, nunca redondear arriba)
 
 quant:
-  # Régimen SMA 50/200 @ 4h (el único cruce que sobrevivió OOS, Sharpe +0.71).
-  # ma_type=sma + ema_weight=1.0 → score = tanh(50·(SMA50−SMA200)/SMA200), sin RSI.
+  # Señal de referencia del motor (score EMA/SMA-cross + RSI). Los deciders de
+  # investigación la IGNORAN (traen su propia señal); se conserva porque el
+  # motor la precalcula y porque es la señal "por defecto" documentada.
   ma_type: "sma"
-  ema_fast_period: 50   # SMA rápida (pese al nombre del campo, ma_type manda)
-  ema_slow_period: 200  # SMA lenta
-  rsi_period: 14        # sin efecto con ema_weight=1.0 (RSI pesa 0)
-  ema_weight: 1.0       # 100% cruce de medias, 0% RSI → régimen de tendencia puro
-  # Factor del squash tanh del spread de medias: score = tanh(factor · spread%).
-  # Con 50: spread 1% → tanh(0.5)≈0.46; 3% → tanh(1.5)≈0.91. Determina la ESCALA
-  # del score y por tanto interactúa con los umbrales de la confluencia
-  # (quant_veto/confirm_threshold): si se cambia, recalibrar esos umbrales.
-  # Antes vivía hardcodeado en strategy.py (violación de Cero Hardcoding,
-  # corregida en la auditoría 2026-07). 50.0 = comportamiento histórico exacto.
+  ema_fast_period: 50
+  ema_slow_period: 200
+  rsi_period: 14
+  ema_weight: 1.0            # 100% cruce de medias, 0% RSI
   score_squash_factor: 50.0
 
 backtest:
-  # Costos: se cobran en CADA lado (entrada y salida). Una estrategia que solo
-  # gana sin costos no es una estrategia. Valores por defecto conservadores;
-  # ajustables sin tocar código.
-  initial_capital: 10000.0   # USDT ficticios de partida
-  commission_pct: 0.04       # comisión taker por lado (% del notional) — Binance futures ≈ 0.04
-  slippage_pct: 0.02         # deslizamiento adverso fijo por lado (%)
-  slippage_atr_multiplier: 0.1  # slippage extra proporcional a la volatilidad: k·ATR/precio. 0 = solo el fijo
-  # Reglas de entrada/salida de la simulación (la estrategia emite score en [-1,1]).
-  entry_threshold: 0.5       # |score| para abrir posición (idea de "señal fuerte")
-  exit_threshold: 0.1        # cierre por debilidad: |score| cae por debajo de esto
-  take_profit_rr: 2.0        # objetivo = RR × distancia_al_stop (riesgo:beneficio 1:RR)
-  allow_short: true          # operar también en corto, no solo en largo
+  # Costos por lado (entrada y salida), en % del notional:
+  # comisión 0 (brokers retail EE.UU. cobran $0 en acciones/ETF) +
+  # slippage 0.02% = 2 pb (megacaps/ETF líquidos, órdenes pequeñas retail).
+  # La sensibilidad a costos peores (5 pb) se corre aparte (research.slippage_stress_pct).
+  initial_capital: 10000.0
+  commission_pct: 0.0
+  slippage_pct: 0.02
+  slippage_atr_multiplier: 0.0   # sin componente dinámico: universo líquido, diario
+  entry_threshold: 0.5
+  exit_threshold: 0.1
+  take_profit_rr: 2.0
+  allow_short: false             # coherente con risk.allow_short (cuenta cash)
 
-edge:
-  # Diagnóstico del edge de la señal quant (backtest.run_edge). NO afecta al
-  # trading en vivo: solo mide si la señal predice el retorno futuro.
-  forward_horizons: [1, 4, 12, 24]   # velas hacia adelante a las que medir el IC
-  n_quantiles: 5                     # cubos para la tabla de monotonicidad señal→retorno
-
-# --- Laboratorio de estrategia (Sprint de investigación quant) ---
-# Escáner multi-activo de arquetipos. Todo parámetro vive aquí (cero hardcoding).
-scan:
-  # 2026-07-08: corregido LINKUSDT→BNBUSDT — había quedado desincronizado de
-  # market.symbols (el universo cambió, esta lista no se actualizó). Afecta a
-  # las 4 familias de backtest/quant_matrix.py (pares, VWAP, squeeze, carry):
-  # nunca habían visto BNB, y sí veían LINK, que ni siquiera está en el bot.
-  symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT"]
-  history_days: 1095            # ~3 años de histórico a descargar/backtestear
-  walk_forward_folds: 4         # tramos contiguos para el test de consistencia
-  edge_profit_factor_min: 1.15  # PF mínimo (con expectancy>0) para declarar "edge"
-
-mean_reversion:
-  # Arquetipo 2 (anti-chop): Bollinger + RSI en extremos; salida en la media.
-  bb_period: 20
-  bb_num_std: 2.0
-  rsi_oversold: 30.0            # RSI < esto + banda inferior → LONG
-  rsi_overbought: 70.0          # RSI > esto + banda superior → SHORT
-
-breakout:
-  # Arquetipo 3 (ruptura de volatilidad): Donchian + filtro de volumen.
-  donchian_period: 20           # canal de ENTRADA: máx/mín de los N previos
-  exit_donchian_period: 10      # canal de SALIDA trailing (Turtle): más corto que el de entrada
-  volume_ma_period: 20          # media de volumen para el filtro de confirmación
-  volume_multiplier: 1.0        # volumen de ruptura > este × media → válida
-  atr_filter_period: 20         # ventana de la media de ATR del filtro de volatilidad
-  atr_expansion_mult: 1.0       # solo entrar si ATR > este × media(ATR): régimen expansivo
-
-execution:
-  # Reconciliación: discrepancia RELATIVA de cantidad por encima de la cual el
-  # estado local y el del exchange se consideran desincronizados → halt (cb c).
-  reconcile_position_tolerance: 0.001
-  # Disparo de stops sobre el precio de MARCA, no el último negociado: un wick de
-  # manipulación en un libro fino no activa el stop. Alternativa: CONTRACT_PRICE.
-  stop_working_type: "MARK_PRICE"
-  # Confirmación del fill de la entrada MARKET antes de colocar SL/TP (una orden
-  # de mercado puede responder NEW y llenarse un instante después).
-  fill_confirm_retries: 5
-  fill_confirm_delay_seconds: 0.3
-  # Tope de slippage de entrada (Fase 1.3): máximo deslizamiento adverso aceptado
-  # en basis points (1 bps = 0.01%). Con 10 bps: BUY limit = mark × 1.001, SELL
-  # limit = mark × 0.999. Si el mercado está fuera de esa banda al enviar la
-  # orden, el IOC expira sin fill. El Slow Path usa MARKET si mark_price es None.
-  slippage_cap_bps: 10
-  # "IOC" = Immediate-Or-Cancel (producción); "GTC" = resting limit (laboratorio).
-  aggressive_entry_tif: "IOC"
-
-orchestrator:
-  # Velas mínimas en el buffer antes de operar: los indicadores (ema_slow + rsi)
-  # necesitan historia para ser fiables; dejamos holgura sobre ese mínimo.
-  warmup_candles: 60
-  # Observaciones consecutivas de una pierna "desconocida" antes de declarar
-  # desincronización y disparar el HALT (circuit breaker c). Absorbe la latencia
-  # del WebSocket: una aparición transitoria no detiene el bot, una sostenida sí.
-  reconcile_grace_cycles: 3
-  # Velas del HTF (htf_timeframe = 1h) que el quant usa para leer el RÉGIMEN de
-  # tendencia (Opción 2). 50 ≥ el mínimo de 35 (ema_slow 21 + rsi 14) con holgura.
-  # El engine backfillea regime_htf_bars * (1h/5m) = 50 * 12 = 600 velas de 5m,
-  # las resamplea a 1h y corre el EMA-cross ahí. La literatura cripto solo halla
-  # edge de EMA-cross en velas DIARIAS/horarias, nunca en 5m → el régimen vive en
-  # el HTF, no en la vela base de entrada.
-  regime_htf_bars: 230   # SMA200 @ 4h necesita ≥214 velas HTF (200+14); 230 da holgura
-  # Sondeo del PnL realizado por símbolo (income history Binance) para el dashboard.
-  # Solo observabilidad, en tarea aparte; no afecta el trading. 60s es de sobra.
-  realized_pnl_poll_seconds: 60
-  # Espera tras un -1021 (reloj adelantado tras despertar el Mac) en el sondeo de
-  # PnL antes de reintentar: da tiempo a que macOS re-sincronice por NTP en vez de
-  # martillar la API. El offset del reloj ya se recalibra en retry_with_backoff.
-  clock_retry_delay_seconds: 30
-  # Time-stop: una posición se cierra por tiempo tras este nº de velas base si no
-  # la cerró antes el SL/TP/flip. CON BASE 1h: 72 velas = 72h (~3 días), backstop
-  # razonable para un híbrido tendencia+noticias. 0 = off.
-  max_position_hold_candles: 72
-
-# --- Fast Path: originación de trades por evento (Plan V2 Fase 2) ---
-# Gobierna CUÁNDO un shock (hack/ETF/depeg…) cuaja en una orden. La lógica
-# (decide_event) llega en Fase 2.2; el consumidor (cola + on_event) en 2.3.
-event:
-  # Gate maestro. APAGADO (2026-07-01): el "último intento" es un híbrido LIMPIO de
-  # Slow Path (noticias que ya teníamos) + régimen SMA 50/200 @ 4h. El Fast Path se
-  # deja fuera para no mezclar dos experimentos; el cableado sigue listo si se reabre.
-  enabled: false
-  # Poll de eventos: más rápido que el Slow Path (sentiment.poll = 120s). No
-  # competimos en latencia con RSS gratis; 15s es el balance fresco/no-baneo.
-  poll_interval_seconds: 15
-  min_impact_score: 0.6        # |score| del shock para originar (no abrir con ruido)
-  min_confidence: 0.7          # confianza mínima de Claude para fiarse del titular
-  ttl_seconds: 180             # un intent de evento más viejo que esto no se opera
-  cooldown_seconds: 900        # 15 min por símbolo: evita reentrar con titulares del mismo suceso
-  confirm_impulse_bps: 8       # el precio debe moverse >= 8 bps en la dirección (circuit breaker b)
-  confirm_window_seconds: 60   # ventana para medir ese impulso de precio
-  size_factor: 0.5             # trades de evento al 50% (más arriesgados → más pequeños)
-  macro_block_minutes_before: 30  # bloqueo desde 30 min antes de un macro programado
-  macro_block_minutes_after: 5    # … hasta 5 min después (el dato ya es público)
-  # --- Plano de datos en tiempo real (Fase 2.5(i)): micro-buffer markPrice@1s ---
-  markprice_buffer_seconds: 180   # retención del deque por símbolo (≥ confirm_window_seconds)
-  markprice_stale_seconds: 5      # tick más reciente más viejo que esto → feed muerto → no operar
-  markprice_min_ticks: 5          # mínimo de ticks en la ventana para fiarse del impulso
-  # --- event_fetch (Fase 2.5(ii)): guardia de frescura del titular ---
-  max_headline_age_seconds: 1800  # 30 min: titular más viejo que esto no origina (no chasing)
-
-# --- Señales no-precio (funding rate / basis de futuros) ---
-# Edge test de funding/basis. NO afecta al trading: mide si predicen el precio.
-funding_edge:
-  premium_interval: "1h"                  # granularidad del basis/premium a capturar
-  forward_horizons_hours: [8, 24, 72, 168]  # retorno futuro (h): 1 funding, 1d, 3d, 7d
-  n_quantiles: 5                          # cubos para la monotonicidad señal→retorno
-
-# --- Momentum cross-sectional (relative strength entre muchos activos) ---
-# Factor: retorno de los últimos N días; se rankea el universo y se mide el IC
-# del ranking contra el retorno futuro. NO opera: es el edge test del factor.
-cross_sectional:
-  history_days: 1100            # ~3 años de velas diarias a descargar
-  min_history_days: 60          # un activo entra al universo si tiene al menos esto
-  momentum_lookback_days: 30    # ventana del momentum (retorno de los últimos N días)
-  momentum_skip_days: 0         # saltar los últimos M días (evita reversión de corto plazo)
-  vol_adjust: false             # true = momentum dividido por su volatilidad realizada
-  vol_lookback_days: 30         # ventana de volatilidad si vol_adjust
-  forward_days: 7               # horizonte del retorno futuro a predecir
-  rebalance_days: 7             # cada cuántos días se recalcula el ranking (semanal)
-  n_quantiles: 5                # quintiles para el spread top-bottom
-  min_assets: 10                # cross-section mínima para calcular el IC de una fecha
-  # --- Construcción del portafolio long-short de reversión ---
-  liquidity_drop_pct: 0.25      # descarta el 25% de menor volumen (microcaps de la cola)
-  winsorize_quantile: 0.02      # recorta retornos al percentil 2/98 (ningún activo domina)
-  max_weight: 0.10              # tope de peso por activo (10%)
-  # --- Reversión entre los 5 perps líquidos (única forma tradeable del lead) ---
-  xs_liquid_lookback_days_grid: [3, 7, 14, 30]  # ranking por retorno de N días
-  xs_liquid_n_side_grid: [1, 2]                  # long-1/short-1 y long-2/short-2
-
-# --- Regímenes de mercado por sentimiento (Fear & Greed como ancla) ---
-# Edge test de 3 métodos cuantitativos de sentimiento. NO opera: mide si el F&G
-# predice/condiciona retornos. Frecuencia diaria (estabilidad: nada de scalping).
-sentiment_regime:
-  ext_fear_below: 25        # F&G < 25 = miedo extremo
-  fear_below: 45            # [25,45) = miedo
-  greed_above: 55           # [55,75) = codicia
-  ext_greed_above: 75       # F&G >= 75 = codicia extrema
-  forward_days: 7           # horizonte de retorno futuro
-  mr_lookback_days: 5       # ventana del dip para la reversión (Método B)
-  extreme_abs_threshold: 25 # |F&G-50| >= esto → régimen "extremo" para el gating (B)
-  vol_scale_min: 0.3        # exposición mínima en euforia (Método C, vol-scaling)
-
-storage:
-  db_path: "data/trading.db"
-  candles_dir: "data/candles"
-  funding_dir: "data/funding"
-  universe_dir: "data/universe"
-  metrics_dir: "data/metrics"   # Binance Vision: OI + long/short ratios 5m (download_metrics)
-
-# --- Dashboard de observabilidad en tiempo real (proceso READ-ONLY aparte) ---
-# Lee la misma SQLite que escribe el engine (modo `ro`); jamás envía órdenes.
-dashboard:
-  host: "127.0.0.1"           # solo loopback: el dashboard NO se expone a la red
-  port: 8787                  # http://127.0.0.1:8787
-  refresh_seconds: 5          # cada cuánto el navegador repolla /api/snapshot
-  equity_points: 500          # puntos de la curva de capital a servir
-  decisions_rows: 60          # filas del feed de decisiones (incluye HOLD)
-  orders_rows: 40             # filas de la tabla de órdenes
-  news_rows: 25               # filas del panel de noticias/sentimiento
-  stale_after_intervals: 3    # snapshot más viejo que 3 velas → liveness en rojo
-  online_timeout_seconds: 45  # sin latido del bot > 45s → dashboard lo marca OFFLINE
-
-quant_matrix:
-  taker_commission_pct: 0.05          # VIP0 conservador (aislado de backtest.commission_pct)
-  carry_capital_multiplier: 2.0       # delta-neutral inmoviliza spot + margen perp 1x
-  carry_maintenance_bps_per_period: 0.0  # haircut mantenimiento/8h (0 = upper bound)
-  golden_min_tstat: 2.0               # Regla de Oro: |t| >= 2
-  golden_min_profit_factor: 1.15      # Regla de Oro: PF neto > 1.15
-  # Familia B — cointegración de pares (1h candles)
-  pairs_lookback_hours: 720           # ventana rolling OLS + z-score (30 días)
-  pairs_z_entry: 2.0                  # umbral de entrada (2σ)
-  pairs_z_exit: 0.5                   # umbral de cierre (media casi recuperada)
-  # Costos de slippage para familias direccionales (C/D; el carry no lo usa)
-  slippage_pct: 0.02                  # deslizamiento fijo por lado (%) — aislado de backtest
-  slippage_atr_mult: 0.1              # slippage dinámico: k·ATR/precio (0 = solo fijo)
-  atr_period: 14                      # ventana del ATR del slippage dinámico
-  # Familia C — reversión a VWAP intradía (5m candles)
-  vwap_z_window: 288                  # ventana z-score de la desviación (1 día de 5m)
-  vwap_z_entry: 2.0                   # umbral de entrada (2σ sobre el VWAP)
-  vwap_z_exit: 0.5                    # umbral de cierre (revirtió hacia el VWAP)
-  vwap_forward_horizon: 6             # horizonte IC Etapa 1 (6 barras = 30 min)
-  # Familia D — squeeze de volatilidad → ruptura (1h candles)
-  squeeze_bb_period: 20               # ventana de BB (SMA+σ) y del ATR de Keltner (estándar TTM)
-  squeeze_bb_std: 2.0                 # nº de σ de las Bollinger (estándar)
-  squeeze_keltner_atr_mult: 1.5       # multiplicador del ATR de Keltner (estándar TTM)
-  squeeze_forward_horizon: 4          # horizonte IC Etapa 1 + holding time-based (4h)
-  squeeze_breakout_threshold: 1.0     # |close−mid| > thr·(bb_std·σ): 1.0 = en la banda Bollinger
-
-# --- Hipótesis quant de la investigación Perplexity (2026-06) ---
-# Research puro (backtest/run_quant_hypotheses.py). NO opera el bot en vivo: mide,
-# NETO de costos sobre el histórico real, si cada hipótesis tiene edge. Las
-# hipótesis de POSICIONAMIENTO (open interest / long-short ratio) NO están aquí:
-# Binance solo sirve ~30 días de ese dato gratis → no se pueden backtestear (se
-# documentan como no-verificables en el reporte). Cero Hardcoding: todo umbral vive aquí.
-quant_hypotheses:
-  # Común a las familias direccionales: stop = entrada ∓ mult·ATR(risk.atr_period).
-  atr_stop_mult: 2.0                  # Perplexity especificó ATR(14)*2 en todas.
-  # H1 — TSMOM diario (time-series momentum): signo del retorno a N días marca el lado.
-  tsmom_lookback_days_grid: [60, 90, 126, 180, 252]  # barrido de robustez (¿meseta o suerte?)
-  # H2 — Funding extremo direccional (contrarian + filtro de tendencia de fondo).
-  funding_extreme_neg_ann_pct: -20.0  # FR anualizado < esto → crowd corto → buscar LONG
-  funding_extreme_pos_ann_pct: 40.0   # FR anualizado > esto → euforia larga → buscar SHORT
-  funding_normal_low_ann_pct: -5.0    # salida: el FR anualizado vuelve a [low, high]
-  funding_normal_high_ann_pct: 10.0
-  funding_trend_ma_days: 200          # filtro de tendencia: MA de cierres diarios
-  # H3 — Ruptura Donchian 4h (SIN el gate de OI, que no es backtesteable con datos gratis).
-  donchian_entry_period: 20           # canal de entrada: máx/mín de los N cierres previos
-  donchian_exit_ema: 10               # salida por cruce de EMA rápida (en velas 4h)
-  donchian_funding_min_8h_pct: 0.01   # long requiere funding 8h en [min, max] (en %)
-  donchian_funding_max_8h_pct: 0.05
-  donchian_take_profit_rr: 3.0        # TP = 3× la distancia del stop (Perplexity: 3*riesgo)
-  donchian_max_hold_bars: 30          # salida por tiempo si no salta stop/TP/señal
-  # Estudio "dejar correr" (run_letwinners, 2026-07-08): grid entrada × EMA salida,
-  # con tp=None (sin techo) y sin salida por tiempo. Combos exit>=entry se descartan.
-  donchian_entry_period_grid: [10, 20, 40, 55]
-  donchian_exit_ema_grid: [5, 10, 20]
-  # H4 — Cruce de medias móviles (sweep guiado por foros): pares fast/slow más citados
-  # en cripto (9/21, golden cross 50/200, etc.), tipo (EMA rápida / SMA sin whipsaws) y
-  # timeframe. Se EXCLUYE <1h: foros y nuestro propio hallazgo coinciden en que el ruido
-  # + costo a 5m/15m mata el edge. Stop ATR común (atr_stop_mult), flip en el cruce opuesto.
-  ma_cross_pairs: [[5, 13], [9, 21], [8, 21], [10, 20], [12, 26], [20, 50], [21, 55], [50, 200]]
-  ma_cross_types: ["ema", "sma"]      # EMA (reacciona antes) vs SMA (menos señales falsas)
-  ma_cross_timeframes: ["1h", "4h", "1d"]  # golden cross clásico vive en 1d; nada <1h
-  ma_cross_allow_short: true          # simétrico (long/short), como el resto de la matriz
-  # --- H5 — Lead-lag cascade (Perplexity rank 4/5, Guo 2024): BTC lidera, alt sigue ---
-  leadlag_leader: "BTCUSDT"           # el activo que lidera el movimiento
-  # 2026-07-08: ampliado de [ETH,SOL] a los 4 restantes del universo — nunca se
-  # había probado si XRP/BNB siguen a BTC con el mismo mecanismo.
-  leadlag_target_assets: ["ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT"]  # los que (supuestamente) siguen
-  leadlag_lag_hours_grid: [6, 24, 72]  # lags del retorno de BTC que probamos (JSON)
-  leadlag_regime_sma: 200             # SMA200 1h: líder y target deben coincidir en dirección
-  leadlag_allow_short: true           # simétrico (long/short)
-  # --- H6 — Estacionalidad horaria overnight (Quantpedia/SSRN 4081000) ---
-  seasonality_entry_open_hour_utc: 22  # entrar en la apertura de las 22:00 UTC
-  seasonality_hold_hours: 2            # mantener 2h → salir en apertura de 00:00 UTC
-  # --- H7 — Efecto día-de-la-semana ---
-  dow_entry_weekday: 0                 # 0=lunes: entrar long el lunes
-  dow_hold_days: 1                     # mantener 1 día
-  # --- H8 — Reversión RSI + filtro de tendencia SMA (no VWAP) ---
-  rsi_reversion_period: 10
-  rsi_reversion_oversold: 30.0
-  rsi_reversion_overbought: 70.0
-  rsi_reversion_trend_sma: 200
-
-# --- Investigación de posicionamiento (2026-07): flujo taker + OI + L/S ratio ---
-# Research puro (backtest/run_positioning.py). NO opera el bot en vivo. Binance
-# Vision SÍ tiene el histórico completo de OI/long-short (5m, gratis) — eso
-# desbloqueó lo que quant_hypotheses documentaba como no-verificable. Resultado
-# 2026-07-06: ninguna familia pasó el listón OOS (ver docs del informe); los
-# parámetros quedan para reproducir el estudio. Cero Hardcoding: todo vive aquí.
-positioning_research:
-  zscore_window_bars: 240             # ventana z-score a 1h (10 días): "sorpresa" vs su historia
-  zscore_window_days: 60              # ventana z-score de la variante diaria (E2b)
-  imbalance_ma_bars_grid: [4, 24, 72] # medias del desequilibrio taker a barrer (velas 1h)
-  entry_threshold_grid: [0.5, 1.0]    # umbrales |z| de entrada del barrido
-  cost_per_side_pct: 0.06             # comisión taker 0.04 + slippage 0.02 (aislado del motor)
-  train_test_split_date: "2024-12-15T00:00:00Z"  # corte train/test FIJO (anti data-snooping)
-  metrics_ffill_limit_bars: 12        # huecos 5m→1h a rellenar como máximo (12h)
-  # Variante "dejar correr" (run_letwinners, 2026-07-08): stop de riesgo real +
-  # salida por reversión del z-score, sin techo de ganancia (tp=None).
-  atr_stop_mult: 2.0                  # mismo stop que quant_hypotheses (ATR14 × 2)
-  exit_zscore_abs: 0.0                # salir cuando el z cruza el 0 (sorpresa disipada)
+# ============================ PRE-REGISTRO ============================
+# Protocolo de investigación S&P 500 (fijado 2026-07-11 ANTES de correr nada).
+# El documento hermano con la justificación completa:
+# docs/research/2026-07-11_protocolo_sp500.md
+research:
+  # ---- Split temporal único para TODOS los experimentos ----
+  # TRAIN: fecha < test_start_date | TEST: fecha >= test_start_date (se mide UNA vez).
+  test_start_date: "2015-01-01T00:00:00Z"
+  # ---- Criterios de éxito (TODOS a la vez, sobre el TEST) ----
+  success_sharpe_min: 0.5        # Sharpe anualizado neto de costos
+  bootstrap_iterations: 5000     # remuestreo con reemplazo de las operaciones/meses
+  bootstrap_ci: 0.90             # el CI al 90% debe EXCLUIR el cero
+  concentration_max: 0.60        # top 10% de operaciones aporta <60% de la ganancia
+  # además: estable en ambas mitades del test Y Sharpe > buy-and-hold del mismo universo.
+  # ---- Convenciones ----
+  slippage_stress_pct: 0.05      # sensibilidad: costos 5 pb/lado (además del caso base 2 pb)
+  cash_earns_tbill: true         # el cash fuera de mercado devenga ^IRX (si no, se subestima el timing)
+  # ---- Familia 1: momentum cross-sectional (Jegadeesh-Titman 1993) ----
+  xs_momentum:
+    lookback_months_grid: [3, 6, 12]   # formación J-T clásica
+    skip_months_grid: [0, 1]           # saltar el último mes (reversión de corto plazo)
+    top_n_grid: [30, 50]               # cartera larga: top-N del ranking (~decil de 500)
+    min_coverage: 0.60                 # fracción mínima de constituyentes con precio para que una fecha cuente
+    min_history_days: 280              # historia mínima del ticker para entrar al ranking (13 meses)
+  # ---- Familia 2: TSMOM sobre el índice (Moskowitz-Ooi-Pedersen 2012) ----
+  # Definición idéntica al Frente C de 2026-07-07 (comparabilidad): retorno de
+  # los últimos L meses EXCLUYENDO el último; long si >0, si no cash (long-only).
+  tsmom_index:
+    lookback_months_grid: [3, 6, 12]
+  # ---- Familia 3: timing por media móvil (Faber 2007) ----
+  ma_timing:
+    sma_days_grid: [100, 200]          # precio vs SMA, evaluado a fin de mes
+    cross_pairs: [[50, 200]]           # golden cross clásico, evaluado a diario
+  # ---- Familia 4: reversión de corto plazo RSI-2 (Connors 2008) ----
+  rsi_reversion:
+    rsi_period: 2
+    entry_grid: [5.0, 10.0]            # RSI2 < esto → LONG (dip)
+    exit_grid: [50.0, 70.0]            # RSI2 > esto → salir
+    trend_sma_days: 200                # solo por encima de la SMA200 (no cazar cuchillos)
+  # ---- Familia 5: rotación dual-momentum mensual (Antonacci 2014, GEM) ----
+  dual_momentum:
+    lookback_months: 12                # única config (sin grid: definición canónica del libro)
+    bond_symbol: "VUSTX"               # pata defensiva: Tesoro largo (fondo, historia desde 1986)
