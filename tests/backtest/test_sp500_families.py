@@ -18,8 +18,10 @@ from backtest.sp500_families import (
     ma_timing_monthly_weights,
     monthly_cash_returns,
     monthly_hold_returns,
+    monthly_regime_to_daily,
     monthly_strategy_returns,
     rsi_reversion_daily_position,
+    rsi_reversion_regime_gated_position,
     trades_from_positions,
     tsmom_index_weights,
     xs_momentum_weights,
@@ -173,6 +175,75 @@ def test_rsi_reversion_compra_dip_dentro_de_tendencia():
                                        exit_above=70.0, trend_sma_days=50)
     assert pos.iloc[80:82].max() == 1.0       # entró en el dip
     assert pos.iloc[-1] == 0.0                # salió con RSI alto
+
+
+# ---------- RSI-2 + filtro de régimen (combinación multi-plazo) ----------
+
+def test_regime_to_daily_expande_por_mes_causal():
+    # Régimen mensual (ya post shift_to_holding, indexado por mes de tenencia):
+    # enero=1 (favorable), febrero=0 (desfavorable). Cada día de enero debe
+    # heredar 1.0, cada día de febrero 0.0 — sin mezclar meses.
+    monthly = pd.Series([1.0, 0.0], index=pd.PeriodIndex(["2020-01", "2020-02"], freq="M"))
+    dates = pd.to_datetime(["2020-01-15", "2020-01-20", "2020-02-05"], utc=True)
+    out = monthly_regime_to_daily(monthly, pd.DatetimeIndex(dates))
+    assert list(out) == [1.0, 1.0, 0.0]
+
+
+def test_regime_to_daily_mes_sin_decision_es_nan():
+    monthly = pd.Series([1.0], index=pd.PeriodIndex(["2020-01"], freq="M"))
+    dates = pd.to_datetime(["2020-03-01"], utc=True)  # marzo no está en el régimen
+    out = monthly_regime_to_daily(monthly, pd.DatetimeIndex(dates))
+    assert np.isnan(out.iloc[0])
+
+
+def test_regime_gated_bloquea_la_entrada_si_el_regimen_no_es_favorable():
+    # MISMO escenario que test_rsi_reversion_compra_dip_dentro_de_tendencia
+    # (dip suave dentro de tendencia, sin el filtro SÍ entraba) — con el
+    # régimen en 0.0 todos los días, el filtro debe BLOQUEAR esa entrada.
+    up = list(np.linspace(100, 160, 80))
+    dip = [155.0, 150.0]
+    rec = [158.0, 166.0, 172.0]
+    closes = up + dip + rec
+    dates = pd.date_range("2020-01-01", periods=len(closes), freq="B", tz="UTC")
+    df = _daily_df(dates, closes, closes)
+    regime_off = pd.Series(0.0, index=dates)
+    pos = rsi_reversion_regime_gated_position(
+        df, rsi_period=2, entry_below=10.0, exit_above=70.0, trend_sma_days=50,
+        regime_daily=regime_off)
+    assert pos.max() == 0.0  # nunca entra: el régimen nunca fue favorable
+
+
+def test_regime_gated_permite_la_entrada_si_el_regimen_es_favorable():
+    # Mismo escenario, régimen en 1.0 todos los días → debe comportarse
+    # IGUAL que rsi_reversion_daily_position sin filtro (entra en el dip).
+    up = list(np.linspace(100, 160, 80))
+    dip = [155.0, 150.0]
+    rec = [158.0, 166.0, 172.0]
+    closes = up + dip + rec
+    dates = pd.date_range("2020-01-01", periods=len(closes), freq="B", tz="UTC")
+    df = _daily_df(dates, closes, closes)
+    regime_on = pd.Series(1.0, index=dates)
+    pos = rsi_reversion_regime_gated_position(
+        df, rsi_period=2, entry_below=10.0, exit_above=70.0, trend_sma_days=50,
+        regime_daily=regime_on)
+    assert pos.iloc[80:82].max() == 1.0
+    assert pos.iloc[-1] == 0.0
+
+
+def test_regime_gated_nan_es_fail_closed():
+    # Régimen NaN (sin decisión aún, warmup) debe tratarse como NO favorable,
+    # nunca como "vía libre por defecto".
+    up = list(np.linspace(100, 160, 80))
+    dip = [155.0, 150.0]
+    rec = [158.0, 166.0, 172.0]
+    closes = up + dip + rec
+    dates = pd.date_range("2020-01-01", periods=len(closes), freq="B", tz="UTC")
+    df = _daily_df(dates, closes, closes)
+    regime_nan = pd.Series(np.nan, index=dates)
+    pos = rsi_reversion_regime_gated_position(
+        df, rsi_period=2, entry_below=10.0, exit_above=70.0, trend_sma_days=50,
+        regime_daily=regime_nan)
+    assert pos.max() == 0.0
 
 
 # ---------- Dual momentum ----------

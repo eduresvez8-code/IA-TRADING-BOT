@@ -244,6 +244,59 @@ def rsi_reversion_daily_position(daily_df: pd.DataFrame, *, rsi_period: int,
     return pd.Series(pos, index=s.index)
 
 
+def monthly_regime_to_daily(monthly_holding_weight: pd.Series,
+                            daily_index: pd.DatetimeIndex) -> pd.Series:
+    """Expande un régimen YA indexado por mes de TENENCIA (post
+    `shift_to_holding`) a granularidad diaria: cada día hereda la decisión
+    de su propio mes — sin mirar nunca el futuro, porque el régimen mensual
+    ya era causal antes de expandirlo. Días de meses sin régimen decidido
+    aún (warmup) → NaN.
+    """
+    daily_periods = pd.PeriodIndex(daily_index, freq="M")
+    aligned = monthly_holding_weight.reindex(daily_periods)
+    return pd.Series(aligned.to_numpy(), index=daily_index)
+
+
+def rsi_reversion_regime_gated_position(daily_df: pd.DataFrame, *, rsi_period: int,
+                                        entry_below: float, exit_above: float,
+                                        trend_sma_days: int,
+                                        regime_daily: pd.Series) -> pd.Series:
+    """Igual que `rsi_reversion_daily_position`, pero además exige
+    `regime_daily[i] == 1.0` para ABRIR una posición nueva (combinación
+    multi-plazo: rebote de 2 días + tendencia SMA200 + régimen mensual de
+    plazo medio). El filtro NUNCA fuerza una salida anticipada — solo
+    bloquea entradas nuevas mientras el régimen no sea favorable; la salida
+    sigue siendo únicamente RSI>exit_above, igual que la versión sin filtro.
+    NaN en el régimen (warmup) se trata como "no favorable" (fail-closed).
+    """
+    s = _series(daily_df, "close")
+    r = _rsi(s, rsi_period).to_numpy()
+    trend = s.rolling(trend_sma_days).mean().to_numpy()
+    close = s.to_numpy()
+    # _series() ya dejó s.index SIN timezone (ver su docstring); si regime_daily
+    # llega con tz, el reindex fallaría en SILENCIO (produce NaN en todo — nunca
+    # una excepción) por comparar aware vs naive. Se normaliza aquí, no se confía
+    # en que el caller lo haga bien.
+    reg_idx = regime_daily.index
+    if getattr(reg_idx, "tz", None) is not None:
+        regime_daily = regime_daily.copy()
+        regime_daily.index = reg_idx.tz_convert("UTC").tz_localize(None)
+    regime = regime_daily.reindex(s.index).to_numpy()
+    pos = np.zeros(len(s))
+    holding = False
+    for i in range(len(s)):
+        if np.isnan(r[i]) or np.isnan(trend[i]):
+            pos[i] = 1.0 if holding else 0.0
+            continue
+        regime_ok = regime[i] == 1.0
+        if not holding and r[i] < entry_below and close[i] > trend[i] and regime_ok:
+            holding = True
+        elif holding and r[i] > exit_above:
+            holding = False
+        pos[i] = 1.0 if holding else 0.0
+    return pd.Series(pos, index=s.index)
+
+
 # ---------------------------------------------------------------------------
 # Familia 5 — Rotación dual-momentum (Antonacci 2014, sin grid)
 # ---------------------------------------------------------------------------

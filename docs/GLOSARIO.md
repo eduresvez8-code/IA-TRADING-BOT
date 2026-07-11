@@ -1257,3 +1257,27 @@ deriva al vuelo de las tablas base (single source of truth).
   Tras ~500 combinaciones en cripto y 23 configuraciones en acciones con
   protocolo honesto, es el veredicto vigente del proyecto: ninguna estrategia
   activa probada superó al índice neto de costos en el test.
+
+## Extensiones post-veredicto (2026-07-25)
+
+- **Calmar ratio (CAGR / |drawdown máximo|)**: mide "qué tan suave es el
+  viaje" en vez de solo el retorno ajustado por volatilidad (Sharpe). Faber
+  la usa para justificar el timing de tendencia: aunque no gane más, ¿duele
+  menos? Reutilizamos las 5 configs YA congeladas (sin re-experimentar, solo
+  aplicar una fórmula mecánica a resultados ya fijados) — ni así el índice
+  pierde: gana también en Calmar (+0.59 vs +0.26 a +0.52 de las 5 familias).
+- **Filtro de régimen multi-plazo (regime gating)**: exigir que una señal de
+  plazo corto (RSI-2, rebote de 2 días) solo abra posición si un indicador de
+  plazo MEDIO (TSMOM 12 meses del índice) también es favorable. Técnica real
+  (no ad-hoc): combina 3 horizontes (corto/rebote, medio/régimen,
+  largo/tendencia SMA200). El filtro NUNCA fuerza una salida anticipada, solo
+  bloquea entradas nuevas; un régimen en NaN (warmup) se trata como "no
+  favorable" (fail-closed), nunca como permiso por defecto. Resultado: no
+  añadió edge (Sharpe test +0.79, contra +0.81 de RSI-2 solo) — la señal de
+  plazo corto ya capturaba casi toda la información disponible.
+- **Nota de multiplicidad / meta-sobreajuste**: cada extensión post-veredicto
+  reutiliza el split y es individualmente disciplinada, pero seguir generando
+  variantes sobre la MISMA ventana 2015-2026 acumula el mismo riesgo de
+  sobreajuste por búsqueda repetida que el protocolo entero existe para
+  evitar — por eso el proyecto se detiene aquí y no genera una tercera
+  variante sobre este periodo.
