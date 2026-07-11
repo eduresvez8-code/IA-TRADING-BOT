@@ -125,6 +125,13 @@ def daily_hold_returns(df: pd.DataFrame) -> pd.Series:
     return (s.shift(-1) / s - 1.0).dropna()
 
 
+def daily_close_series(df: pd.DataFrame) -> pd.Series:
+    """Cierre diario con el mismo tratamiento de timezone que el resto del
+    módulo (ver `_series`) — expuesto para módulos externos (Familia 6) que
+    necesitan construir matrices de cierres de muchos tickers a la vez."""
+    return _series(df, "close")
+
+
 def _naive(s: pd.Series) -> pd.Series:
     """Índice datetime sin tz (las series diarias se alinean entre sí; una
     mezcla aware/naive alinearía a vacío EN SILENCIO y llenaría de ceros)."""
@@ -384,3 +391,69 @@ def xs_momentum_weights(monthly_close: pd.DataFrame,
         weights.loc[m, :] = 0.0
         weights.loc[m, top] = 1.0 / top_n
     return weights, coverage
+
+
+# ---------------------------------------------------------------------------
+# Familia 6 — Amplitud de mercado (última ronda, 2026-07-25)
+# ---------------------------------------------------------------------------
+
+def market_breadth_daily(daily_close: pd.DataFrame, members_by_month: pd.Series,
+                         sma_days: int, min_coverage: float) -> pd.Series:
+    """Fracción de miembros PUNTO-EN-EL-TIEMPO del índice por encima de su
+    propia SMA de N días, día a día:
+
+        amplitud_t = (1/|M_t|) · Σ_{i∈M_t} 1{close_i,t > SMA_N(close_i)_t}
+
+    Un ticker cuenta solo si tiene cierre Y SMA válidos ese día (si no, queda
+    fuera del numerador Y del denominador — nunca se rellena con 0 ni 1). Si
+    la cobertura (elegibles/miembros) cae bajo `min_coverage`, el día queda
+    SIN decisión (NaN) — mismo criterio ya usado en XS momentum (protocolo
+    §4.1), reutilizado aquí en vez de inventar un umbral nuevo por familia.
+    """
+    sma = daily_close.rolling(sma_days, min_periods=sma_days).mean()
+    valid = daily_close.notna() & sma.notna()
+    above = (daily_close > sma) & valid
+
+    breadth = pd.Series(np.nan, index=daily_close.index, dtype=float)
+    day_periods = daily_close.index.to_period("M")
+    for m in members_by_month.index:
+        members = members_by_month.get(m)
+        if not members:
+            continue
+        cols = [t for t in members if t in daily_close.columns]
+        day_mask = np.asarray(day_periods == m)
+        if not cols or not day_mask.any():
+            continue
+        n_eligible = valid.loc[day_mask, cols].sum(axis=1)
+        n_above = above.loc[day_mask, cols].sum(axis=1)
+        coverage = n_eligible / len(members)
+        frac = n_above / n_eligible.replace(0, np.nan)
+        frac[coverage < min_coverage] = np.nan
+        breadth.loc[day_mask] = frac.to_numpy()
+    return breadth
+
+
+def breadth_timing_position(breadth: pd.Series, threshold: float) -> pd.Series:
+    """Señal diaria 0/1: long SPY si amplitud > umbral, si no (o sin dato,
+    fail-closed) cash."""
+    pos = (breadth > threshold).astype(float)
+    pos[breadth.isna()] = 0.0
+    return pos
+
+
+# ---------------------------------------------------------------------------
+# Familia 7 — Régimen de VIX (última ronda, 2026-07-25)
+# ---------------------------------------------------------------------------
+
+def vix_regime_position(vix_close: pd.Series, sma_days: int, direction: str) -> pd.Series:
+    """Señal diaria 0/1 según el régimen del VIX frente a su propia SMA de N
+    días. `direction="below"`: long si VIX < su SMA (calma relativa, favorece
+    tendencia). `direction="above"`: long si VIX > su SMA (miedo elevado). Sin
+    historia suficiente para la SMA → sin señal (0.0, fail-closed)."""
+    if direction not in ("below", "above"):
+        raise ValueError(f"direction debe ser 'below' o 'above', no {direction!r}")
+    sma = vix_close.rolling(sma_days, min_periods=sma_days).mean()
+    cond = vix_close < sma if direction == "below" else vix_close > sma
+    pos = cond.astype(float)
+    pos[sma.isna()] = 0.0
+    return pos

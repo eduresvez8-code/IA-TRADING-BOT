@@ -10,12 +10,14 @@ import pandas as pd
 import pytest
 
 from backtest.sp500_families import (
+    breadth_timing_position,
     daily_hold_returns,
     daily_strategy_returns,
     dual_momentum_weights,
     first_open_by_month,
     golden_cross_daily_position,
     ma_timing_monthly_weights,
+    market_breadth_daily,
     monthly_cash_returns,
     monthly_hold_returns,
     monthly_regime_to_daily,
@@ -24,6 +26,7 @@ from backtest.sp500_families import (
     rsi_reversion_regime_gated_position,
     trades_from_positions,
     tsmom_index_weights,
+    vix_regime_position,
     xs_momentum_weights,
     xs_monthly_hold_returns,
 )
@@ -365,3 +368,71 @@ def test_trades_from_positions_compone_y_cobra_dos_lados():
     trades = trades_from_positions(sig, hold, per_side=0.01)
     assert len(trades) == 1
     assert trades[0] == pytest.approx((0.99 ** 2) * 1.1 * 1.1 - 1.0)
+
+
+# ---------- Familia 6: amplitud de mercado ----------
+
+def _breadth_fixture():
+    dates = pd.date_range("2020-01-02", periods=5, freq="B")  # naive, un mes
+    close = pd.DataFrame({
+        "A": [10.0, 11.0, 12.0, 9.0, 8.0],
+        "B": [5.0, 5.5, 5.0, 6.0, 7.0],
+        "C": [100.0, 100.0, 100.0, 100.0, 100.0],  # no es miembro este mes
+    }, index=dates)
+    members = pd.Series({pd.Period("2020-01"): ["A", "B"]})
+    return dates, close, members
+
+
+def test_market_breadth_valor_a_mano():
+    dates, close, members = _breadth_fixture()
+    b = market_breadth_daily(close, members, sma_days=2, min_coverage=0.5)
+    # día0: SMA aún sin historia (warmup) → sin decisión.
+    assert np.isnan(b.iloc[0])
+    # día1: SMA_A=10.5 (11>10.5 → sí), SMA_B=5.25 (5.5>5.25 → sí) → 2/2=1.0
+    assert b.iloc[1] == pytest.approx(1.0)
+    # día2: SMA_A=11.5 (12>11.5 → sí), SMA_B=5.25 (5<5.25 → no) → 1/2=0.5
+    assert b.iloc[2] == pytest.approx(0.5)
+    # día3: SMA_A=10.5 (9<10.5 → no), SMA_B=5.5 (6>5.5 → sí) → 1/2=0.5
+    assert b.iloc[3] == pytest.approx(0.5)
+    # día4: SMA_A=8.5 (8<8.5 → no), SMA_B=6.5 (7>6.5 → sí) → 1/2=0.5
+    assert b.iloc[4] == pytest.approx(0.5)
+    # C nunca fue miembro: no puede haber contaminado el cálculo aunque su
+    # precio esté siempre "arriba" — el numerador nunca llega a 3.
+    assert b.max() <= 1.0
+
+
+def test_market_breadth_cobertura_baja_deja_el_dia_sin_decision():
+    dates, close, _ = _breadth_fixture()
+    # 5 miembros nominales pero solo A y B tienen precio → cobertura 2/5=0.4 < 0.6.
+    members = pd.Series({pd.Period("2020-01"): ["A", "B", "X1", "X2", "X3"]})
+    b = market_breadth_daily(close, members, sma_days=2, min_coverage=0.6)
+    assert b.iloc[1:].isna().all()
+
+
+def test_breadth_timing_position_umbral_y_fail_closed():
+    breadth = pd.Series([np.nan, 1.0, 0.5, 0.5, 0.5])
+    pos = breadth_timing_position(breadth, threshold=0.5)
+    # NaN → 0.0 (fail-closed); 1.0>0.5 → 1.0; 0.5>0.5 es False (umbral estricto).
+    assert pos.tolist() == [0.0, 1.0, 0.0, 0.0, 0.0]
+
+
+# ---------- Familia 7: régimen de VIX ----------
+
+def test_vix_regime_below_favorece_calma():
+    vix = pd.Series([20.0, 18.0, 22.0, 15.0, 25.0])
+    pos = vix_regime_position(vix, sma_days=2, direction="below")
+    # SMA: [NaN,19,20,18.5,20]. below: 18<19=1, 22<20=0, 15<18.5=1, 25<20=0.
+    assert pos.tolist() == [0.0, 1.0, 0.0, 1.0, 0.0]
+
+
+def test_vix_regime_above_favorece_miedo():
+    vix = pd.Series([20.0, 18.0, 22.0, 15.0, 25.0])
+    pos = vix_regime_position(vix, sma_days=2, direction="above")
+    # above: 18>19=0, 22>20=1, 15>18.5=0, 25>20=1.
+    assert pos.tolist() == [0.0, 0.0, 1.0, 0.0, 1.0]
+
+
+def test_vix_regime_rechaza_direccion_invalida():
+    vix = pd.Series([20.0, 18.0])
+    with pytest.raises(ValueError, match="below.*above"):
+        vix_regime_position(vix, sma_days=1, direction="sideways")

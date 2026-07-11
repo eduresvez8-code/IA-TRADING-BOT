@@ -34,6 +34,7 @@ from src.data.sp500 import (
 )
 from backtest.diagnostics import GateResult, evaluate_gate, sharpe
 from backtest.sp500_families import (
+    daily_close_series,
     daily_hold_returns,
     daily_strategy_returns,
     dual_momentum_weights,
@@ -97,6 +98,7 @@ def load_core_data(cfg: Settings) -> dict:
     spy = load_prices(data_dir, cfg.market.benchmark_symbol)
     irx = load_prices(data_dir, cfg.market.tbill_symbol)
     bond = load_prices(data_dir, cfg.research.dual_momentum.bond_symbol)
+    vix = load_prices(data_dir, cfg.market.vix_symbol)
 
     irx_close = irx.set_index("open_time")["close"]
     irx_close.index = irx_close.index.tz_convert("UTC").tz_localize(None)
@@ -111,6 +113,7 @@ def load_core_data(cfg: Settings) -> dict:
         "spy_hold_m": spy_hold_m.to_frame("asset"),
         "cash_m": cash_m,
         "spy_hold_d": daily_hold_returns(spy),
+        "vix_close": daily_close_series(vix),
     }
 
 
@@ -152,6 +155,34 @@ def build_xs_matrices(cfg: Settings) -> dict:
         tosave = out[k].copy()
         tosave.index = tosave.index.to_timestamp()
         tosave.to_parquet(p)
+    return out
+
+
+def build_xs_daily_close(cfg: Settings) -> pd.DataFrame:
+    """Cierres DIARIOS del universo punto-en-el-tiempo (Familia 6 — amplitud).
+
+    A diferencia de `build_xs_matrices` (mensual, para XS momentum), la
+    amplitud compara cada ticker con su propia SMA de N días — necesita
+    resolución diaria. Reutiliza los parquet por-ticker ya descargados (no
+    hace falta bajar nada nuevo); se cachea en data.dir (regenerable:
+    borrar xs_daily_close.parquet fuerza el rebuild).
+    """
+    data_dir = Path(cfg.data.dir)
+    cache = data_dir / "xs_daily_close.parquet"
+    if cache.exists():
+        return pd.read_parquet(cache)
+
+    prices_dir = data_dir / "prices"
+    skip = {cfg.market.benchmark_symbol, cfg.market.index_symbol,
+            cfg.market.tbill_symbol, cfg.market.vix_symbol, *cfg.data.extra_symbols}
+    closes = {}
+    for f in sorted(prices_dir.glob("*.parquet")):
+        sym = f.stem
+        if sym in skip:
+            continue
+        closes[sym] = daily_close_series(load_prices(data_dir, sym))
+    out = pd.DataFrame(closes).sort_index()
+    out.to_parquet(cache)
     return out
 
 
@@ -278,6 +309,26 @@ def select_rsi_reversion(cfg: Settings, d: dict, cut: pd.Timestamp,
     best4 = max(rows4, key=lambda x: x["sh_train"])
     return (f"entry<{best4['entry']},exit>{best4['exit']}", best4["test"],
             TRADING_DAYS_PER_YEAR)
+
+
+def select_rsi_reversion_params(cfg: Settings, d: dict, cut: pd.Timestamp,
+                                per_side: float) -> tuple[float, float]:
+    """Como `select_rsi_reversion` pero devuelve (entry, exit) crudos —
+    reutilizado por los combos de regime-gating (TSMOM, amplitud, VIX) que
+    necesitan la config de RSI-2 YA elegida como entrada FIJA, sin re-tunearla
+    ni duplicar la selección en cada runner (una sola fuente de verdad)."""
+    rc = cfg.research
+    rows = []
+    for e in rc.rsi_reversion.entry_grid:
+        for x in rc.rsi_reversion.exit_grid:
+            pos = rsi_reversion_daily_position(
+                d["spy"], rsi_period=rc.rsi_reversion.rsi_period,
+                entry_below=e, exit_above=x,
+                trend_sma_days=rc.rsi_reversion.trend_sma_days)
+            r = daily_strategy_returns(pos, d["spy_hold_d"], d["tbill_d"], per_side)
+            rows.append({"entry": e, "exit": x, **_daily_row(r, cut)})
+    best = max(rows, key=lambda x: x["sh_train"])
+    return best["entry"], best["exit"]
 
 
 def select_dual_momentum(cfg: Settings, d: dict, cut: pd.Timestamp,

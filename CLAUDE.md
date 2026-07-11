@@ -12,16 +12,31 @@ edge de PREDICCIÓN de dirección. Todo está documentado en `docs/research/` y
 `docs/archive/` — **leer antes de proponer una estrategia "nueva"**: lo más
 probable es que ya se haya probado y muerto.
 
-## Estado del proyecto (2026-07-11)
+## Estado del proyecto (2026-07-25 — búsqueda CERRADA)
 
 La ronda pre-registrada de 5 familias (momentum cross-sectional, TSMOM,
 MA-timing, RSI-2, dual momentum) se corrió y **ninguna pasó el listón** —
 todas quedaron por debajo del buy-and-hold de SPY en el test (ver
-`docs/research/2026-07-11_sp500_resultados.txt`). El veredicto vigente del
-proyecto es **indexación pasiva** (aportes periódicos a un ETF del S&P 500,
-sin timing). NO hay estrategia activa "viva" ni bot en producción. Cualquier
-experimento nuevo exige un pre-registro NUEVO fechado en `docs/research/`
-ANTES de correrlo.
+`docs/research/2026-07-11_sp500_resultados.txt`). Tres extensiones
+posteriores sobre la misma ventana 2015-2026 tampoco cambiaron el veredicto:
+reencuadre a Calmar (`2026-07-25_calmar_sp500.md`), combo RSI-2+TSMOM
+(`2026-07-25_rsi2_tsmom_combo_resultados.md`), y una ronda final de amplitud
+de mercado + régimen VIX (`2026-07-25_familias67_breadth_vix_resultados.md`)
+— esta última pasó el gate oficial por un margen de 0.01 Sharpe, pero un
+bootstrap pareado nuevo (`paired_bootstrap_sharpe_diff_ci`) demostró que la
+ventaja era ruido estadístico, no un hallazgo real.
+
+**La búsqueda de estrategias sobre la ventana 2015-2026 queda CERRADA**: se
+evaluaron ~10 configuraciones distintas contra el mismo periodo de test a lo
+largo del proyecto; seguir generando variantes ya no sería información
+nueva, solo elevaría la probabilidad de un falso positivo por azar. El
+veredicto vigente del proyecto es **indexación pasiva** (aportes periódicos
+a un ETF del S&P 500, sin timing). NO hay estrategia activa "viva" ni bot en
+producción. El único camino que queda para el enfoque activo es
+forward/paper trading real de RSI-2 (sin capital real, ver §Seguridad) — no
+más backtests sobre este periodo. Cualquier pre-registro nuevo a partir de
+aquí debe ser sobre datos FUERA de esta ventana (forward real) o declarar
+explícitamente por qué reabre la búsqueda pese a esta nota de cierre.
 
 ## Comandos
 

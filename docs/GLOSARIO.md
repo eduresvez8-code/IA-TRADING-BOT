@@ -1281,3 +1281,37 @@ deriva al vuelo de las tablas base (single source of truth).
   sobreajuste por búsqueda repetida que el protocolo entero existe para
   evitar — por eso el proyecto se detiene aquí y no genera una tercera
   variante sobre este periodo.
+
+## Última ronda de búsqueda: amplitud, VIX y el diagnóstico que salvó un falso positivo (2026-07-25)
+
+- **Amplitud de mercado (market breadth)**: en vez de mirar el precio de un
+  solo índice, mide CUÁNTAS acciones del universo están, cada una, por
+  encima de su propia tendencia (SMA de N días). Información TRANSVERSAL
+  (todo el universo a la vez), genuinamente distinta de una sola serie de
+  precio como SPY — aunque el "sabor" (tendencia) sea parecido al de TSMOM o
+  SMA200.
+- **Régimen de VIX**: el VIX mide el miedo IMPLÍCITO en el precio de las
+  OPCIONES (volatilidad esperada), no el momentum del precio spot — dos días
+  pueden tener el mismo SPY y un VIX muy distinto. Se probó el régimen
+  relativo a su propia media móvil, en ambas direcciones (calma "below" vs
+  miedo elevado "above"), dejando que TRAIN decida cuál.
+- **Bootstrap PAREADO de la diferencia (paired bootstrap)**: el gate de "supera
+  a B&H" compara dos Sharpe puntuales — pero un +0.86 contra un +0.85 "pasa"
+  aunque la diferencia (+0.01) sea ruido puro. El bootstrap pareado remuestrea
+  los MISMOS días para la estrategia y el benchmark a la vez (preserva su
+  correlación real) y mira si el CI de la DIFERENCIA excluye cero. Es un
+  diagnóstico más estricto que el gate oficial, no lo reemplaza — solo audita
+  cualquier resultado que "pase" antes de llamarlo un hallazgo.
+- **Caso real que justifica el diagnóstico extra**: RSI-2 + gate de amplitud
+  pasó los 5 criterios oficiales (Sharpe test +0.86 vs B&H +0.85, con solo 50
+  trades). El bootstrap pareado de la diferencia dio [-0.59, +0.62] — cruza
+  el cero de sobra. La "ventaja" no era distinguible de la suerte; es
+  aproximadamente la 10ª configuración evaluada contra la misma ventana de
+  test en todo el proyecto, y con suficientes intentos algo roza el umbral
+  por puro azar. Exactamente el patrón que ya había costado semanas en
+  `finding-architecture-audit` (2026-07-06) — la razón de ser de este
+  diagnóstico.
+- **Cierre de la búsqueda**: esta fue, por diseño, la ÚLTIMA ronda sobre la
+  ventana 2015-2026 (~10 configuraciones evaluadas contra el mismo test en
+  total). Veredicto final del proyecto: indexación pasiva. El único camino
+  que queda es forward/paper trading real, no más backtest sobre este periodo.

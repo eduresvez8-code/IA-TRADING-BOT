@@ -60,6 +60,45 @@ def bootstrap_sharpe_ci(returns, periods_per_year: float, *, iterations: int,
     return (float(lo), float(hi))
 
 
+def paired_bootstrap_sharpe_diff_ci(strategy_returns, benchmark_returns,
+                                    periods_per_year: float, *, iterations: int,
+                                    ci: float, seed: int = 0) -> tuple[float, float]:
+    """CI de la DIFERENCIA de Sharpe (estrategia − benchmark) por bootstrap
+    PAREADO: cada remuestreo elige los MISMOS índices de día para ambas
+    series (a diferencia de `bootstrap_sharpe_ci`, que remuestrea cada serie
+    por separado), preservando la correlación día-a-día real entre la
+    estrategia y el benchmark.
+
+    Por qué hace falta (más allá del gate de 5 criterios): el criterio "supera
+    a B&H" del protocolo solo compara dos números puntuales — un Sharpe test
+    de +0.86 contra un B&H de +0.85 "pasa" aunque la diferencia (+0.01) sea
+    indistinguible del ruido. Este bootstrap responde la pregunta correcta:
+    ¿la VENTAJA observada sigue siendo positiva bajo remuestreo, o el CI de
+    la diferencia cruza el cero? Exigido por CLAUDE.md §protocolo punto 5
+    ("todo resultado que se vea bien pasa diagnóstico antes de llamarse vivo").
+    """
+    s = np.asarray(strategy_returns, dtype=float)
+    b = np.asarray(benchmark_returns, dtype=float)
+    mask = ~np.isnan(s) & ~np.isnan(b)
+    s, b = s[mask], b[mask]
+    n = len(s)
+    if n < 2:
+        return (0.0, 0.0)
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, n, size=(iterations, n))
+
+    def _sharpes(samples: np.ndarray) -> np.ndarray:
+        means = samples.mean(axis=1)
+        sds = samples.std(axis=1, ddof=0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.where(sds > 0, means / sds * math.sqrt(periods_per_year), 0.0)
+
+    diff = _sharpes(s[idx]) - _sharpes(b[idx])
+    alpha = (1.0 - ci) / 2.0
+    lo, hi = np.quantile(diff, [alpha, 1.0 - alpha])
+    return (float(lo), float(hi))
+
+
 def max_drawdown(returns) -> float:
     """Peor caída pico-a-valle de la curva de capital, como fracción positiva.
 
@@ -100,6 +139,22 @@ def calmar_ratio(returns, periods_per_year: float) -> float:
     if dd == 0.0:
         return 0.0
     return float(cagr / dd)
+
+
+def win_rate(pnls) -> float:
+    """Fracción de unidades (trades) con retorno neto > 0 — DESCRIPTIVO.
+
+    NO es un criterio de éxito del protocolo: un win-rate alto no equivale a
+    tener ventaja (una estrategia puede acertar el 90% de las veces y perder
+    dinero si el 10% de pérdidas es mucho más grande que las ganancias
+    típicas — el perfil de vender opciones). Se reporta solo para responder
+    la pregunta "¿acierta la mayoría de las veces?" sin redefinir el gate.
+    """
+    p = np.asarray(pnls, dtype=float)
+    p = p[~np.isnan(p)]
+    if len(p) == 0:
+        return 0.0
+    return float((p > 0).sum() / len(p))
 
 
 def concentration_top_decile(pnls) -> float:

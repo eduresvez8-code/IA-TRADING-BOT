@@ -62,6 +62,7 @@ class MarketConfig(BaseModel):
     benchmark_symbol: str = Field(min_length=1)   # ETF total-return del S&P 500
     index_symbol: str = Field(min_length=1)       # índice de precio (historia larga)
     tbill_symbol: str = Field(min_length=1)       # T-bill 13 semanas (retorno del cash)
+    vix_symbol: str = Field(min_length=1)         # volatilidad implícita (Familia 7)
     timeframe: str
 
     @field_validator("timeframe")
@@ -316,6 +317,58 @@ class DualMomentumConfig(BaseModel):
     bond_symbol: str = Field(min_length=1)
 
 
+class BreadthConfig(BaseModel):
+    """Familia 6 — amplitud de mercado (2026-07-25, última ronda de búsqueda).
+
+    % de miembros punto-en-el-tiempo del índice sobre su propia SMA de N
+    días. La cobertura mínima reutiliza xs_momentum.min_coverage (mismo
+    concepto: fracción de miembros con precio disponible), no un umbral
+    nuevo por familia.
+    """
+
+    sma_days_grid: list[int] = Field(min_length=1)
+    threshold_grid: list[float] = Field(min_length=1)
+
+    @field_validator("sma_days_grid")
+    @classmethod
+    def smas_en_rango(cls, v: list[int]) -> list[int]:
+        for d in v:
+            if not (20 <= d <= 400):
+                raise ValueError(f"breadth sma {d} fuera de [20, 400] días")
+        return v
+
+    @field_validator("threshold_grid")
+    @classmethod
+    def umbrales_en_rango(cls, v: list[float]) -> list[float]:
+        for x in v:
+            if not (0.0 < x < 1.0):
+                raise ValueError(f"breadth threshold {x} fuera de (0, 1)")
+        return v
+
+
+class VixRegimeConfig(BaseModel):
+    """Familia 7 — régimen de VIX vs su propia media móvil (2026-07-25)."""
+
+    sma_days_grid: list[int] = Field(min_length=1)
+    directions: list[str] = Field(min_length=1)
+
+    @field_validator("sma_days_grid")
+    @classmethod
+    def smas_en_rango(cls, v: list[int]) -> list[int]:
+        for d in v:
+            if not (10 <= d <= 400):
+                raise ValueError(f"vix_regime sma {d} fuera de [10, 400] días")
+        return v
+
+    @field_validator("directions")
+    @classmethod
+    def direcciones_validas(cls, v: list[str]) -> list[str]:
+        for d in v:
+            if d not in ("below", "above"):
+                raise ValueError(f"vix_regime direction debe ser 'below' o 'above', no {d!r}")
+        return v
+
+
 class ResearchConfig(BaseModel):
     """Protocolo de investigación pre-registrado (2026-07-11).
 
@@ -342,6 +395,8 @@ class ResearchConfig(BaseModel):
     ma_timing: MaTimingConfig
     rsi_reversion: RsiReversionConfig
     dual_momentum: DualMomentumConfig
+    breadth: BreadthConfig
+    vix_regime: VixRegimeConfig
 
     @field_validator("test_start_date")
     @classmethod

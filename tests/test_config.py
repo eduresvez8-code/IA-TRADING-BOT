@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from src.core.config import (
     BacktestConfig,
+    BreadthConfig,
     DataConfig,
     DualMomentumConfig,
     MaTimingConfig,
@@ -22,6 +23,7 @@ from src.core.config import (
     RsiReversionConfig,
     Settings,
     TsmomIndexConfig,
+    VixRegimeConfig,
     XsMomentumConfig,
     load_settings,
 )
@@ -59,7 +61,7 @@ def test_cuenta_cash_sin_cortos_en_config_real():
 def test_market_rechaza_timeframe_intradia():
     with pytest.raises(ValidationError, match="1d"):
         MarketConfig(benchmark_symbol="SPY", index_symbol="^GSPC",
-                     tbill_symbol="^IRX", timeframe="1h")
+                     tbill_symbol="^IRX", vix_symbol="^VIX", timeframe="1h")
 
 
 # ---------- data ----------
@@ -165,6 +167,8 @@ def _research_kwargs(**overrides):
         rsi_reversion=dict(rsi_period=2, entry_grid=[5.0, 10.0],
                            exit_grid=[50.0, 70.0], trend_sma_days=200),
         dual_momentum=dict(lookback_months=12, bond_symbol="VUSTX"),
+        breadth=dict(sma_days_grid=[100, 200], threshold_grid=[0.40, 0.50, 0.60]),
+        vix_regime=dict(sma_days_grid=[50, 100, 200], directions=["below", "above"]),
     )
     base.update(overrides)
     return base
@@ -213,6 +217,21 @@ def test_dual_momentum_sin_grid_por_diseno():
     # La familia más simple NO tiene grid: un solo lookback canónico.
     d = DualMomentumConfig(lookback_months=12, bond_symbol="VUSTX")
     assert d.lookback_months == 12
+
+
+def test_breadth_rechaza_umbral_fuera_de_rango():
+    with pytest.raises(ValidationError, match="fuera de"):
+        BreadthConfig(sma_days_grid=[200], threshold_grid=[1.5])
+
+
+def test_breadth_rechaza_sma_fuera_de_rango():
+    with pytest.raises(ValidationError, match="fuera de"):
+        BreadthConfig(sma_days_grid=[5], threshold_grid=[0.5])
+
+
+def test_vix_regime_rechaza_direccion_invalida():
+    with pytest.raises(ValidationError, match="below.*above"):
+        VixRegimeConfig(sma_days_grid=[100], directions=["sideways"])
 
 
 # ---------- coherencia cruzada ----------

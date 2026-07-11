@@ -12,7 +12,6 @@ de train entre esos 3 — el test se mide una vez con el ganador.
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 from src.core.config import load_settings
@@ -23,35 +22,16 @@ from backtest.run_sp500_research import (
     _gate_daily,
     _split_daily,
     load_core_data,
+    select_rsi_reversion_params,
 )
 from backtest.sp500_families import (
     daily_strategy_returns,
     monthly_regime_to_daily,
-    rsi_reversion_daily_position,
     rsi_reversion_regime_gated_position,
     shift_to_holding,
     trades_from_positions,
     tsmom_index_weights,
 )
-
-
-def _select_rsi_params(cfg, d, cut, per_side) -> tuple[float, float]:
-    """Reproduce EXACTAMENTE la selección de RSI-2 ya publicada (mismo grid,
-    misma regla: máximo Sharpe de train) — no se hardcodea el resultado, se
-    recalcula para garantizar que es la misma config congelada."""
-    rc = cfg.research
-    rows = []
-    for e in rc.rsi_reversion.entry_grid:
-        for x in rc.rsi_reversion.exit_grid:
-            pos = rsi_reversion_daily_position(
-                d["spy"], rsi_period=rc.rsi_reversion.rsi_period,
-                entry_below=e, exit_above=x,
-                trend_sma_days=rc.rsi_reversion.trend_sma_days)
-            r = daily_strategy_returns(pos, d["spy_hold_d"], d["tbill_d"], per_side)
-            tr, _ = _split_daily(r.dropna(), cut)
-            rows.append({"entry": e, "exit": x, "sh_train": sharpe(tr, TRADING_DAYS_PER_YEAR)})
-    best = max(rows, key=lambda x: x["sh_train"])
-    return best["entry"], best["exit"]
 
 
 def main() -> int:
@@ -72,7 +52,7 @@ def main() -> int:
     bh_te_sh_d = sharpe(d["spy_hold_d"][d["spy_hold_d"].index >= cut_naive],
                         TRADING_DAYS_PER_YEAR)
 
-    entry, exit_ = _select_rsi_params(cfg, d, cut, per_side)
+    entry, exit_ = select_rsi_reversion_params(cfg, d, cut, per_side)
     print(f"\nRSI-2 reproducido: entry<{entry}, exit>{exit_} "
           f"(debe coincidir con el publicado el 2026-07-11)")
 

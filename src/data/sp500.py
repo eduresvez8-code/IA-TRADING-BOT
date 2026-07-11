@@ -218,7 +218,11 @@ def download_symbols(symbols: list[str], cfg: DataConfig) -> tuple[list[str], li
         )
         for sym in batch:
             try:
-                sub = raw[sym] if len(batch) > 1 else raw
+                # yfinance devuelve columnas MultiIndex (ticker, campo) con
+                # group_by="ticker" SIEMPRE que se le pase una lista — incluso
+                # de un solo símbolo — así que la extracción depende de la
+                # forma real de `raw`, nunca del tamaño del lote.
+                sub = raw[sym] if isinstance(raw.columns, pd.MultiIndex) else raw
             except KeyError:
                 missing.append(sym)
                 continue

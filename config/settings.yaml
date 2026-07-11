@@ -12,6 +12,7 @@ market:
   benchmark_symbol: "SPY"    # ETF del S&P 500: retorno TOTAL (auto_adjust reinvierte dividendos)
   index_symbol: "^GSPC"      # índice de PRECIO (historia larga desde 1927, sin dividendos)
   tbill_symbol: "^IRX"       # T-bill 13 semanas (yield anualizado %): retorno del cash
+  vix_symbol: "^VIX"         # volatilidad implícita (miedo del mercado de opciones), Familia 7
   timeframe: "1d"            # velas diarias — nada intradía (lección cripto: ruido+costos)
 
 data:
@@ -106,3 +107,13 @@ research:
   dual_momentum:
     lookback_months: 12                # única config (sin grid: definición canónica del libro)
     bond_symbol: "VUSTX"               # pata defensiva: Tesoro largo (fondo, historia desde 1986)
+  # ---- Familia 6: amplitud de mercado (2026-07-25, última ronda) ----
+  # % de miembros punto-en-el-tiempo del índice sobre su propia SMA de N días.
+  breadth:
+    sma_days_grid: [100, 200]          # mismas ventanas que ma_timing (Familia 3)
+    threshold_grid: [0.40, 0.50, 0.60] # long si amplitud > umbral, si no cash
+  # ---- Familia 7: régimen de VIX (2026-07-25, última ronda) ----
+  # VIX vs su propia media móvil de N días; dirección (calma/miedo) la decide TRAIN.
+  vix_regime:
+    sma_days_grid: [50, 100, 200]
+    directions: ["below", "above"]     # below=calma relativa, above=miedo elevado

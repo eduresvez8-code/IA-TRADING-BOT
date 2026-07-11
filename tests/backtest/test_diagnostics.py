@@ -16,7 +16,9 @@ from backtest.diagnostics import (
     evaluate_gate,
     halves_stability,
     max_drawdown,
+    paired_bootstrap_sharpe_diff_ci,
     sharpe,
+    win_rate,
 )
 
 
@@ -78,6 +80,33 @@ def test_bootstrap_detecta_dependencia_de_colas():
     assert lo <= 0.05  # la cola inferior no sostiene un edge
 
 
+# ---------- bootstrap PAREADO de la diferencia vs benchmark ----------
+
+def test_paired_bootstrap_diff_series_identicas_es_siempre_cero():
+    # Mismo remuestreo de índices aplicado a AMBAS series (a diferencia del
+    # bootstrap independiente): si son la misma serie, la diferencia de
+    # Sharpe es EXACTAMENTE 0 en cada iteración, sin excepción.
+    r = [0.01, -0.02, 0.03, 0.01, -0.01, 0.02, 0.015, -0.005]
+    lo, hi = paired_bootstrap_sharpe_diff_ci(r, r, 252, iterations=500, ci=0.90)
+    assert lo == pytest.approx(0.0)
+    assert hi == pytest.approx(0.0)
+
+
+def test_paired_bootstrap_diff_detecta_ventaja_clara():
+    # Estrategia = benchmark + una ventaja grande y consistente (100 pb/día):
+    # el CI de la diferencia debe quedar enteramente sobre cero.
+    rng = np.random.default_rng(1)
+    b = rng.normal(0.0005, 0.01, 500)
+    s = b + 0.01
+    lo, hi = paired_bootstrap_sharpe_diff_ci(s, b, 252, iterations=500, ci=0.90)
+    assert lo > 0.0
+
+
+def test_paired_bootstrap_diff_pocos_datos_es_cero():
+    assert paired_bootstrap_sharpe_diff_ci([0.01], [0.01], 252,
+                                           iterations=100, ci=0.90) == (0.0, 0.0)
+
+
 # ---------- concentración ----------
 
 def test_concentracion_uniforme_es_el_decil():
@@ -132,6 +161,21 @@ def test_calmar_sin_drawdown_es_cero():
 def test_calmar_pocos_datos_es_cero():
     assert calmar_ratio([0.01], 252) == 0.0
     assert calmar_ratio([], 252) == 0.0
+
+
+# ---------- win-rate (descriptivo, no es criterio de éxito) ----------
+
+def test_win_rate_valor_a_mano():
+    # 3 de 4 positivos → 0.75.
+    assert win_rate([0.05, -0.02, 0.01, 0.03]) == pytest.approx(0.75)
+
+
+def test_win_rate_ignora_nans():
+    assert win_rate([0.05, float("nan"), -0.02]) == pytest.approx(0.5)
+
+
+def test_win_rate_vacio_es_cero():
+    assert win_rate([]) == 0.0
 
 
 # ---------- mitades ----------
