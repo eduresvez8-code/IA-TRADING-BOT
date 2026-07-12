@@ -76,6 +76,12 @@ def _load_existing_log(log_path: Path) -> pd.DataFrame:
     if not log_path.exists():
         return pd.DataFrame(columns=LOG_COLUMNS)
     df = pd.read_csv(log_path, parse_dates=["date"], index_col="date")
+    # pandas lee un campo vacío del CSV como NaN, no como "" — sin esto,
+    # cualquier comparación `action != ""` se vuelve True para TODOS los
+    # días (NaN nunca es igual a nada), marcando cada día como si fuera
+    # una transacción real. Se normaliza aquí, en la frontera de lectura,
+    # no en cada lugar que consume el log.
+    df["action"] = df["action"].fillna("")
     return df
 
 

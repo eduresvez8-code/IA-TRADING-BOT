@@ -1,16 +1,17 @@
-"""Tests de la parte PURA del paper trading RSI-2 (sin red, sin disco).
+"""Tests de la parte PURA del paper trading RSI-2 (sin red).
 
 Reusa el MISMO escenario ya congelado en
 tests/backtest/test_sp500_families.py::test_rsi_reversion_compra_dip_dentro_de_tendencia
 — la señal cruda debe coincidir exactamente con la ya probada del backtest,
 porque `compute_daily_rows` reutiliza `rsi_reversion_daily_position` sin
-reimplementar nada.
+reimplementar nada. Una excepción de I/O local (tmp_path, sin red) para el
+roundtrip CSV de `_load_existing_log` — ver el bug de NaN/"" documentado ahí.
 """
 
 import numpy as np
 import pandas as pd
 
-from src.paper_trading.rsi2 import compute_daily_rows
+from src.paper_trading.rsi2 import _load_existing_log, compute_daily_rows
 
 
 def _daily_df(dates, closes):
@@ -80,3 +81,22 @@ def test_compute_daily_rows_sin_transicion_columna_accion_vacia():
                              since=pd.Timestamp(dates[0]).tz_convert("UTC").tz_localize(None))
     assert (out["action"] == "").all()
     assert (out["position"] == 0.0).all()
+
+
+def test_load_existing_log_roundtrip_no_convierte_accion_vacia_en_nan(tmp_path):
+    # Bug real encontrado en el dashboard: pandas lee un campo CSV vacío
+    # como NaN, no "". Sin fillna, cualquier `action != ""` marcaría TODOS
+    # los días como si fueran una transacción (NaN nunca es igual a nada).
+    log_path = tmp_path / "daily_log.csv"
+    dates = pd.date_range("2026-07-10", periods=3, freq="B")
+    df = pd.DataFrame({
+        "close": [500.0, 501.0, 502.0], "rsi2": [50.0, 8.0, 75.0],
+        "sma_trend": [480.0, 480.0, 480.0], "above_trend": [True, True, True],
+        "position": [0.0, 1.0, 0.0], "action": ["", "ENTER", "EXIT"],
+    }, index=dates)
+    df.index.name = "date"
+    df.to_csv(log_path)
+
+    back = _load_existing_log(log_path)
+    assert back["action"].tolist() == ["", "ENTER", "EXIT"]
+    assert (back["action"] != "").sum() == 2  # solo las 2 transacciones reales

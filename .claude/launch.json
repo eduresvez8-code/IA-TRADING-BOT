@@ -12,6 +12,12 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["/Users/eduardorestrepo/Desktop/Café/marca-don-pirry-cafe/web/tools/servidor-sin-cache.py", "8792", "/Users/eduardorestrepo/Desktop/Café/marca-don-pirry-cafe"],
       "port": 8792
+    },
+    {
+      "name": "static-dashboard-preview",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8743", "--directory", "docs/dashboard"],
+      "port": 8743
     }
   ]
 }

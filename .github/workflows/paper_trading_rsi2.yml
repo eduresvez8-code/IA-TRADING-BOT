@@ -37,14 +37,20 @@ jobs:
       - name: Correr paper trading RSI-2
         run: uv run python -m src.paper_trading.rsi2
 
-      - name: Commitear el log si cambió
+      - name: Regenerar el dashboard
+        # Siempre se regenera, aunque no haya día nuevo — así "última
+        # actualización" en el dashboard refleja la última corrida exitosa
+        # (visibilidad de que el sistema sigue vivo, no solo de los trades).
+        run: uv run python -m src.paper_trading.dashboard
+
+      - name: Commitear si cambió algo
         run: |
           git config user.name "paper-trading-bot"
           git config user.email "actions@users.noreply.github.com"
-          if git status --porcelain paper_trading/ | grep -q .; then
-            git add paper_trading/
+          if git status --porcelain paper_trading/ docs/dashboard/ | grep -q .; then
+            git add paper_trading/ docs/dashboard/
             git commit -m "paper trading RSI-2: actualización $(date -u +%Y-%m-%d)"
             git push
           else
-            echo "Sin cambios en el log — nada que commitear."
+            echo "Sin cambios — nada que commitear."
           fi
