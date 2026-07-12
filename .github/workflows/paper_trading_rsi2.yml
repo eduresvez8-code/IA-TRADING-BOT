@@ -28,10 +28,10 @@ jobs:
 
       - name: Instalar uv
         uses: astral-sh/setup-uv@v3
-        with:
-          python-version: "3.13"
 
       - name: Instalar dependencias
+        # uv lee requires-python de pyproject.toml (3.13) y descarga esa
+        # versión sola — no hace falta declararla también en setup-uv.
         run: uv sync
 
       - name: Correr paper trading RSI-2
