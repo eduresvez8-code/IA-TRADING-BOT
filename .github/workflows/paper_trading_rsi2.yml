@@ -1,0 +1,50 @@
+name: Paper trading RSI-2 (forward real, sin capital)
+
+# Único camino activo que queda tras el cierre de la búsqueda de estrategias
+# (2026-07-25, ver CLAUDE.md). 100% simulado — jamás toca un broker ni dinero
+# real. Corre independiente de si el Mac de Eduardo está encendido (por eso
+# es GitHub Actions y no una tarea local): ver docs/PAPER_TRADING_RSI2.md.
+#
+# Horario: 22:00 UTC = 18:00 EDT / 17:00 EST — con margen holgado tras el
+# cierre del mercado (16:00 ET) en ambos husos, para que yfinance ya tenga
+# la vela del día asentada. Corre TODOS los días (no solo entre semana): si
+# el mercado estuvo cerrado (fin de semana, feriado), el script simplemente
+# no encuentra un día nuevo y no hace nada — más simple y robusto que
+# mantener a mano un calendario de feriados bursátiles de EE.UU.
+
+on:
+  schedule:
+    - cron: "0 22 * * *"
+  workflow_dispatch: {}  # permite correrlo a mano desde GitHub para probar
+
+permissions:
+  contents: write  # necesario para commitear el log actualizado
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.13"
+
+      - name: Instalar dependencias
+        run: uv sync
+
+      - name: Correr paper trading RSI-2
+        run: uv run python -m src.paper_trading.rsi2
+
+      - name: Commitear el log si cambió
+        run: |
+          git config user.name "paper-trading-bot"
+          git config user.email "actions@users.noreply.github.com"
+          if git status --porcelain paper_trading/ | grep -q .; then
+            git add paper_trading/
+            git commit -m "paper trading RSI-2: actualización $(date -u +%Y-%m-%d)"
+            git push
+          else
+            echo "Sin cambios en el log — nada que commitear."
+          fi

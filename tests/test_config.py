@@ -17,6 +17,7 @@ from src.core.config import (
     DualMomentumConfig,
     MaTimingConfig,
     MarketConfig,
+    PaperTradingRsi2Config,
     QuantConfig,
     ResearchConfig,
     RiskConfig,
@@ -232,6 +233,26 @@ def test_breadth_rechaza_sma_fuera_de_rango():
 def test_vix_regime_rechaza_direccion_invalida():
     with pytest.raises(ValidationError, match="below.*above"):
         VixRegimeConfig(sma_days_grid=[100], directions=["sideways"])
+
+
+# ---------- paper trading (forward real, sin capital) ----------
+
+def test_paper_trading_rsi2_valido():
+    p = PaperTradingRsi2Config(entry_below=10.0, exit_above=70.0, trend_sma_days=200,
+                               rsi_period=2, log_dir="paper_trading/rsi2")
+    assert p.entry_below == 10.0
+
+
+def test_paper_trading_rsi2_rechaza_entry_fuera_de_rango():
+    with pytest.raises(ValidationError):
+        PaperTradingRsi2Config(entry_below=60.0, exit_above=70.0, trend_sma_days=200,
+                               rsi_period=2, log_dir="paper_trading/rsi2")
+
+
+def test_paper_trading_real_carga_config_ya_publicada():
+    cfg = load_settings()
+    assert cfg.paper_trading.rsi2.entry_below == 10.0
+    assert cfg.paper_trading.rsi2.exit_above == 70.0
 
 
 # ---------- coherencia cruzada ----------

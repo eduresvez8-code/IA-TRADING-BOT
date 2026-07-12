@@ -407,6 +407,28 @@ class ResearchConfig(BaseModel):
         return _validate_aware_iso_date(v, "research.test_start_date")
 
 
+class PaperTradingRsi2Config(BaseModel):
+    """RSI-2 en forward/paper trading real (2026-07-25) — config YA
+    seleccionada por train el 2026-07-11 (docs/research/2026-07-11_sp500_resultados.txt),
+    operacionalizada aquí. NO es un grid nuevo ni un re-tuneo: son los mismos
+    4 números ya congelados y publicados, tipados para que el runner de
+    `src/paper_trading/rsi2.py` no los hardcodee como literales sueltos.
+    """
+
+    entry_below: float = Field(gt=0.0, lt=50.0)
+    exit_above: float = Field(gt=30.0, lt=100.0)
+    trend_sma_days: int = Field(ge=20, le=400)
+    rsi_period: int = Field(ge=2, le=30)
+    # Carpeta VERSIONADA en git (no en data.dir, que es regenerable/fuera de
+    # git) — el log de decisiones es la memoria del experimento, no un dato
+    # descargable de nuevo.
+    log_dir: str = Field(min_length=1)
+
+
+class PaperTradingConfig(BaseModel):
+    rsi2: PaperTradingRsi2Config
+
+
 class Settings(BaseModel):
     market: MarketConfig
     data: DataConfig
@@ -414,6 +436,7 @@ class Settings(BaseModel):
     quant: QuantConfig
     backtest: BacktestConfig
     research: ResearchConfig
+    paper_trading: PaperTradingConfig
 
     @model_validator(mode="after")
     def backtest_coherente_con_risk(self) -> "Settings":
